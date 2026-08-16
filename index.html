@@ -391,7 +391,19 @@
     return {name:type.name, level, hp, maxHp:hp, atk, def, exp, boss:false, skills:type.skills||[], weakness:type.weakness||null};
   }
 
-  const WEAPON_BASES = ['折れた剣','錆びた斧','迷宮の槍','朽ちた弓','亡霊の短剣'];
+  /* 武器種カタログ。ジョブごとの装備可否はJOB_DEFS[job].weaponTypesで、
+   * ライバー個人の追加適正はLIVER_DEFS[id].weaponAptitudeで管理する
+   * (装備可否 = job.weaponTypes ∪ liver.weaponAptitude)。 */
+  const WEAPON_TYPES = {
+    sword:      { name:'剣',     base:'鋼の剣' },
+    greatsword: { name:'大剣',   base:'鋼の大剣' },
+    axe:        { name:'斧',     base:'鋼の斧' },
+    spear:      { name:'槍',     base:'鋼の槍' },
+    dagger:     { name:'短剣',   base:'鋼の短剣' },
+    bow:        { name:'弓',     base:'木の弓' },
+    staff:      { name:'杖',     base:'白木の杖' },
+    grimoire:   { name:'魔導書', base:'古びた魔導書' },
+  };
   const ARMOR_BASES = ['苔の鎧','破れた外套','石の盾','錆びた鎧','古代の護符'];
 
   const RARITY = {
@@ -423,26 +435,63 @@
     return { element, value };
   }
 
+  /* 武器の特殊接頭辞。レア以上でのみ抽選され、通常ドロップ(コモン/アンコモン)は
+   * 素の名称のまま。kind:'element'は攻撃(通常攻撃・防御無視の一撃・連撃・
+   * 身構えながらの一撃)に武器属性を乗せ、敵の弱点と一致した時だけ追加ダメージが
+   * 入る。kind:'atkBonus'は単純にvalue(攻撃力)へ加算される。 */
+  const WEAPON_AFFIXES = [
+    { name:'凍てつく', kind:'element', element:'ice' },
+    { name:'灼熱の',   kind:'element', element:'fire' },
+    { name:'雷光の',   kind:'element', element:'thunder' },
+    { name:'巨大な',   kind:'atkBonus' },
+    { name:'鋭利な',   kind:'atkBonus' },
+  ];
+  function rollWeaponAffix(rarityKey){
+    if(rarityKey !== 'rare' && rarityKey !== 'epic') return null;
+    const tmpl = WEAPON_AFFIXES[Math.floor(Math.random()*WEAPON_AFFIXES.length)];
+    if(tmpl.kind === 'atkBonus'){
+      return { name: tmpl.name, kind:'atkBonus', bonus: rarityKey==='epic' ? rnd(16,24) : rnd(8,14) };
+    }
+    return { name: tmpl.name, kind:'element', element: tmpl.element, mult: rarityKey==='epic' ? 1.5 : 1.3 };
+  }
+
   function makeItem(type, depth){
     const rarityKey = rollRarity();
     const rarity = RARITY[rarityKey];
-    const base = type==='weapon'
-      ? WEAPON_BASES[Math.floor(Math.random()*WEAPON_BASES.length)]
-      : ARMOR_BASES[Math.floor(Math.random()*ARMOR_BASES.length)];
-    const baseVal = type==='weapon' ? 3 : 2;
-    const value = Math.round((baseVal + depth*0.6) * rarity.mult);
+    if(type === 'weapon'){
+      const typeKeys = Object.keys(WEAPON_TYPES);
+      const weaponType = typeKeys[Math.floor(Math.random()*typeKeys.length)];
+      const affix = rollWeaponAffix(rarityKey);
+      let value = Math.round((3 + depth*0.6) * rarity.mult);
+      if(affix && affix.kind==='atkBonus') value += affix.bonus;
+      return {
+        id: 'itm_'+Math.random().toString(36).slice(2,9),
+        type, rarity:rarityKey, rarityLabel:rarity.cls,
+        weaponType,
+        name: (affix ? affix.name : '') + WEAPON_TYPES[weaponType].base,
+        value,
+        affix: (affix && affix.kind==='element') ? affix : null,
+        resist: null
+      };
+    }
+    const base = ARMOR_BASES[Math.floor(Math.random()*ARMOR_BASES.length)];
+    const value = Math.round((2 + depth*0.6) * rarity.mult);
     const prefix = rarityKey==='common' ? '' : (rarityKey==='uncommon' ? '頑丈な' : rarityKey==='rare' ? '精霊の' : '深淵の');
     return {
       id: 'itm_'+Math.random().toString(36).slice(2,9),
       type, rarity:rarityKey, rarityLabel:rarity.cls,
       name: prefix + base,
       value,
-      resist: type==='armor' ? rollResistAffix(rarityKey) : null
+      resist: rollResistAffix(rarityKey)
     };
   }
 
   function itemValueLabel(item){
     let s = `(+${item.value})`;
+    if(item.weaponType) s += ` [${WEAPON_TYPES[item.weaponType].name}]`;
+    if(item.affix && item.affix.kind==='element'){
+      s += ` ${ELEMENT_LABELS[item.affix.element]}属性付与`;
+    }
     if(item.resist){
       const sign = item.resist.value > 0 ? '+' : '';
       s += ` ${ELEMENT_LABELS[item.resist.element]}耐性${sign}${item.resist.value}`;
@@ -451,9 +500,12 @@
   }
 
   function itemDetailText(item){
-    const typeLabel = item.type==='weapon' ? '武器' : '防具';
+    const typeLabel = item.weaponType ? WEAPON_TYPES[item.weaponType].name : (item.type==='weapon' ? '武器' : '防具');
     const rarityLabel = (RARITY[item.rarity] && RARITY[item.rarity].label) || '';
     let text = `${item.name} / ${rarityLabel} / ${typeLabel} / 効果値 +${item.value}`;
+    if(item.affix && item.affix.kind==='element'){
+      text += ` / ${ELEMENT_LABELS[item.affix.element]}属性付与(弱点の敵に追加ダメージ)`;
+    }
     if(item.resist){
       const sign = item.resist.value > 0 ? '+' : '';
       text += ` / ${ELEMENT_LABELS[item.resist.element]}耐性${sign}${item.resist.value}`;
@@ -679,6 +731,7 @@
     tank: {
       name:'ガーディアン', hpMult:1.4, atkMult:0.75, defMult:1.5, mpMult:0.6,
       desc:'高いHP・防御力で安定して戦える。格上の敵にも挑みやすい。',
+      weaponTypes:['sword','greatsword','axe'],
       skills:[
         {key:'guard_stance', name:'鉄壁の構え', mpCost:8, baseRate:20, kind:'defBuff', reduceMult:0.6,
           desc:'MPを消費し、次に受ける攻撃のダメージを大きく軽減する。'},
@@ -689,6 +742,7 @@
     dps: {
       name:'ソルジャー', hpMult:0.9, atkMult:1.4, defMult:0.8, mpMult:0.5,
       desc:'高い攻撃力で短期決戦が得意。レベリングや周回向き。',
+      weaponTypes:['sword','spear','dagger','bow'],
       skills:[
         {key:'double_strike', name:'連撃', mpCost:6, baseRate:25, kind:'bonusAttack',
           desc:'MPを消費し、追加の一撃を繰り出す。'},
@@ -699,6 +753,7 @@
     mage: {
       name:'ウィザード', hpMult:0.75, atkMult:0.8, defMult:0.7, mpMult:2.0,
       desc:'豊富なMPと属性魔法で弱点を突く。決まれば通常攻撃を上回るが、外すと通常より非力。MP切れにも弱い。',
+      weaponTypes:['staff','grimoire'],
       skills:[
         {key:'fire_bolt', name:'火炎弾', mpCost:9, baseRate:20, kind:'element', element:'fire', weaknessMult:1.6, offMult:0.8,
           desc:'MPを消費し、火属性の魔法攻撃を放つ。弱点なら通常攻撃を超える威力、そうでなければ通常より劣る。'},
@@ -726,6 +781,10 @@
    *   カラーのHEXコードを使用。
    * startUnlocked: ゲーム開始時から編成可能かどうか(キャラ作成時に選んだ
    *   1人のみtrue。実際の値はnewCharacter()側で動的に設定される)。
+   * weaponAptitude: 現在のジョブの装備可能武器種(JOB_DEFS[job].weaponTypes)
+   *   に関わらず、そのライバー個人が扱える追加の武器種の配列。未設定の
+   *   ライバーは今のところ全員おらず、今後キャラの個性に合わせて設定する
+   *   予定(例: ['axe']を持たせると、ジョブがウィザードでも斧を装備できる)。
    * 未解放のライバーは「運命のチケット」ガチャ、または「確約されし運命の
    * チケット」での指名によって仲間になる(交換所で入手・使用する)。
    * passive: ライバー固有の常時能力。本人の実際の言動・設定を根拠に選定
@@ -964,6 +1023,16 @@
       }
     });
     return mult;
+  }
+
+  /* 装備武器の属性付与(rollWeaponAffixのkind:'element')による与ダメージ倍率。
+   * 敵の弱点属性と一致した時だけ効果があり、一致しなければ1のまま
+   * (魔導師本人の属性スキルとは別枠。属性スキル自体には重ねて適用しない)。 */
+  function weaponAffixDamageMult(liverId){
+    const w = liverState(liverId).equipped.weapon;
+    if(!w || !w.affix || w.affix.kind !== 'element') return 1;
+    if(!combatEnemy || combatEnemy.weakness !== w.affix.element) return 1;
+    return w.affix.mult || 1;
   }
 
   /* ダンジョンのアイテムドロップ率・ゴールド獲得量にかかる倍率(加賀美ハヤト)。 */
@@ -1220,7 +1289,9 @@
         id: i.id, item_type: i.type, name: i.name, rarity: i.rarity,
         value: i.value,
         resist_element: i.resist ? i.resist.element : null,
-        resist_value: i.resist ? i.resist.value : null
+        resist_value: i.resist ? i.resist.value : null,
+        weapon_type: i.weaponType || null,
+        affix: i.affix || null
       }));
 
       const dungeonRows = DUNGEON_DEFS.map(d=>{
@@ -1271,7 +1342,9 @@
         const item = {
           id: i.id, type: i.item_type, name: i.name,
           rarity: i.rarity, rarityLabel: i.rarity, value: i.value,
-          resist: i.resist_element ? { element: i.resist_element, value: i.resist_value } : null
+          resist: i.resist_element ? { element: i.resist_element, value: i.resist_value } : null,
+          weaponType: i.weapon_type || null,
+          affix: i.affix || null
         };
         itemById[i.id] = item;
         inventory.push(item);
@@ -1498,8 +1571,10 @@
       return drained > 0 ? ` (MP+${drained})` : '';
     };
 
+    const affixMult = weaponAffixDamageMult(liverId);
+
     if(!chosen){
-      const dmg = Math.max(1, combatAtk(liverId) - combatEnemy._def + rnd(-1,2));
+      const dmg = Math.max(1, Math.round((combatAtk(liverId) - combatEnemy._def) * affixMult) + rnd(-1,2));
       combatEnemyHp -= dmg;
       pushLog(`${name}の攻撃！ ${combatEnemy.name}に ${dmg} のダメージ。${drainSuffix(dmg)}`, 'combat');
       return;
@@ -1509,7 +1584,7 @@
     ls.mp -= mpCost;
 
     if(chosen.kind === 'trueDamageSpell'){
-      const dmg = Math.max(1, Math.round(combatAtk(liverId)*chosen.mult) + rnd(-1,3));
+      const dmg = Math.max(1, Math.round(combatAtk(liverId)*chosen.mult*affixMult) + rnd(-1,3));
       combatEnemyHp -= dmg;
       pushLog(`${name}の「${chosen.name}」！ 防御を貫く ${dmg} のダメージ。(MP-${mpCost})${drainSuffix(dmg)}`, 'combat');
       return;
@@ -1529,15 +1604,15 @@
       return;
     }
     if(chosen.kind === 'bonusAttack'){
-      const dmg1 = Math.max(1, combatAtk(liverId) - combatEnemy._def + rnd(-1,2));
-      const dmg2 = Math.max(1, Math.round(combatAtk(liverId)*0.6) - Math.round(combatEnemy._def*0.5) + rnd(-1,2));
+      const dmg1 = Math.max(1, Math.round((combatAtk(liverId) - combatEnemy._def) * affixMult) + rnd(-1,2));
+      const dmg2 = Math.max(1, Math.round((Math.round(combatAtk(liverId)*0.6) - Math.round(combatEnemy._def*0.5)) * affixMult) + rnd(-1,2));
       combatEnemyHp -= (dmg1+dmg2);
       pushLog(`${name}の「${chosen.name}」！ ${dmg1}+${dmg2} の連続攻撃。(MP-${mpCost})${drainSuffix(dmg1+dmg2)}`, 'combat');
       return;
     }
     if(chosen.kind === 'defBuff'){
       pendingDefBuffs[liverId] = chosen.reduceMult || 0.6;
-      const dmg = Math.max(1, combatAtk(liverId) - combatEnemy._def + rnd(-1,2));
+      const dmg = Math.max(1, Math.round((combatAtk(liverId) - combatEnemy._def) * affixMult) + rnd(-1,2));
       combatEnemyHp -= dmg;
       pushLog(`${name}の「${chosen.name}」！ 身構えながら ${dmg} のダメージ。次の攻撃に備える。(MP-${mpCost})${drainSuffix(dmg)}`, 'combat');
       return;
@@ -1965,6 +2040,19 @@
   /* 装備の変更は町(ダンジョン探索中でない状態)でのみ許可する。 */
   function canManageEquipment(){ return state.screen !== 'dungeon'; }
 
+  /* そのライバーが装備できる武器種の集合(現在のジョブの装備可能リスト ∪
+   * ライバー個人の適正武器種)。防具には武器種の概念が無いため無制限のまま。 */
+  function allowedWeaponTypes(liverId){
+    const ls = liverState(liverId);
+    const jobTypes = (JOB_DEFS[ls.job] && JOB_DEFS[ls.job].weaponTypes) || [];
+    const liverTypes = liverDef(liverId).weaponAptitude || [];
+    return new Set([...jobTypes, ...liverTypes]);
+  }
+  function canEquipItem(liverId, item){
+    if(item.type !== 'weapon') return true;
+    return allowedWeaponTypes(liverId).has(item.weaponType);
+  }
+
   /* 装備は共有の所持品プールから、「編成」画面で装備を見ている最中のライバー
    * (state.ui.equipViewLiver)へ割り当てる。常に誰かを対象として保持し続ける
    * のではなく、装備画面を開いている間だけ有効な一時的な選択とする。 */
@@ -1975,6 +2063,11 @@
     const idx = state.inventory.findIndex(i=>i.id===id);
     if(idx<0) return;
     const item = state.inventory[idx];
+    if(!canEquipItem(targetId, item)){
+      pushLog(`${liverDef(targetId).name}は「${item.name}」(${WEAPON_TYPES[item.weaponType].name})を扱えない。`, 'system');
+      render();
+      return;
+    }
     const slot = item.type;
     const ls = liverState(targetId);
     const prev = ls.equipped[slot];
@@ -2809,14 +2902,20 @@
     const viewingId = state.ui.equipViewLiver;
     const targetName = manageOk && viewingId && liverState(viewingId) ? liverDef(viewingId).name : null;
     const inv = state.inventory.length
-      ? state.inventory.map(i=>`
+      ? state.inventory.map(i=>{
+          const equippable = !targetName || canEquipItem(viewingId, i);
+          const equipBtn = targetName
+            ? `<button data-equip="${i.id}" ${equippable?'':'disabled title="このライバーは装備できない武器種"'}>装備</button>`
+            : '';
+          return `
           <div class="inv-item ${i.rarityLabel}" title="${esc(itemDetailText(i))}">
             <span class="inv-item-name">${esc(i.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(i))}</span></span>
             <span class="inv-item-actions">
-              ${targetName ? `<button data-equip="${i.id}">装備</button>` : ''}
+              ${equipBtn}
               <button data-discard="${i.id}">破棄</button>
             </span>
-          </div>`).join('')
+          </div>`;
+        }).join('')
       : `<p class="inv-empty">所持品はまだない。</p>`;
 
     const noteHtml = !manageOk
