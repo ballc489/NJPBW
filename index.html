@@ -728,25 +728,55 @@
    *   1人のみtrue。実際の値はnewCharacter()側で動的に設定される)。
    * 未解放のライバーは「運命のチケット」ガチャ、または「確約されし運命の
    * チケット」での指名によって仲間になる(交換所で入手・使用する)。
-   * passive: ライバー固有の常時能力。スキル詳細は未確定のため、
-   *   現時点では全員未設定(passiveフィールドなし)。設定時の形式は
-   *   下記の通り(ジョブとは独立して個性を出すためのもの):
-   *   kind:'statMult'       常時ステータス補正(ログには出さない)
-   *   kind:'lowHpMitigate'  自身のHPが割合threshold以下の間、被ダメージをmult倍(軽減)。発動時にログを出す
-   *   kind:'lowEnemyHpBoost' 敵の残りHPが割合threshold以下の間、自分の与ダメージをmult倍。発動時にログを出す
-   *   kind:'allyDownRage'   味方が戦闘不能になった瞬間、以後の自分の攻撃力をmult倍(1戦闘に1度)。発動時にログを出す
+   * passive: ライバー固有の常時能力。本人の実際の言動・設定を根拠に選定
+   *   (ジョブは後からユーザーが自由に付け替えられるものなので、キャラ
+   *   付けの根拠には使っていない)。alwaysがtrueの間は常時発動系なので
+   *   ログを出さず、falseの間は条件付き発動につき発動時にログを出す。
+   *   kind:'statMult'          常時、指定statに倍率をかける(ログなし)
+   *   kind:'partySizeStatMult' 常時、編成人数に応じて指定statに倍率をかける(ログなし)
+   *   kind:'lootBonus'         常時、ダンジョンのアイテムドロップ率・ゴールド獲得量に倍率をかける(ログなし)
+   *   kind:'onHitMpDrain'      常時、与えたダメージの一部をMPとして吸収する(戦闘ログに追記する形で表示)
+   *   kind:'partyMpCostReduce' 常時、パーティ全員のスキルMP消費に倍率をかける(ログなし)
+   *   kind:'allyActionStack'   常時、仲間が行動するたび攻撃力が蓄積して上昇する(戦闘終了でリセット。ログなし)
+   *   kind:'battleStartPartyBuff' 戦闘開始直後のNターンだけ、パーティ全体の攻撃力に倍率をかける。発動時にログを出す
+   *   kind:'lowHpMitigate'     自身のHPが割合threshold以下の間、被ダメージをmult倍(軽減)。発動時にログを出す
+   *   kind:'lowHpAtkBoost'     自身のHPが割合threshold以下の間、攻撃力をmult倍。発動時にログを出す
+   *   kind:'lowEnemyHpBoost'   敵の残りHPが割合threshold以下の間、自分の与ダメージをmult倍。発動時にログを出す
+   *   kind:'allyDownRage'      味方が戦闘不能になった瞬間、以後の自分の攻撃力をmult倍(1戦闘に1度)。発動時にログを出す
+   *   kind:'randomAllyBoon'    毎ラウンド低確率で、味方の誰か1人のHPを回復する。発動時にログを出す
+   *   kind:'coverAlly'         味方のHPが割合threshold以下の時、その味方への攻撃を代わりに引き受ける。発動時にログを出す
    * --------------------------------------------------------------- */
   const LIVER_DEFS = [
-    {id:'liver_1', name:'樋口楓', color:'#FBAF71', job:'dps', startUnlocked:false},
-    {id:'liver_2', name:'ジョー・力一', color:'#D598DD', job:'mage', startUnlocked:false},
-    {id:'liver_3', name:'魔界ノりりむ', color:'#EF6F94', job:'mage', startUnlocked:false},
-    {id:'liver_4', name:'加賀美ハヤト', color:'#B9ADB9', job:'tank', startUnlocked:false},
-    {id:'liver_5', name:'三枝明那', color:'#F03C32', job:'dps', startUnlocked:false},
-    {id:'liver_6', name:'弦月藤士郎', color:'#B43246', job:'tank', startUnlocked:false},
-    {id:'liver_7', name:'先斗寧', color:'#5A7DFF', job:'mage', startUnlocked:false},
-    {id:'liver_8', name:'石神のぞみ', color:'#E6325F', job:'mage', startUnlocked:false},
-    {id:'liver_9', name:'風楽奏斗', color:'#FAD246', job:'dps', startUnlocked:false},
-    {id:'liver_10', name:'栞葉るり', color:'#2887FF', job:'tank', startUnlocked:false},
+    {id:'liver_1', name:'樋口楓', color:'#FBAF71', job:'dps', startUnlocked:false,
+      passive:{name:'こんでろーん', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
+        desc:'戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}},
+    {id:'liver_2', name:'ジョー・力一', color:'#D598DD', job:'mage', startUnlocked:false,
+      passive:{name:'NEOてぇてぇ', kind:'partySizeStatMult', stats:['atk','def'], perMember:0.06, always:true,
+        desc:'常時、編成人数が多いほど攻撃力・防御力が上昇する(1人につき+6%、4人編成で+18%)。'}},
+    {id:'liver_3', name:'魔界ノりりむ', color:'#EF6F94', job:'mage', startUnlocked:false,
+      passive:{name:'ばあっ！', kind:'onHitMpDrain', ratio:0.2, always:true,
+        desc:'常時、攻撃を命中させるたびに与えたダメージの20%をMPとして吸収する。'}},
+    {id:'liver_4', name:'加賀美ハヤト', color:'#B9ADB9', job:'tank', startUnlocked:false,
+      passive:{name:'私……社長ですけど', kind:'lootBonus', dropRateMult:1.3, goldMult:1.3, always:true,
+        desc:'常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が30%上昇する。'}},
+    {id:'liver_5', name:'三枝明那', color:'#F03C32', job:'dps', startUnlocked:false,
+      passive:{name:'最高の人生送ってる。', kind:'statMult', stat:'mpCost', mult:0.85, always:true,
+        desc:'常時、スキルのMP消費が15%軽減される。'}},
+    {id:'liver_6', name:'弦月藤士郎', color:'#B43246', job:'tank', startUnlocked:false,
+      passive:{name:'あなたはあなた', kind:'partyMpCostReduce', mult:0.9, always:true,
+        desc:'常時、パーティ全員のスキルMP消費が10%軽減される。'}},
+    {id:'liver_7', name:'先斗寧', color:'#5A7DFF', job:'mage', startUnlocked:false,
+      passive:{name:'ルー・ベー・リー', kind:'randomAllyBoon', chance:0.18, healRatio:0.15, always:false,
+        desc:'戦闘中、毎ラウンド18%の確率で妖精が味方の誰かを見守り、HPが15%回復する。'}},
+    {id:'liver_8', name:'石神のぞみ', color:'#E6325F', job:'mage', startUnlocked:false,
+      passive:{name:'だってさぁ！', kind:'lowHpAtkBoost', threshold:0.3, mult:1.25, always:false,
+        desc:'自身のHPが30%以下のとき、攻撃力が25%上昇する。'}},
+    {id:'liver_9', name:'風楽奏斗', color:'#FAD246', job:'dps', startUnlocked:false,
+      passive:{name:'楽しんでこっぜ！', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
+        desc:'常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}},
+    {id:'liver_10', name:'栞葉るり', color:'#2887FF', job:'tank', startUnlocked:false,
+      passive:{name:'取締ビーム', kind:'coverAlly', threshold:0.3, always:false,
+        desc:'味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}},
   ];
   const PARTY_MAX = 4; // 編成上限は4のまま。ライバーが5人以上に増えても「誰を連れて行くか」の選択が生まれる設計にする
   function liverDef(id){ return LIVER_DEFS.find(d=>d.id===id); }
@@ -761,7 +791,13 @@
   /* 常時発動系パッシブ(kind:'statMult')による倍率。対象外なら1を返す。 */
   function passiveStatMult(liverId, stat){
     const p = liverDef(liverId).passive;
-    if(p && p.kind==='statMult' && p.stat===stat) return p.mult;
+    if(!p) return 1;
+    if(p.kind==='statMult' && p.stat===stat) return p.mult;
+    if(p.kind==='partySizeStatMult' && (p.stats||[]).includes(stat)){
+      const partySize = (state && state.party) ? state.party.length : 1;
+      const extraMembers = Math.max(0, partySize - 1);
+      return 1 + extraMembers * (p.perMember||0);
+    }
     return 1;
   }
 
@@ -897,10 +933,125 @@
       if(!active) flags.lowEnemyLogged = false;
       return active ? p.mult : 1;
     }
+    if(p.kind === 'lowHpAtkBoost'){
+      const ls = liverState(id);
+      const ratio = ls.maxHp > 0 ? ls.hp / ls.maxHp : 1;
+      const active = ratio <= p.threshold;
+      if(active && !flags.lowHpAtkLogged){
+        flags.lowHpAtkLogged = true;
+        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ 火事場の力で攻撃力が上昇した！`, 'system');
+      }
+      if(!active) flags.lowHpAtkLogged = false;
+      return active ? p.mult : 1;
+    }
+    if(p.kind === 'allyActionStack'){
+      const stacks = flags.stacks || 0;
+      return 1 + stacks * (p.perStack || 0);
+    }
     return 1;
   }
   function combatAtk(id){
-    return Math.round(liverAtk(id) * activeCombatAtkMult(id));
+    return Math.round(liverAtk(id) * activeCombatAtkMult(id) * partyBuffAtkMult());
+  }
+
+  /* 戦闘開始直後のNターンだけパーティ全体にかかる攻撃力バフ倍率(樋口楓)。 */
+  function partyBuffAtkMult(){
+    let mult = 1;
+    state.party.forEach(id=>{
+      const p = liverDef(id).passive;
+      if(p && p.kind==='battleStartPartyBuff' && combatEnemy && (combatEnemy.turnCount||0) < (p.turns||0)){
+        mult *= p.mult;
+      }
+    });
+    return mult;
+  }
+
+  /* ダンジョンのアイテムドロップ率・ゴールド獲得量にかかる倍率(加賀美ハヤト)。 */
+  function partyLootMult(){
+    let dropMult = 1, goldMult = 1;
+    state.party.forEach(id=>{
+      const p = liverDef(id).passive;
+      if(p && p.kind==='lootBonus'){
+        dropMult *= (p.dropRateMult || 1);
+        goldMult *= (p.goldMult || 1);
+      }
+    });
+    return { dropMult, goldMult };
+  }
+
+  /* パーティ全員のスキルMP消費にかかる倍率(弦月藤士郎)。 */
+  function partyMpCostMult(){
+    let mult = 1;
+    state.party.forEach(id=>{
+      const p = liverDef(id).passive;
+      if(p && p.kind==='partyMpCostReduce') mult *= (p.mult || 1);
+    });
+    return mult;
+  }
+
+  /* 攻撃命中時、与ダメージの一部をMPとして吸収する(魔界ノりりむ)。
+   * 戻り値は実際に回復したMP量(戦闘ログへの追記に使う)。 */
+  function applyOnHitMpDrain(liverId, dmg){
+    const ls = liverState(liverId);
+    const p = liverDef(liverId).passive;
+    if(!p || p.kind !== 'onHitMpDrain' || dmg <= 0) return 0;
+    const before = ls.mp;
+    ls.mp = Math.min(ls.maxMp, ls.mp + Math.max(1, Math.round(dmg * p.ratio)));
+    return ls.mp - before;
+  }
+
+  /* 毎ラウンド低確率で発動する妖精の加護(先斗寧)。ラウンド開始時に1回だけ判定する。 */
+  function maybeTriggerFairyBoon(){
+    const holderId = state.party.find(id=>{
+      const p = liverDef(id).passive;
+      return p && p.kind==='randomAllyBoon' && liverState(id) && liverState(id).hp > 0;
+    });
+    if(!holderId) return;
+    const p = liverDef(holderId).passive;
+    if(Math.random() >= (p.chance||0)) return;
+    const alive = alivePartyIds();
+    if(!alive.length) return;
+    const targetId = alive[Math.floor(Math.random()*alive.length)];
+    const ls = liverState(targetId);
+    const before = ls.hp;
+    ls.hp = Math.min(ls.maxHp, ls.hp + Math.round(ls.maxHp * (p.healRatio||0)));
+    const healed = ls.hp - before;
+    if(healed <= 0) return;
+    pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}のHPが${healed}回復した！`, 'system');
+  }
+
+  /* 仲間が行動するたびに攻撃力が蓄積していくパッシブの通知用(風楽奏斗)。
+   * 行動した本人以外で、このパッシブを持つ生存中の味方のスタックを進める。 */
+  function notifyAllyActed(actorId){
+    state.party.forEach(id=>{
+      if(id === actorId) return;
+      const ls = liverState(id);
+      if(!ls || ls.hp <= 0) return;
+      const p = liverDef(id).passive;
+      if(!p || p.kind !== 'allyActionStack') return;
+      if(!combatPassiveFlags[id]) combatPassiveFlags[id] = {};
+      const cur = combatPassiveFlags[id].stacks || 0;
+      combatPassiveFlags[id].stacks = Math.min(p.maxStacks||99, cur+1);
+    });
+  }
+
+  /* 敵の攻撃対象を、かばう役がいれば入れ替える(栞葉るり)。 */
+  function applyCoverRedirect(targetId){
+    if(!targetId) return targetId;
+    const targetLs = liverState(targetId);
+    if(!targetLs || targetLs.maxHp <= 0) return targetId;
+    const coverId = state.party.find(id=>{
+      if(id === targetId) return false;
+      const ls = liverState(id);
+      if(!ls || ls.hp <= 0) return false;
+      const p = liverDef(id).passive;
+      return p && p.kind === 'coverAlly';
+    });
+    if(!coverId) return targetId;
+    const p = liverDef(coverId).passive;
+    if((targetLs.hp/targetLs.maxHp) > (p.threshold||0)) return targetId;
+    pushLog(`${liverDef(coverId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}をかばった！`, 'system');
+    return coverId;
   }
 
   /* ライバーの属性耐性。レベルアップでは伸びず、装備(・将来的にはスキル等の
@@ -1268,7 +1419,8 @@
   }
 
   function maybeDropItem(depth){
-    if(Math.random() < 0.42){
+    const { dropMult, goldMult } = partyLootMult();
+    if(Math.random() < 0.42 * dropMult){
       const type = Math.random() < 0.5 ? 'weapon' : 'armor';
       const item = makeItem(type, depth);
       if(addItemToInventory(item)){
@@ -1276,7 +1428,7 @@
       }
     }
     if(Math.random() < 0.3){
-      const g = Math.round(4 + depth*1.5 + Math.random()*6);
+      const g = Math.round((4 + depth*1.5 + Math.random()*6) * goldMult);
       state.gold += g;
       pushLog(`${g} 枚の古い硬貨を見つけた。`, 'reward');
     }
@@ -1295,6 +1447,12 @@
     pendingDefBuffs = {};
     combatPassiveFlags = {};
     pushLog(`Lv.${enemy.level} ${enemy.name}${enemy.boss?'が行く手を阻んだ！':'が現れた。'}`, 'danger');
+    state.party.forEach(id=>{
+      const p = liverDef(id).passive;
+      if(p && p.kind==='battleStartPartyBuff'){
+        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ パーティ全体の士気が高まった！`, 'system');
+      }
+    });
     render();
   }
 
@@ -1334,19 +1492,26 @@
     });
     const chosen = weightedPick(pool);
 
+    /* 攻撃命中時、りりむの「ばあっ！」等によるMP吸収をログ末尾に追記するための小ヘルパー */
+    const drainSuffix = (dmg) => {
+      const drained = applyOnHitMpDrain(liverId, dmg);
+      return drained > 0 ? ` (MP+${drained})` : '';
+    };
+
     if(!chosen){
       const dmg = Math.max(1, combatAtk(liverId) - combatEnemy._def + rnd(-1,2));
       combatEnemyHp -= dmg;
-      pushLog(`${name}の攻撃！ ${combatEnemy.name}に ${dmg} のダメージ。`, 'combat');
+      pushLog(`${name}の攻撃！ ${combatEnemy.name}に ${dmg} のダメージ。${drainSuffix(dmg)}`, 'combat');
       return;
     }
 
-    ls.mp -= chosen.mpCost;
+    const mpCost = Math.max(0, Math.round(chosen.mpCost * passiveStatMult(liverId,'mpCost') * partyMpCostMult()));
+    ls.mp -= mpCost;
 
     if(chosen.kind === 'trueDamageSpell'){
       const dmg = Math.max(1, Math.round(combatAtk(liverId)*chosen.mult) + rnd(-1,3));
       combatEnemyHp -= dmg;
-      pushLog(`${name}の「${chosen.name}」！ 防御を貫く ${dmg} のダメージ。(MP-${chosen.mpCost})`, 'combat');
+      pushLog(`${name}の「${chosen.name}」！ 防御を貫く ${dmg} のダメージ。(MP-${mpCost})${drainSuffix(dmg)}`, 'combat');
       return;
     }
     if(chosen.kind === 'element'){
@@ -1356,9 +1521,9 @@
       combatEnemyHp -= dmg;
       const elLabel = ELEMENT_LABELS[chosen.element] || '';
       pushLog(
-        isWeak
-          ? `${name}の「${chosen.name}」！ 弱点(${elLabel})を突き、${dmg} のダメージ！(MP-${chosen.mpCost})`
-          : `${name}の「${chosen.name}」！ ${dmg} のダメージ(弱点不一致)。(MP-${chosen.mpCost})`,
+        (isWeak
+          ? `${name}の「${chosen.name}」！ 弱点(${elLabel})を突き、${dmg} のダメージ！(MP-${mpCost})`
+          : `${name}の「${chosen.name}」！ ${dmg} のダメージ(弱点不一致)。(MP-${mpCost})`) + drainSuffix(dmg),
         isWeak ? 'reward' : 'combat'
       );
       return;
@@ -1367,20 +1532,20 @@
       const dmg1 = Math.max(1, combatAtk(liverId) - combatEnemy._def + rnd(-1,2));
       const dmg2 = Math.max(1, Math.round(combatAtk(liverId)*0.6) - Math.round(combatEnemy._def*0.5) + rnd(-1,2));
       combatEnemyHp -= (dmg1+dmg2);
-      pushLog(`${name}の「${chosen.name}」！ ${dmg1}+${dmg2} の連続攻撃。(MP-${chosen.mpCost})`, 'combat');
+      pushLog(`${name}の「${chosen.name}」！ ${dmg1}+${dmg2} の連続攻撃。(MP-${mpCost})${drainSuffix(dmg1+dmg2)}`, 'combat');
       return;
     }
     if(chosen.kind === 'defBuff'){
       pendingDefBuffs[liverId] = chosen.reduceMult || 0.6;
       const dmg = Math.max(1, combatAtk(liverId) - combatEnemy._def + rnd(-1,2));
       combatEnemyHp -= dmg;
-      pushLog(`${name}の「${chosen.name}」！ 身構えながら ${dmg} のダメージ。次の攻撃に備える。(MP-${chosen.mpCost})`, 'combat');
+      pushLog(`${name}の「${chosen.name}」！ 身構えながら ${dmg} のダメージ。次の攻撃に備える。(MP-${mpCost})${drainSuffix(dmg)}`, 'combat');
       return;
     }
     if(chosen.kind === 'heal'){
       const heal = Math.round(ls.maxHp*chosen.healMult);
       ls.hp = Math.min(ls.maxHp, ls.hp+heal);
-      pushLog(`${name}の「${chosen.name}」！ HPが ${heal} 回復した。(MP-${chosen.mpCost})`, 'reward');
+      pushLog(`${name}の「${chosen.name}」！ HPが ${heal} 回復した。(MP-${mpCost})`, 'reward');
       return;
     }
   }
@@ -1420,8 +1585,9 @@
    */
   function enemyTurnDamage(){
     combatEnemy.turnCount = (combatEnemy.turnCount||0) + 1;
-    const target = pickRandomAliveTarget();
+    let target = pickRandomAliveTarget();
     if(!target) return; // 全滅済み(念のため)
+    target = applyCoverRedirect(target);
     const targetName = liverDef(target).name;
 
     if(combatEnemy.charging){
@@ -1486,12 +1652,16 @@
       await sleep(550);
       if(!inCombat || combatPhase !== 'auto') return;
 
+      maybeTriggerFairyBoon();
+      render();
+
       // パーティ全員が(生存していれば)順番に行動する。1人ずつログを反映してから
       // 少し間を置くことで、誰が何をしたのか追いやすくする。
       for(const id of state.party){
         if(!inCombat || combatPhase !== 'auto') return;
         if(liverState(id).hp <= 0) continue; // 戦闘不能者はスキップ
         playerTurnAction(id);
+        notifyAllyActed(id);
         render();
         if(combatEnemyHp <= 0) break;
         await sleep(280);
@@ -2423,7 +2593,7 @@
       const passiveRow = passive ? `
         <div class="inv-item" style="border-left-color:${def.color};">
           <span class="inv-item-name">
-            ${esc(passive.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${passive.kind==='statMult'?'常時発動':'条件付き発動'})</span><br>
+            ${esc(passive.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${passive.always?'常時発動':'条件付き発動'})</span><br>
             <span style="color:var(--text-muted);font-size:11px;">${esc(passive.desc)}</span>
           </span>
         </div>` : '';
