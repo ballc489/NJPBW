@@ -737,16 +737,16 @@
    *   kind:'allyDownRage'   味方が戦闘不能になった瞬間、以後の自分の攻撃力をmult倍(1戦闘に1度)。発動時にログを出す
    * --------------------------------------------------------------- */
   const LIVER_DEFS = [
-    {id:'liver_1', name:'樋口楓', title:'アタッカー', color:'#FBAF71', job:'dps', startUnlocked:false},
-    {id:'liver_2', name:'ジョー・力一', title:'魔導師', color:'#D598DD', job:'mage', startUnlocked:false},
-    {id:'liver_3', name:'魔界ノりりむ', title:'魔導師', color:'#EF6F94', job:'mage', startUnlocked:false},
-    {id:'liver_4', name:'加賀美ハヤト', title:'盾役', color:'#B9ADB9', job:'tank', startUnlocked:false},
-    {id:'liver_5', name:'三枝明那', title:'アタッカー', color:'#F03C32', job:'dps', startUnlocked:false},
-    {id:'liver_6', name:'弦月藤士郎', title:'盾役', color:'#B43246', job:'tank', startUnlocked:false},
-    {id:'liver_7', name:'先斗寧', title:'魔導師', color:'#5A7DFF', job:'mage', startUnlocked:false},
-    {id:'liver_8', name:'石神のぞみ', title:'魔導師', color:'#E6325F', job:'mage', startUnlocked:false},
-    {id:'liver_9', name:'風楽奏斗', title:'アタッカー', color:'#FAD246', job:'dps', startUnlocked:false},
-    {id:'liver_10', name:'栞葉るり', title:'盾役', color:'#2887FF', job:'tank', startUnlocked:false},
+    {id:'liver_1', name:'樋口楓', color:'#FBAF71', job:'dps', startUnlocked:false},
+    {id:'liver_2', name:'ジョー・力一', color:'#D598DD', job:'mage', startUnlocked:false},
+    {id:'liver_3', name:'魔界ノりりむ', color:'#EF6F94', job:'mage', startUnlocked:false},
+    {id:'liver_4', name:'加賀美ハヤト', color:'#B9ADB9', job:'tank', startUnlocked:false},
+    {id:'liver_5', name:'三枝明那', color:'#F03C32', job:'dps', startUnlocked:false},
+    {id:'liver_6', name:'弦月藤士郎', color:'#B43246', job:'tank', startUnlocked:false},
+    {id:'liver_7', name:'先斗寧', color:'#5A7DFF', job:'mage', startUnlocked:false},
+    {id:'liver_8', name:'石神のぞみ', color:'#E6325F', job:'mage', startUnlocked:false},
+    {id:'liver_9', name:'風楽奏斗', color:'#FAD246', job:'dps', startUnlocked:false},
+    {id:'liver_10', name:'栞葉るり', color:'#2887FF', job:'tank', startUnlocked:false},
   ];
   const PARTY_MAX = 4; // 編成上限は4のまま。ライバーが5人以上に増えても「誰を連れて行くか」の選択が生まれる設計にする
   function liverDef(id){ return LIVER_DEFS.find(d=>d.id===id); }
@@ -1963,7 +1963,7 @@
         <button data-pick-liver="${def.id}" class="create-liver-card${selected?' selected':''}" style="${selected?`border-color:${def.color};`:''}">
           <span class="create-liver-chip" style="background:${def.color};"></span>
           <span class="create-liver-name">${esc(def.name)}</span>
-          <span class="create-liver-title">${esc(def.title)} ・ ${esc(JOB_DEFS[def.job].name)}</span>
+          <span class="create-liver-title">${esc(JOB_DEFS[def.job].name)}</span>
           ${def.passive ? `<span class="create-liver-title" style="opacity:.8;">パッシブ:${esc(def.passive.name)}</span>` : ''}
         </button>`;
     }).join('');
@@ -2182,7 +2182,7 @@
           <p class="log-entry system">運命の糸が、ひとりのライバーを示している……</p>
           <div class="inv-item" style="border-left-color:${candidateDef.color};">
             <span style="width:10px;height:10px;background:${candidateDef.color};display:inline-block;margin-right:8px;"></span>
-            <span class="inv-item-name">${esc(candidateDef.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(candidateDef.title)}</span></span>
+            <span class="inv-item-name">${esc(candidateDef.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(JOB_DEFS[candidateDef.job].name)}</span></span>
           </div>
           <p style="color:var(--text-muted);font-size:11px;margin:8px 0 0;">
             ${pendingGacha.rolling ? '広告を視聴中……' : `引き直し残り ${rerollsLeft}/${DESTINY_MAX_REROLLS}回(広告視聴で引き直せる。現在は仮の演出です)`}
@@ -2199,7 +2199,7 @@
     const guaranteedRows = unclaimed.length ? unclaimed.map(def=>`
         <div class="inv-item" style="border-left-color:${def.color};">
           <span style="width:10px;height:10px;background:${def.color};display:inline-block;margin-right:8px;"></span>
-          <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(def.title)}</span></span>
+          <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(JOB_DEFS[def.job].name)}</span></span>
           <span class="inv-item-actions">
             <button data-use-guaranteed="${def.id}" ${state.guaranteedTickets<=0?'disabled':''}>指名して迎える</button>
           </span>
