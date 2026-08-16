@@ -1,0 +1,2700 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灰燼記</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{
+    /* 大地(背景) */
+    --field-sky:#8fcbe8;
+    --field-ground:#3f7d3f;
+    --field-ground-dark:#2c5c2c;
+
+    /* ウィンドウ(定番RPGの紺ウィンドウ) */
+    --win-bg-1:#1c2e6e;
+    --win-bg-2:#0e1a45;
+    --win-border:#f3ecd2;
+    --win-border-inner:#0a1230;
+
+    --text-primary:#f5f1de;
+    --text-muted:#a9b6dd;
+    --gold:#ffd863;
+    --hp-red:#ef5a5a;
+    --danger:#ff8a6a;
+    --rare-uncommon:#8fe08f;
+    --rare-rare:#ffd863;
+    --rare-epic:#ff9f5a;
+
+    --font-display:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic Medium","Yu Gothic","Meiryo",sans-serif;
+    --font-body:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic Medium","Yu Gothic","Meiryo",sans-serif;
+    --font-mono:'IBM Plex Mono', monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      linear-gradient(180deg, var(--field-sky) 0%, var(--field-sky) 18%, var(--field-ground) 42%, var(--field-ground-dark) 100%);
+    color:var(--text-primary);
+    font-family:var(--font-body);
+    min-height:100vh;
+    padding:24px 16px 60px;
+  }
+  .wrap{max-width:980px;margin:0 auto;}
+
+  header{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    padding-bottom:14px;margin-bottom:20px;
+    flex-wrap:wrap;gap:10px;
+  }
+  h1{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:clamp(24px,4vw,32px);
+    margin:0;
+    letter-spacing:0.02em;
+    color:#fff;
+    text-shadow:2px 2px 0 #2c5c2c, 0 0 10px rgba(0,0,0,0.35);
+  }
+  h1 span{color:var(--gold);}
+  .subtitle{font-family:var(--font-mono);font-size:12px;color:#eef3ff;letter-spacing:0.08em;margin-top:4px;text-shadow:1px 1px 0 #2c5c2c;}
+  .depth-badge{
+    font-family:var(--font-mono);
+    font-size:12px;color:var(--gold);
+    border:2px solid var(--win-border);
+    box-shadow:inset 0 0 0 2px var(--win-border-inner);
+    padding:8px 14px;border-radius:0;
+    background:linear-gradient(180deg,var(--win-bg-1),var(--win-bg-2));
+    white-space:nowrap;
+    display:flex;flex-direction:column;gap:5px;min-width:150px;
+  }
+  .badge-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .badge-location{color:#eef3ff;font-size:11px;letter-spacing:0.03em;justify-content:flex-start;}
+  .badge-gold{color:var(--gold);font-size:15px;font-weight:700;justify-content:flex-start;}
+  .badge-progress-track{flex:1 1 auto;height:6px;background:#0a1230;border:1px solid var(--win-border-inner);}
+  .badge-progress-fill{display:block;height:100%;background:linear-gradient(90deg,#3a7a3a,var(--rare-uncommon));}
+
+  .layout{display:grid;grid-template-columns:1fr 260px 260px;gap:18px;align-items:start;}
+  @media (max-width:900px){.layout{grid-template-columns:1fr;}}
+
+  /* --- 共通スクロールボックス --- */
+  .scrollbox{overflow-y:auto;padding-right:6px;}
+  .scrollbox::-webkit-scrollbar{width:6px;}
+  .scrollbox::-webkit-scrollbar-thumb{background:var(--win-border);}
+
+  /* --- Scene viewport: classic RPG window --- */
+  .scene{
+    position:relative;
+    background:linear-gradient(180deg,var(--win-bg-1),var(--win-bg-2));
+    border:2px solid var(--win-border);
+    box-shadow:inset 0 0 0 2px var(--win-border-inner);
+    border-radius:0;
+    padding:22px 22px;
+    min-height:220px;
+    display:block;
+  }
+
+  .scene-text{
+    font-size:16px;line-height:1.8;
+    min-height:32px;
+  }
+  .scene-text .log-entry{margin:0 0 6px;}
+  .scene-text .log-entry.combat{color:#ffd0b0;}
+  .scene-text .log-entry.reward{color:var(--gold);}
+  .scene-text .log-entry.danger{color:var(--danger);}
+  .scene-text .log-entry.system{color:var(--text-muted);}
+
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;}
+  button{
+    font-family:var(--font-body);font-size:14px;
+    background:linear-gradient(180deg,var(--win-bg-1),var(--win-bg-2));
+    color:var(--text-primary);
+    border:2px solid var(--win-border);
+    box-shadow:inset 0 0 0 1px var(--win-border-inner);
+    padding:10px 18px;border-radius:0;
+    cursor:pointer;
+    transition:border-color .1s, background .1s, padding-left .1s;
+  }
+  button:hover:not(:disabled){border-color:var(--gold);background:linear-gradient(180deg,#28398a,#152252);padding-left:22px;}
+  button:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+  button:disabled{opacity:0.4;cursor:not-allowed;}
+  button.primary{border-color:var(--gold);color:#fff;font-weight:600;}
+  button.primary:hover:not(:disabled){background:linear-gradient(180deg,#2d4099,#17245c);}
+  button.danger{border-color:var(--danger);}
+  button.danger:hover:not(:disabled){background:linear-gradient(180deg,#5a2a2a,#3a1717);}
+
+  .section-label{
+    font-family:var(--font-mono);font-size:11px;color:var(--gold);
+    letter-spacing:.08em;margin:0 0 8px;text-transform:uppercase;
+  }
+  .section-block{margin-top:18px;}
+  .name-input{
+    width:100%;padding:10px;font-family:var(--font-body);font-size:14px;
+    background:#0e1a45;border:2px solid var(--win-border);color:var(--text-primary);
+    border-radius:0;margin-top:8px;
+  }
+
+  /* --- Sidebar: character sheet --- */
+  .panel{
+    background:linear-gradient(180deg,var(--win-bg-1),var(--win-bg-2));
+    border:2px solid var(--win-border);
+    box-shadow:inset 0 0 0 2px var(--win-border-inner);
+    border-radius:0;
+    padding:16px;
+    margin-bottom:16px;
+  }
+  .panel h2{
+    font-family:var(--font-mono);
+    font-size:11px;letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--gold);
+    margin:0 0 12px;
+    border-bottom:1px solid rgba(255,255,255,0.25);
+    padding-bottom:8px;
+  }
+  .scene-heading{
+    font-family:var(--font-mono);
+    font-size:11px;letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--gold);
+    margin:0 0 14px;
+    border-bottom:1px solid rgba(255,255,255,0.25);
+    padding-bottom:8px;
+  }
+  .history-panel{margin-top:16px;}
+  .history-log{
+    max-height:118px;
+    font-family:var(--font-mono);font-size:12px;line-height:1.65;
+  }
+  .history-log p{margin:0 0 4px;}
+  .history-log .combat{color:#ffd0b0;}
+  .history-log .reward{color:var(--gold);}
+  .history-log .danger{color:var(--danger);}
+  .history-log .system{color:var(--text-muted);}
+
+  .inventory-scroll{max-height:214px;}
+  .inventory-count{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin:-4px 0 10px;}
+  .char-name{font-family:var(--font-display);font-size:19px;font-weight:700;margin:0 0 2px;color:#fff;}
+  .char-level{font-family:var(--font-mono);font-size:12px;color:var(--gold);margin:0 0 14px;}
+
+  .bar-row{margin-bottom:10px;}
+  .bar-label{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-bottom:3px;}
+  .bar-track{height:10px;background:#0a1230;border-radius:0;overflow:hidden;border:1px solid var(--win-border);}
+  .bar-fill{height:100%;transition:width .3s ease;}
+  .bar-fill.hp{background:linear-gradient(90deg,#c62f2f,var(--hp-red));}
+  .bar-fill.mp{background:linear-gradient(90deg,#2a5ec9,#5a9bf0);}
+  .bar-fill.exp{background:linear-gradient(90deg,#c99a1e,var(--gold));}
+
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-family:var(--font-mono);font-size:13px;margin-top:12px;}
+  .stat-grid div{color:var(--text-muted);}
+  .stat-grid strong{color:var(--text-primary);font-weight:600;}
+
+  .equip-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:4px 0;border-bottom:1px dashed rgba(255,255,255,0.2);}
+  .equip-row:last-child{border-bottom:none;}
+  .equip-slot{color:var(--text-muted);font-family:var(--font-mono);font-size:11px;}
+  .equip-row button{padding:3px 9px;font-size:11px;margin-left:8px;}
+
+  .inv-item{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:7px 8px;margin-bottom:6px;
+    background:rgba(255,255,255,0.06);border-radius:0;font-size:13px;
+    border-left:4px solid var(--text-muted);
+    cursor:default;
+  }
+  .inv-item.common{border-left-color:var(--text-muted);}
+  .inv-item.uncommon{border-left-color:var(--rare-uncommon);}
+  .inv-item.rare{border-left-color:var(--rare-rare);}
+  .inv-item.epic{border-left-color:var(--rare-epic);}
+  .inv-item button{padding:4px 10px;font-size:11px;}
+  .inv-item-name{flex:1 1 auto;min-width:0;margin-right:8px;overflow-wrap:break-word;}
+  .inv-item-actions{flex:0 0 auto;display:flex;gap:6px;white-space:nowrap;}
+  .inv-empty{color:var(--text-muted);font-size:12px;font-style:italic;}
+
+  .gold-line{font-family:var(--font-mono);font-size:13px;color:var(--gold);margin-top:6px;}
+
+  .party-compact-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px dashed rgba(255,255,255,0.15);}
+  .party-compact-row:last-of-type{border-bottom:none;}
+  .party-compact-row.ko{opacity:.5;}
+  .party-compact-chip{width:9px;height:9px;flex:0 0 auto;display:inline-block;}
+  .party-compact-name{font-family:var(--font-mono);font-size:12px;width:82px;flex:0 0 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .party-compact-lv{display:block;color:var(--text-muted);font-size:10px;}
+  .party-compact-bars{flex:1 1 auto;display:flex;flex-direction:column;gap:3px;}
+  .mini-bar-track{display:block;height:5px;background:#0a1230;border:1px solid var(--win-border-inner);}
+  .mini-bar-fill{display:block;height:100%;}
+  .mini-bar-fill.hp{background:linear-gradient(90deg,#c62f2f,var(--hp-red));}
+  .mini-bar-fill.mp{background:linear-gradient(90deg,#2a5ec9,#5a9bf0);}
+  .party-compact-hp{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);width:60px;flex:0 0 auto;text-align:right;}
+
+  /* character creation */
+  .create-box{max-width:440px;margin:60px auto;text-align:center;}
+  .create-box input{
+    width:100%;padding:12px;font-family:var(--font-body);font-size:16px;
+    background:#0e1a45;border:2px solid var(--win-border);color:var(--text-primary);
+    border-radius:0;margin:14px 0;
+  }
+  .create-box p{color:var(--text-muted);line-height:1.7;font-size:14px;}
+  .create-liver-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px;}
+  .create-liver-card{
+    display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;
+    background:linear-gradient(180deg,var(--win-bg-1),var(--win-bg-2));
+    border:2px solid var(--win-border);cursor:pointer;color:var(--text-primary);
+  }
+  .create-liver-card:hover{border-color:var(--gold);}
+  .create-liver-card.selected{box-shadow:0 0 0 2px var(--gold) inset;}
+  .create-liver-chip{width:16px;height:16px;border-radius:50%;}
+  .create-liver-name{font-family:var(--font-mono);font-size:13px;}
+  .create-liver-title{font-size:11px;color:var(--text-muted);}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const GAME_TITLE_HTML = '灰燼<span>記</span>';
+  const GAME_SUBTITLE = 'CHRONICLES OF THE ASHEN AGE';
+
+  /* ---------------------------------------------------------------
+   * Supabase接続設定
+   * SUPABASE_ANON_KEY は「ブラウザに埋め込んでよい公開用の鍵」
+   * (sb_publishable_...)。Row Level Securityが正しく設定されている
+   * 前提で安全に公開できる。
+   * --------------------------------------------------------------- */
+  const SUPABASE_URL = 'https://rdvdfnbtehdqsvqunpxa.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_2xCoQ-5GyH-9yNWRFrwGOA_-siKxE0Q';
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  /* 匿名認証でのログインを保証する。既にセッションがあればそれを使い、
+   * 無ければ新規に匿名ユーザーとしてサインインする。 */
+  async function ensureAuth(){
+    const { data: { session } } = await sb.auth.getSession();
+    if(session && session.user) return session.user.id;
+    const { data, error } = await sb.auth.signInAnonymously();
+    if(error){
+      console.error('anonymous sign-in failed', error);
+      throw error;
+    }
+    return data.user.id;
+  }
+
+  /* ---------------------------------------------------------------
+   * 敵データ(レベル別ステータス早見表)
+   * ここが将来的にCSV/スプレッドシートへ切り出す想定のテーブルです。
+   * level, hp, atk, def, exp の5列。プレイヤーの成長曲線
+   * (maxHp=30+8L, atk=5+2L, def=2+L)に対して、同レベルの敵は
+   * やや弱め、2〜3レベル上で苦戦、4レベル以上で厳しい、を目安に調整しています。
+   * --------------------------------------------------------------- */
+  const ENEMY_LEVEL_CURVE = [
+    {level:1,  hp:16, atk:5,  def:1, exp:6},
+    {level:2,  hp:22, atk:6,  def:2, exp:9},
+    {level:3,  hp:29, atk:8,  def:2, exp:13},
+    {level:4,  hp:36, atk:9,  def:3, exp:18},
+    {level:5,  hp:44, atk:11, def:4, exp:24},
+    {level:6,  hp:53, atk:12, def:4, exp:31},
+    {level:7,  hp:63, atk:14, def:5, exp:39},
+    {level:8,  hp:74, atk:16, def:6, exp:48},
+    {level:9,  hp:86, atk:17, def:6, exp:58},
+    {level:10, hp:99, atk:19, def:7, exp:69},
+  ];
+  function statsForLevel(level){
+    if(level <= ENEMY_LEVEL_CURVE.length) return ENEMY_LEVEL_CURVE[level-1];
+    const last = ENEMY_LEVEL_CURVE[ENEMY_LEVEL_CURVE.length-1];
+    const extra = level - ENEMY_LEVEL_CURVE.length;
+    return {level, hp:last.hp+extra*13, atk:last.atk+extra*2, def:last.def+extra*1, exp:last.exp+extra*11};
+  }
+
+  /* ---------------------------------------------------------------
+   * 敵のスキル定義について
+   * kind:'trueDamage'   … 発動したそのターンに即、防御力無視の大ダメージ
+   * kind:'telegraphed'  … 発動ターンは「予告」のみで攻撃せず、次の敵ターンで
+   *                        防御力無視の大ダメージを確定発動する(温存した分、
+   *                        威力はtrueDamageより高め)
+   * everyNTurns … その敵の攻撃ターン数がこの倍数になるたび判定
+   * ここに新しいkindを増やせば、状態異常などにも拡張しやすい構造にしています。
+   * --------------------------------------------------------------- */
+
+  /* 敵の「型」。同じレベル数値でも、タイプごとに得意不得意・スキル有無・属性弱点が出る */
+  const ENEMY_POOLS = {
+    ashen: [
+      {key:'automaton', name:'錆びついた自動人形', hpMult:1.10, atkMult:0.90, defMult:1.25, weakness:'thunder',
+        skills:[{key:'shock', name:'帯電の一撃', everyNTurns:4, kind:'telegraphed', mult:2.4, element:'thunder',
+          warnText:'{name}の関節から放電音が響き始めた……', executeText:'放電と共に強烈な一撃が突き刺さった！'}]},
+      {key:'spider',    name:'瓦礫グモ',           hpMult:0.80, atkMult:1.20, defMult:0.75, weakness:'fire',
+        skills:[{key:'leap', name:'跳躍からの一撃', everyNTurns:3, kind:'telegraphed', mult:2.6,
+          warnText:'{name}が壁を蹴り、跳躍の姿勢を取った……', executeText:'跳躍からの一撃が突き刺さった！'}]},
+      {key:'wraith',    name:'迷いし亡霊',         hpMult:0.90, atkMult:1.10, defMult:0.85, weakness:'ice',
+        skills:[{key:'curse', name:'呪いの一撃', everyNTurns:4, kind:'trueDamage', mult:1.9, element:'ice'}]},
+      {key:'guardian',  name:'苔むした番人',       hpMult:1.30, atkMult:0.80, defMult:1.35, weakness:'thunder'},
+      {key:'looter',    name:'廃墟の盗掘者',       hpMult:0.90, atkMult:1.00, defMult:0.95, weakness:'fire'},
+    ],
+    spire: [
+      {key:'spire_mage',  name:'尖塔の魔導兵',     hpMult:1.00, atkMult:1.05, defMult:1.00, weakness:'ice',
+        skills:[{key:'bolt', name:'収束する光弾', everyNTurns:4, kind:'telegraphed', mult:2.8, element:'thunder',
+          warnText:'{name}の掌に光が収束していく……', executeText:'収束した光弾が撃ち込まれた！'}]},
+      {key:'gargoyle',    name:'浮遊するガーゴイル', hpMult:0.85, atkMult:1.15, defMult:0.80, weakness:'thunder',
+        skills:[{key:'dive', name:'急降下の一撃', everyNTurns:3, kind:'trueDamage', mult:1.9}]},
+      {key:'sentinel',    name:'錆びた守衛人形',   hpMult:1.30, atkMult:0.85, defMult:1.30, weakness:'fire'},
+      {key:'geometrid',   name:'歪んだ幾何獣',     hpMult:0.90, atkMult:1.10, defMult:0.90, weakness:'ice',
+        skills:[{key:'phase', name:'位相の歪み', everyNTurns:3, kind:'telegraphed', mult:2.3,
+          warnText:'{name}の輪郭が揺らぎ始めた……', executeText:'歪んだ空間から一撃が放たれた！'}]},
+      {key:'archive',     name:'尖塔の書架霊',     hpMult:0.95, atkMult:1.00, defMult:0.85, weakness:'thunder'},
+    ],
+  };
+  const ELEMENT_LABELS = {fire:'火', ice:'氷', thunder:'雷'};
+
+  /* depthに応じて「プレイヤーlevelとの差」の出やすさを変える重み表 */
+  function pickLevelOffset(depth){
+    const tiers = depth <= 5
+      ? [[-1,20],[0,55],[1,20],[2,5]]
+      : depth <= 15
+        ? [[-1,5],[0,30],[1,35],[2,22],[3,8]]
+        : [[0,10],[1,25],[2,30],[3,25],[4,10]];
+    const total = tiers.reduce((s,t)=>s+t[1],0);
+    let r = Math.random()*total;
+    for(const [off,w] of tiers){ if(r < w) return off; r -= w; }
+    return 0;
+  }
+
+  /* パーティ人数が多いほど1ラウンドの総火力が上がるため、敵HPを人数に応じて
+   * 底上げする(4人編成が既定の想定バランス値=1.0倍)。人数は編成に合わせて
+   * 増減可能なので、少人数パーティでは相対的に敵が弱く感じられる想定。
+   * 実際のバランスは今後の調整用に係数だけ切り出してある。 */
+  function partySizeHpMult(){
+    const n = Math.max(1, state.party.length);
+    return 0.4 + n*0.6; // 1人:1.0 / 2人:1.6 / 3人:2.2 / 4人:2.8
+  }
+
+  function spawnEnemy(dungeonDef, depth, isBoss){
+    if(isBoss){
+      const b = dungeonDef.boss;
+      const level = Math.max(1, partyLevel() + 4 + (dungeonDef.bossLevelBonus||0));
+      const base = statsForLevel(level);
+      const hp  = Math.max(5, Math.round(base.hp  * b.hpMult * partySizeHpMult()));
+      const atk = Math.max(1, Math.round(base.atk * b.atkMult));
+      const def = Math.max(0, Math.round(base.def * b.defMult));
+      const exp = Math.round(base.exp * 1.6);
+      return {name:b.name, level, hp, maxHp:hp, atk, def, exp, boss:true, skills:b.skills||[], weakness:b.weakness||null};
+    }
+    const pool = ENEMY_POOLS[dungeonDef.pool] || ENEMY_POOLS.ashen;
+    const type = pool[Math.floor(Math.random()*pool.length)];
+    const level = Math.max(1, partyLevel() + pickLevelOffset(depth));
+    const base = statsForLevel(level);
+    const hp  = Math.max(5, Math.round(base.hp  * type.hpMult * partySizeHpMult()));
+    const atk = Math.max(1, Math.round(base.atk * type.atkMult));
+    const def = Math.max(0, Math.round(base.def * type.defMult));
+    const exp = Math.round(base.exp);
+    return {name:type.name, level, hp, maxHp:hp, atk, def, exp, boss:false, skills:type.skills||[], weakness:type.weakness||null};
+  }
+
+  const WEAPON_BASES = ['折れた剣','錆びた斧','迷宮の槍','朽ちた弓','亡霊の短剣'];
+  const ARMOR_BASES = ['苔の鎧','破れた外套','石の盾','錆びた鎧','古代の護符'];
+
+  const RARITY = {
+    common:   {label:'コモン',   cls:'common',   mult:1.0, weight:60},
+    uncommon: {label:'アンコモン',cls:'uncommon', mult:1.5, weight:25},
+    rare:     {label:'レア',     cls:'rare',     mult:2.2, weight:12},
+    epic:     {label:'エピック', cls:'epic',     mult:3.2, weight:3},
+  };
+
+  function rollRarity(){
+    const total = Object.values(RARITY).reduce((s,r)=>s+r.weight,0);
+    let roll = Math.random()*total;
+    for(const key in RARITY){
+      if(roll < RARITY[key].weight) return key;
+      roll -= RARITY[key].weight;
+    }
+    return 'common';
+  }
+
+  /* 防具にのみ、一定確率で属性耐性の付与(まれにマイナス=弱点化も)が付く。
+   * レアリティが高いほど数値が大きくなりやすい。 */
+  function rollResistAffix(rarityKey){
+    if(Math.random() > 0.35) return null;
+    const elements = Object.keys(ELEMENT_LABELS);
+    const element = elements[Math.floor(Math.random()*elements.length)];
+    const magnitudeByRarity = {common:1, uncommon:1, rare:2, epic:3};
+    let value = magnitudeByRarity[rarityKey] || 1;
+    if(Math.random() < 0.2) value = -Math.max(1, Math.round(value*0.7)); // まれに弱点化する「訳あり」装備
+    return { element, value };
+  }
+
+  function makeItem(type, depth){
+    const rarityKey = rollRarity();
+    const rarity = RARITY[rarityKey];
+    const base = type==='weapon'
+      ? WEAPON_BASES[Math.floor(Math.random()*WEAPON_BASES.length)]
+      : ARMOR_BASES[Math.floor(Math.random()*ARMOR_BASES.length)];
+    const baseVal = type==='weapon' ? 3 : 2;
+    const value = Math.round((baseVal + depth*0.6) * rarity.mult);
+    const prefix = rarityKey==='common' ? '' : (rarityKey==='uncommon' ? '頑丈な' : rarityKey==='rare' ? '精霊の' : '深淵の');
+    return {
+      id: 'itm_'+Math.random().toString(36).slice(2,9),
+      type, rarity:rarityKey, rarityLabel:rarity.cls,
+      name: prefix + base,
+      value,
+      resist: type==='armor' ? rollResistAffix(rarityKey) : null
+    };
+  }
+
+  function itemValueLabel(item){
+    let s = `(+${item.value})`;
+    if(item.resist){
+      const sign = item.resist.value > 0 ? '+' : '';
+      s += ` ${ELEMENT_LABELS[item.resist.element]}耐性${sign}${item.resist.value}`;
+    }
+    return s;
+  }
+
+  function itemDetailText(item){
+    const typeLabel = item.type==='weapon' ? '武器' : '防具';
+    const rarityLabel = (RARITY[item.rarity] && RARITY[item.rarity].label) || '';
+    let text = `${item.name} / ${rarityLabel} / ${typeLabel} / 効果値 +${item.value}`;
+    if(item.resist){
+      const sign = item.resist.value > 0 ? '+' : '';
+      text += ` / ${ELEMENT_LABELS[item.resist.element]}耐性${sign}${item.resist.value}`;
+    }
+    return text;
+  }
+
+  function rnd(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+  function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+  function weightedPick(items){
+    // items: [{action, weight}] を重みに従って1つ選ぶ
+    const total = items.reduce((s,i)=>s+Math.max(0,i.weight), 0);
+    if(total <= 0) return items[0] ? items[0].action : null;
+    let r = Math.random()*total;
+    for(const it of items){
+      const w = Math.max(0,it.weight);
+      if(r < w) return it.action;
+      r -= w;
+    }
+    return items[items.length-1].action;
+  }
+
+  /* ---------------------------------------------------------------
+   * ダンジョン定義
+   * requires: nullなら最初から解放。IDを指定すると、そのダンジョンの
+   * clearedがtrueになった時点で解放される(A→尖塔1F→2F→3Fのように連結可能)
+   * --------------------------------------------------------------- */
+  const DUNGEON_DEFS = [
+    {
+      id:'ashen_ruins', name:'灰燼の迷宮', pool:'ashen', requires:null,
+      group:'ashen_ruins', groupName:'灰燼の迷宮', floorLabel:null,
+      bossLevelBonus:0, rewardMult:1.0,
+      boss:{ name:'古の守護者', hpMult:1.7, atkMult:1.15, defMult:1.3, weakness:'ice',
+        skills:[{key:'crit', name:'渾身の一撃', everyNTurns:3, kind:'trueDamage', mult:2.2}] },
+      firstClearReward:{name:'守護者の心臓', type:'armor'},
+      unlocksLiver:'liver_1'
+    },
+    {
+      id:'spire_f1', name:'星詠みの尖塔 1F', pool:'spire', requires:'ashen_ruins',
+      group:'spire', groupName:'星詠みの尖塔', floorLabel:'1F',
+      bossLevelBonus:0, rewardMult:1.1,
+      boss:{ name:'尖塔の門番', hpMult:1.6, atkMult:1.1, defMult:1.3, weakness:'fire',
+        skills:[{key:'crit', name:'閃光の一閃', everyNTurns:3, kind:'trueDamage', mult:2.0, element:'fire'}] },
+      firstClearReward:{name:'門番の鍵爪', type:'weapon'},
+      unlocksLiver:'liver_2'
+    },
+    {
+      id:'spire_f2', name:'星詠みの尖塔 2F', pool:'spire', requires:'spire_f1',
+      group:'spire', groupName:'星詠みの尖塔', floorLabel:'2F',
+      bossLevelBonus:1, rewardMult:1.25,
+      boss:{ name:'覚醒せし魔導兵', hpMult:1.8, atkMult:1.1, defMult:1.3, weakness:'thunder',
+        skills:[{key:'charge', name:'収束する光弾', everyNTurns:4, kind:'telegraphed', mult:3.0, element:'thunder',
+          warnText:'{name}が光を収束させ始めた……', executeText:'収束した光弾が直撃した！'}] },
+      firstClearReward:{name:'魔導兵の核', type:'armor'},
+      unlocksLiver:'liver_3'
+    },
+    {
+      id:'spire_f3', name:'星詠みの尖塔 3F', pool:'spire', requires:'spire_f2',
+      group:'spire', groupName:'星詠みの尖塔', floorLabel:'3F',
+      bossLevelBonus:2, rewardMult:1.5,
+      boss:{ name:'堕ちし尖塔主', hpMult:2.1, atkMult:1.2, defMult:1.35, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'尖塔の裁き', everyNTurns:3, kind:'trueDamage', mult:2.1},
+          {key:'charge', name:'崩星の一撃', everyNTurns:6, kind:'telegraphed', mult:3.4, element:'ice',
+            warnText:'{name}の周囲に瓦礫が渦巻き始めた……', executeText:'崩れ落ちる瓦礫が降り注いだ！'}
+        ] },
+      firstClearReward:{name:'尖塔主の遺灯', type:'weapon'},
+      unlocksLiver:'liver_4'
+    },
+    {
+      id:'spire_f4', name:'星詠みの尖塔 4F', pool:'spire', requires:'spire_f3',
+      group:'spire', groupName:'星詠みの尖塔', floorLabel:'4F',
+      bossLevelBonus:3, rewardMult:1.7,
+      boss:{ name:'星喰らいの影', hpMult:2.3, atkMult:1.25, defMult:1.4, weakness:'ice',
+        skills:[
+          {key:'crit', name:'虚空の爪', everyNTurns:3, kind:'trueDamage', mult:2.3},
+          {key:'charge', name:'星喰らいの顎', everyNTurns:5, kind:'telegraphed', mult:3.6, element:'ice',
+            warnText:'{name}が影の顎を大きく開いた……', executeText:'冷気を帯びた顎が食らいついた！'}
+        ] },
+      firstClearReward:{name:'星喰らいの残滓', type:'armor'},
+      unlocksLiver:'liver_5'
+    },
+    {
+      id:'spire_f5', name:'星詠みの尖塔 5F', pool:'spire', requires:'spire_f4',
+      group:'spire', groupName:'星詠みの尖塔', floorLabel:'5F',
+      bossLevelBonus:4, rewardMult:2.0,
+      boss:{ name:'尖塔を戴く星詠み', hpMult:2.6, atkMult:1.3, defMult:1.45, weakness:'fire',
+        skills:[
+          {key:'crit', name:'終焉の啓示', everyNTurns:3, kind:'trueDamage', mult:2.4, element:'fire'},
+          {key:'charge', name:'堕星の裁き', everyNTurns:6, kind:'telegraphed', mult:3.8, element:'thunder',
+            warnText:'{name}の頭上に無数の星が集い始めた……', executeText:'堕ちた星々が尖塔ごと打ち砕いた！'}
+        ] },
+      firstClearReward:{name:'星詠みの王冠', type:'weapon'}
+    }
+  ];
+  const PROGRESS_PER_STEP = 9; // 1回の成功した行動あたりの踏破率上昇(%)
+
+  /* ---------------------------------------------------------------
+   * コロシアムタワー(PvP、Supabase共有テーブル方式)
+   * 各フロアの「門番」は、そのフロアを最後に突破したプレイヤーの
+   * パーティのスナップショット。門番のHPプールは共有テーブルで
+   * 管理し、挑戦者が与えたダメージは勝敗にかかわらず永続する
+   * (回復しない)。挑戦者側のパーティは毎回全回復した状態で挑む。
+   * --------------------------------------------------------------- */
+  const COLOSSEUM_FLOORS = 10;
+  const COLOSSEUM_COOLDOWN_MS = 500 * 1000;
+
+  /* まだ誰も登録していないフロアで戦うダミーの門番。フロアが上がるほど
+   * 強くなる。倒しても永続記録は作られず、初めて実プレイヤーがここで
+   * 勝った時にそのプレイヤーが初代の門番として登録される。 */
+  function buildDummyGatekeeper(floor){
+    const level = Math.max(1, floor*2 + 1);
+    const base = statsForLevel(level);
+    const roleMults = [
+      {label:'影武者・壱', hpMult:1.3, atkMult:0.9, defMult:1.3},
+      {label:'影武者・弐', hpMult:0.9, atkMult:1.3, defMult:0.9},
+      {label:'影武者・参', hpMult:0.85, atkMult:1.15, defMult:0.85},
+      {label:'影武者・四', hpMult:0.95, atkMult:1.1, defMult:0.95},
+    ];
+    const snapshot = roleMults.map(r=>({
+      name: `コロシアムの${r.label}`, color:'#8a8fa3', job:'dps', level,
+      maxHp: Math.max(5, Math.round(base.hp*r.hpMult)),
+      atk: Math.max(1, Math.round(base.atk*r.atkMult)),
+      def: Math.max(0, Math.round(base.def*r.defMult))
+    }));
+    const maxHpPool = snapshot.reduce((s,m)=>s+m.maxHp, 0);
+    return { holderId:null, holderName:`${floor}Fの見習い門番`, snapshot, hpPool:maxHpPool, maxHpPool, wins:0, isDummy:true };
+  }
+
+  /* 門番スナップショット(複数人)を、既存の単体ボス戦エンジンに乗せるための
+   * 集約値。細かい個々のステータスよりも「平均的な強さ」を反映する。 */
+  function aggregateSnapshotStats(snapshot){
+    const n = snapshot.length || 1;
+    return {
+      atk: Math.round(snapshot.reduce((s,m)=>s+m.atk,0)/n),
+      def: Math.round(snapshot.reduce((s,m)=>s+m.def,0)/n),
+      level: Math.max(1, Math.round(snapshot.reduce((s,m)=>s+m.level,0)/n))
+    };
+  }
+
+  /* 現在の生きたパーティのステータスを、門番登録用に切り出す。 */
+  function buildPartySnapshot(){
+    return state.party.map(id=>{
+      const ls = liverState(id);
+      const def = liverDef(id);
+      return { name: def.name, color: def.color, job: ls.job, level: ls.level, maxHp: ls.maxHp, atk: liverAtk(id), def: liverDefStat(id) };
+    });
+  }
+
+  function dungeonDefById(id){ return DUNGEON_DEFS.find(d=>d.id===id); }
+  function isDungeonUnlocked(id){
+    const def = dungeonDefById(id);
+    if(!def.requires) return true;
+    const req = state.dungeons[def.requires];
+    return !!(req && req.cleared);
+  }
+  function newDungeonProgress(){ return {progress:0, cleared:false, bossKillCount:0, depth:0}; }
+  function currentDungeonState(){ return state.dungeons[state.activeDungeonId]; }
+  function currentDungeonDef(){ return dungeonDefById(state.activeDungeonId); }
+
+  function addDungeonProgress(amount){
+    const ds = currentDungeonState();
+    if(!ds) return;
+    ds.progress = Math.min(100, ds.progress + amount);
+  }
+
+  function firstClearRewardFor(dungeonId){
+    const def = dungeonDefById(dungeonId);
+    const tmpl = def.firstClearReward || {name:'名もなき勲章', type:'armor'};
+    const mult = def.rewardMult || 1;
+    return {
+      id: 'itm_'+Math.random().toString(36).slice(2,9),
+      type: tmpl.type,
+      rarity:'epic', rarityLabel:'epic',
+      name: tmpl.name,
+      value: Math.round((8 + partyLevel()*2) * mult)
+    };
+  }
+
+  /* 本来ならライバー解放になるはずだったボス撃破が、そのライバーを既に
+   * 持っている(=キャラ作成時に選んだ)場合の代替報酬。そのライバーに
+   * ちなんだ「絆」武具として、通常の初回撃破報酬よりもさらに強い一品を渡す。 */
+  function substituteRewardFor(dungeonId){
+    const def = dungeonDefById(dungeonId);
+    const liver = liverDef(def.unlocksLiver);
+    const tmpl = (liver && liver.substituteReward) || {name:'絆の証', type:'weapon'};
+    const mult = (def.rewardMult || 1) * 1.4; // 通常の初回撃破報酬よりも一段強い代替品にする
+    return {
+      id: 'itm_'+Math.random().toString(36).slice(2,9),
+      type: tmpl.type,
+      rarity:'epic', rarityLabel:'epic',
+      name: tmpl.name,
+      value: Math.round((8 + partyLevel()*2) * mult)
+    };
+  }
+
+  /* ---------------------------------------------------------------
+   * 街(NPC)・家具データ
+   * --------------------------------------------------------------- */
+  const INNKEEPER_LINES = [
+    'よく来たね、旅の子。傷はここで癒やしていきな。',
+    'この宿の火だけは、何があっても絶やさないと決めているんだ。',
+    '外はまだ危ないだろう。今夜はゆっくりお休み。',
+  ];
+  const SHOPKEEPER_LINES = [
+    '瓦礫の中から拾い集めた掘り出し物だ、見ていきな。',
+    '値は張るが、腕は確かだ。損はさせないよ。',
+    '迷宮帰りの得物なら、こっちで下取りもするぜ。',
+  ];
+  const FURNITURE_CATALOG = [
+    {id:'hearth',    name:'暖炉',         price:80,  flavor:'小さな炎が部屋を暖める。長い探索の後、これを眺めるとほっとする。'},
+    {id:'bookshelf', name:'古びた本棚',    price:60,  flavor:'拾い集めた古文書が並ぶ。まだ読み解けない頁も多い。'},
+    {id:'rug',       name:'苔織りの敷物',  price:40,  flavor:'廃墟の緑を編み込んだという敷物。足元が少し柔らかくなる。'},
+    {id:'lantern',   name:'常夜の灯',      price:100, flavor:'消えることのない灯り。夜通し部屋を照らし続ける。'},
+    {id:'trophy',    name:'守護者の角',    price:150, flavor:'かつて打ち倒した守護者の角。誇らしげに壁に飾られている。'},
+    {id:'garden',    name:'小さな苗床',    price:70,  flavor:'再興の兆しを、まずはここから。芽吹いたばかりの苗が並ぶ。'},
+  ];
+
+  /* ---------------- State ---------------- */
+  let state = null; // character object
+  let createSelectedLiver = null; // キャラ作成画面: 選択中の最初の仲間
+  let createNameDraft = '';       // キャラ作成画面: 選択操作で再描画されても名前欄を保持する
+  let inCombat = false;
+  let combatPhase = null; // 'choice' | 'auto' | null
+  let combatEnemy = null;
+  let combatEnemyHp = 0;
+  let pendingDefBuffs = {}; // { liverId: reduceMult } その本人の次の被弾にのみ適用
+  let shopStock = []; // セーブしない一時データ。商店に入るたび再生成
+
+  function expToNext(level){ return Math.floor(20 * Math.pow(level, 1.5)); }
+  function maxHpFor(level){ return 30 + level*8; }
+  function baseAtkFor(level){ return 5 + level*2; }
+  function baseDefFor(level){ return 2 + level; }
+  function baseMpFor(level){ return 10 + level*4; }
+
+  /* ---------------------------------------------------------------
+   * ジョブ定義
+   * hpMult/atkMult/defMult/mpMultは、同レベルの基礎値に掛ける成長倍率。
+   * skillsはそのジョブが習得できるスキル一覧。baseRateはそのスキル固有の
+   * 固定発動率(%)で、プレイヤーが変更することはできない。プレイヤーが
+   * 選べるのは「そのスキルを戦闘に持ち込むか(有効/無効)」だけ。
+   * --------------------------------------------------------------- */
+  const JOB_DEFS = {
+    tank: {
+      name:'ガーディアン', hpMult:1.4, atkMult:0.75, defMult:1.5, mpMult:0.6,
+      desc:'高いHP・防御力で安定して戦える。格上の敵にも挑みやすい。',
+      skills:[
+        {key:'guard_stance', name:'鉄壁の構え', mpCost:8, baseRate:20, kind:'defBuff', reduceMult:0.6,
+          desc:'MPを消費し、次に受ける攻撃のダメージを大きく軽減する。'},
+        {key:'first_aid', name:'応急手当', mpCost:7, baseRate:15, kind:'heal', healMult:0.18,
+          desc:'MPを消費し、自身のHPを少し回復する。'}
+      ]
+    },
+    dps: {
+      name:'ソルジャー', hpMult:0.9, atkMult:1.4, defMult:0.8, mpMult:0.5,
+      desc:'高い攻撃力で短期決戦が得意。レベリングや周回向き。',
+      skills:[
+        {key:'double_strike', name:'連撃', mpCost:6, baseRate:25, kind:'bonusAttack',
+          desc:'MPを消費し、追加の一撃を繰り出す。'},
+        {key:'finishing_blow', name:'会心の一撃', mpCost:11, baseRate:20, kind:'trueDamageSpell', mult:2.3,
+          desc:'MPを消費し、防御力を無視した強打を放つ。'}
+      ]
+    },
+    mage: {
+      name:'ウィザード', hpMult:0.75, atkMult:0.8, defMult:0.7, mpMult:2.0,
+      desc:'豊富なMPと属性魔法で弱点を突く。決まれば通常攻撃を上回るが、外すと通常より非力。MP切れにも弱い。',
+      skills:[
+        {key:'fire_bolt', name:'火炎弾', mpCost:9, baseRate:20, kind:'element', element:'fire', weaknessMult:1.6, offMult:0.8,
+          desc:'MPを消費し、火属性の魔法攻撃を放つ。弱点なら通常攻撃を超える威力、そうでなければ通常より劣る。'},
+        {key:'ice_blade', name:'氷結の刃', mpCost:9, baseRate:15, kind:'element', element:'ice', weaknessMult:1.6, offMult:0.8,
+          desc:'MPを消費し、氷属性の魔法攻撃を放つ。弱点なら通常攻撃を超える威力、そうでなければ通常より劣る。'},
+        {key:'thunder_strike', name:'雷撃', mpCost:9, baseRate:15, kind:'element', element:'thunder', weaknessMult:1.6, offMult:0.8,
+          desc:'MPを消費し、雷属性の魔法攻撃を放つ。弱点なら通常攻撃を超える威力、そうでなければ通常より劣る。'},
+        {key:'heal_light', name:'治癒の光', mpCost:12, baseRate:15, kind:'heal', healMult:0.28,
+          desc:'MPを消費し、自身のHPを回復する。'},
+        {key:'mana_barrier', name:'魔力障壁', mpCost:9, baseRate:15, kind:'defBuff', reduceMult:0.55,
+          desc:'MPを消費し、次に受ける攻撃のダメージを軽減する魔法障壁を張る。'}
+      ]
+    }
+  };
+  const DEFAULT_JOB = 'dps';
+  const SKILL_LOADOUT_MAX = 5;
+  const ATK_MIN_RATE = 50; // 通常攻撃は必ずこの発動率(%)以上を維持する
+
+  /* ---------------------------------------------------------------
+   * ライバー(パーティメンバー)定義
+   * 現時点では仮の名前・仮の担当ジョブのプレースホルダーです。
+   * 実際の題材(名前・カラー・スキル演出等)が決まり次第、この配列を
+   * 差し替えるだけで反映されるように設計しています。
+   * job: そのライバーの初期担当ジョブ(後からホーム画面で変更可能)
+   * startUnlocked: ゲーム開始時から編成可能かどうか
+   * unlockDungeon: 指定ダンジョンの初回踏破で解放される場合のID
+   * --------------------------------------------------------------- */
+  const LIVER_DEFS = [
+    {id:'liver_1', name:'(仮)ライバーA', title:'盾役', color:'#ff9f5a', job:'tank', startUnlocked:false, unlockDungeon:'ashen_ruins',
+      substituteReward:{name:'(仮)ライバーAの絆の盾', type:'armor'}},
+    {id:'liver_2', name:'(仮)ライバーB', title:'アタッカー', color:'#5a9bf0', job:'dps', startUnlocked:false, unlockDungeon:'spire_f1',
+      substituteReward:{name:'(仮)ライバーBの絆の刃', type:'weapon'}},
+    {id:'liver_3', name:'(仮)ライバーC', title:'魔導師', color:'#ffd863', job:'mage', startUnlocked:false, unlockDungeon:'spire_f2',
+      substituteReward:{name:'(仮)ライバーCの絆の杖', type:'weapon'}},
+    {id:'liver_4', name:'(仮)ライバーD', title:'アタッカー', color:'#8fe08f', job:'dps', startUnlocked:false, unlockDungeon:'spire_f3',
+      substituteReward:{name:'(仮)ライバーDの絆の籠手', type:'weapon'}},
+    {id:'liver_5', name:'(仮)ライバーE', title:'盾役', color:'#c77dff', job:'tank', startUnlocked:false, unlockDungeon:'spire_f4',
+      substituteReward:{name:'(仮)ライバーEの絆の鎧', type:'armor'}},
+  ];
+  const PARTY_MAX = 4; // 編成上限は4のまま。ライバーが5人以上に増えても「誰を連れて行くか」の選択が生まれる設計にする
+  function liverDef(id){ return LIVER_DEFS.find(d=>d.id===id); }
+  function liverState(id){ return state.roster[id]; }
+  function liverJobDef(id){ return JOB_DEFS[liverState(id).job]; }
+
+  function jobMaxHp(jobId, level){ return Math.round(maxHpFor(level) * JOB_DEFS[jobId].hpMult); }
+  function jobBaseAtk(jobId, level){ return Math.round(baseAtkFor(level) * JOB_DEFS[jobId].atkMult); }
+  function jobBaseDef(jobId, level){ return Math.round(baseDefFor(level) * JOB_DEFS[jobId].defMult); }
+  function jobMaxMp(jobId, level){ return Math.round(baseMpFor(level) * JOB_DEFS[jobId].mpMult); }
+
+  function defaultLoadout(jobId){
+    const enabled = JOB_DEFS[jobId].skills.slice(0, SKILL_LOADOUT_MAX).map(s=>s.key);
+    return { enabled };
+  }
+
+  /* 通常攻撃の発動率(必ず50%以上)と、有効化された各スキルの実発動率を算出。
+   * 各スキルの発動率はJOB_DEFS側で固定(baseRate)されており、プレイヤーが
+   * 変えられるのは「有効にするかどうか」のみ。有効なスキルのbaseRate合計が
+   * 50%を超える場合は、50%に収まるよう全スキルを一律に按分縮小し、
+   * 通常攻撃はぴったり50%になる。合計が50%以下ならそのままの値が使われ、
+   * 通常攻撃は残り全てを引き受ける。 */
+  function computeActionRates(liverId){
+    const ls = liverState(liverId);
+    const job = JOB_DEFS[ls.job];
+    const loadout = ls.loadout;
+    const enabledSkills = job.skills.filter(s=>loadout.enabled.includes(s.key));
+    const rawSum = enabledSkills.reduce((sum,s)=>sum + (s.baseRate||0), 0);
+    let atkRate, scale;
+    if(rawSum <= (100-ATK_MIN_RATE)){
+      atkRate = 100 - rawSum;
+      scale = 1;
+    } else {
+      atkRate = ATK_MIN_RATE;
+      scale = rawSum > 0 ? (100-ATK_MIN_RATE) / rawSum : 1;
+    }
+    const actions = enabledSkills.map(s=>({skill:s, rate:(s.baseRate||0)*scale}));
+    return { atkRate, actions };
+  }
+
+  function toggleSkillEnabled(liverId, skillKey){
+    const loadout = liverState(liverId).loadout;
+    const idx = loadout.enabled.indexOf(skillKey);
+    if(idx >= 0){
+      loadout.enabled.splice(idx,1);
+    } else {
+      if(loadout.enabled.length >= SKILL_LOADOUT_MAX){
+        pushLog(`有効にできるスキルは最大${SKILL_LOADOUT_MAX}つまで。`, 'system');
+        render();
+        return;
+      }
+      loadout.enabled.push(skillKey);
+    }
+    saveGame(); render();
+  }
+
+  function recomputeLiverMaxStats(id, fullRestore){
+    const ls = liverState(id);
+    const newMaxHp = jobMaxHp(ls.job, ls.level);
+    const newMaxMp = jobMaxMp(ls.job, ls.level);
+    ls.maxHp = newMaxHp;
+    ls.maxMp = newMaxMp;
+    if(fullRestore){
+      ls.hp = newMaxHp;
+      ls.mp = newMaxMp;
+    } else {
+      ls.hp = Math.min(ls.hp, newMaxHp);
+      ls.mp = Math.min(ls.mp, newMaxMp);
+    }
+  }
+
+  function newLiverProgress(liverDefObj){
+    const job = liverDefObj.job;
+    const maxHp = jobMaxHp(job, 1);
+    const maxMp = jobMaxMp(job, 1);
+    return {
+      job, level:1, exp:0,
+      hp:maxHp, maxHp, mp:maxMp, maxMp,
+      equipped: {weapon:null, armor:null},
+      loadout: defaultLoadout(job),
+      unlocked: !!liverDefObj.startUnlocked
+    };
+  }
+
+  function newCharacter(name, starterLiverId, playerId){
+    const roster = {};
+    LIVER_DEFS.forEach(def=>{ roster[def.id] = newLiverProgress(def); });
+    if(starterLiverId && roster[starterLiverId]) roster[starterLiverId].unlocked = true;
+    const party = (starterLiverId && roster[starterLiverId]) ? [starterLiverId] : [];
+    return {
+      name, gold:0,
+      playerId,
+      roster, party,
+      inventory: [],
+      log: [],
+      history: [],
+      screen: 'town',
+      activeDungeonId: null,
+      home: { furniture: [] },
+      ui: { expandedGroups: [], bottomTab: 'log', equipViewLiver: null },
+      pendingDefeatGoldLoss: 0,
+      dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
+      colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 }
+    };
+  }
+
+  function liverAtk(id){
+    const ls = liverState(id);
+    const w = ls.equipped.weapon;
+    return jobBaseAtk(ls.job, ls.level) + (w ? w.value : 0);
+  }
+  function liverDefStat(id){
+    const ls = liverState(id);
+    const a = ls.equipped.armor;
+    return jobBaseDef(ls.job, ls.level) + (a ? a.value : 0);
+  }
+
+  /* ライバーの属性耐性。レベルアップでは伸びず、装備(・将来的にはスキル等の
+   * 一時効果)によってのみ変動する。数値1につき被ダメージ±3%。 */
+  function liverResistances(id){
+    const ls = liverState(id);
+    const res = {};
+    Object.keys(ELEMENT_LABELS).forEach(el=>{ res[el] = 0; });
+    [ls.equipped.weapon, ls.equipped.armor].forEach(item=>{
+      if(item && item.resist && res.hasOwnProperty(item.resist.element)){
+        res[item.resist.element] += item.resist.value;
+      }
+    });
+    return res;
+  }
+  function liverElementalMultiplier(id, element){
+    if(!element) return 1;
+    const value = liverResistances(id)[element] || 0;
+    return Math.max(0.1, 1 - value*0.03);
+  }
+
+  function switchLiverJob(id, jobId){
+    const ls = liverState(id);
+    if(!JOB_DEFS[jobId] || ls.job === jobId) return;
+    ls.job = jobId;
+    ls.loadout = defaultLoadout(jobId);
+    recomputeLiverMaxStats(id, true);
+    pushLog(`${liverDef(id).name}のジョブを「${JOB_DEFS[jobId].name}」に切り替えた。`, 'system');
+    saveGame(); render();
+  }
+
+  /* 現在の編成(パーティ)の平均レベル。敵の強さ調整に使う。 */
+  function partyLevel(){
+    const members = state.party.filter(id=>liverState(id));
+    if(!members.length) return 1;
+    const sum = members.reduce((s,id)=>s+liverState(id).level, 0);
+    return Math.max(1, Math.round(sum/members.length));
+  }
+
+  function togglePartyMember(id){
+    const idx = state.party.indexOf(id);
+    if(idx>=0){
+      state.party.splice(idx,1);
+    } else {
+      if(!liverState(id).unlocked) return;
+      if(state.party.length >= PARTY_MAX){
+        pushLog(`パーティは最大${PARTY_MAX}人まで。`, 'system');
+        render();
+        return;
+      }
+      state.party.push(id);
+    }
+
+    saveGame(); render();
+  }
+
+  function unlockLiver(id){
+    const ls = state.roster[id];
+    if(!ls || ls.unlocked) return;
+    ls.unlocked = true;
+    pushLog(`新たな仲間「${liverDef(id).name}」が加わった！`, 'reward');
+    if(state.party.length < PARTY_MAX) state.party.push(id);
+  }
+
+  /* ---------------- Persistence(Supabase) ---------------- */
+
+  /* stateオブジェクトの形は今まで通り保ったまま、読み書きの中身だけを
+   * Supabaseのテーブルに向ける。ゲームロジック側(戦闘・探索など)は
+   * 一切変更していない。 */
+
+  async function saveGame(){
+    if(!state || !state.playerId) return;
+    try{
+      const rosterRows = LIVER_DEFS.map(def=>{
+        const r = state.roster[def.id];
+        return {
+          liver_id: def.id, job: r.job, level: r.level, exp: r.exp,
+          hp: r.hp, max_hp: r.maxHp, mp: r.mp, max_mp: r.maxMp,
+          equipped_weapon_id: r.equipped.weapon ? r.equipped.weapon.id : null,
+          equipped_armor_id: r.equipped.armor ? r.equipped.armor.id : null,
+          loadout: r.loadout.enabled, unlocked: !!r.unlocked
+        };
+      });
+
+      const allItems = [...state.inventory];
+      LIVER_DEFS.forEach(def=>{
+        const r = state.roster[def.id];
+        if(r.equipped.weapon) allItems.push(r.equipped.weapon);
+        if(r.equipped.armor) allItems.push(r.equipped.armor);
+      });
+      const inventoryRows = allItems.map(i=>({
+        id: i.id, item_type: i.type, name: i.name, rarity: i.rarity,
+        value: i.value,
+        resist_element: i.resist ? i.resist.element : null,
+        resist_value: i.resist ? i.resist.value : null
+      }));
+
+      const dungeonRows = DUNGEON_DEFS.map(d=>{
+        const ds = state.dungeons[d.id];
+        return {
+          dungeon_id: d.id, depth: ds.depth, progress: ds.progress,
+          cleared: !!ds.cleared, boss_kill_count: ds.bossKillCount || 0
+        };
+      });
+
+      const { error } = await sb.rpc('save_full_state', {
+        p_name: state.name,
+        p_gold: state.gold,
+        p_party: state.party,
+        p_home_furniture: state.home.furniture,
+        p_colosseum_floor_right: state.colosseum.floorRight,
+        p_colosseum_medals: state.colosseum.medals,
+        p_colosseum_last_challenge_at: state.colosseum.lastChallengeAt ? new Date(state.colosseum.lastChallengeAt).toISOString() : null,
+        p_roster: rosterRows,
+        p_inventory: inventoryRows,
+        p_dungeons: dungeonRows
+      });
+      if(error) console.error('save_full_state failed', error);
+    }catch(e){ console.error('save failed', e); }
+  }
+
+  async function loadGame(){
+    try{
+      const uid = await ensureAuth();
+      const { data: playerRow, error } = await sb.from('players').select('*').eq('id', uid).maybeSingle();
+      if(error) throw error;
+      if(!playerRow) return null; // 新規プレイヤー(キャラ作成画面へ)
+
+      const [rosterRes, invRes, dungeonRes] = await Promise.all([
+        sb.from('player_roster').select('*').eq('player_id', uid),
+        sb.from('player_inventory').select('*').eq('player_id', uid),
+        sb.from('player_dungeon_progress').select('*').eq('player_id', uid)
+      ]);
+      const rosterRows = rosterRes.data || [];
+      const invRows = invRes.data || [];
+      const dungeonRows = dungeonRes.data || [];
+
+      const itemById = {};
+      const inventory = [];
+      invRows.forEach(i=>{
+        const item = {
+          id: i.id, type: i.item_type, name: i.name,
+          rarity: i.rarity, rarityLabel: i.rarity, value: i.value,
+          resist: i.resist_element ? { element: i.resist_element, value: i.resist_value } : null
+        };
+        itemById[i.id] = item;
+        inventory.push(item);
+      });
+
+      const roster = {};
+      LIVER_DEFS.forEach(def=>{ roster[def.id] = newLiverProgress(def); });
+      rosterRows.forEach(r=>{
+        roster[r.liver_id] = {
+          job: r.job, level: r.level, exp: r.exp,
+          hp: r.hp, maxHp: r.max_hp, mp: r.mp, maxMp: r.max_mp,
+          equipped: {
+            weapon: r.equipped_weapon_id ? (itemById[r.equipped_weapon_id]||null) : null,
+            armor: r.equipped_armor_id ? (itemById[r.equipped_armor_id]||null) : null
+          },
+          loadout: { enabled: Array.isArray(r.loadout) ? r.loadout : [] },
+          unlocked: r.unlocked
+        };
+      });
+      // 装備中のアイテムは所持品リストからは除外する(以前のwindow.storage版と同じ表現)
+      Object.values(roster).forEach(r=>{
+        [r.equipped.weapon, r.equipped.armor].forEach(item=>{
+          if(!item) return;
+          const idx = inventory.findIndex(x=>x.id===item.id);
+          if(idx>=0) inventory.splice(idx,1);
+        });
+      });
+
+      const dungeons = {};
+      DUNGEON_DEFS.forEach(d=>{ dungeons[d.id] = newDungeonProgress(); });
+      dungeonRows.forEach(d=>{
+        dungeons[d.dungeon_id] = {
+          depth: d.depth, progress: d.progress, cleared: d.cleared,
+          bossKillCount: d.boss_kill_count || 0
+        };
+      });
+
+      return {
+        name: playerRow.name, gold: playerRow.gold,
+        playerId: uid,
+        roster, party: Array.isArray(playerRow.party) ? playerRow.party : [],
+        inventory,
+        log: [], history: [],
+        screen: 'town', activeDungeonId: null,
+        home: { furniture: playerRow.home_furniture || [] },
+        ui: { expandedGroups: [], bottomTab: 'log', equipViewLiver: null },
+        pendingDefeatGoldLoss: 0,
+        dungeons,
+        colosseum: {
+          floorRight: playerRow.colosseum_floor_right,
+          medals: playerRow.colosseum_medals,
+          lastChallengeAt: playerRow.colosseum_last_challenge_at ? new Date(playerRow.colosseum_last_challenge_at).getTime() : 0
+        }
+      };
+    }catch(e){
+      console.error('load failed', e);
+      return null;
+    }
+  }
+
+  /* デバッグ用: セーブデータを完全に削除して、キャラ作成画面からやり直す。
+   * 取り消せない操作なので、必ず確認ダイアログを挟む。 */
+  async function resetGameData(){
+    const ok = confirm('セーブデータを完全に削除して、最初からやり直します。この操作は取り消せません。よろしいですか？');
+    if(!ok) return;
+    try{
+      const uid = await ensureAuth();
+      // 子テーブルはON DELETE CASCADEで自動的に消えるため、playersの行を消すだけでよい
+      await sb.from('players').delete().eq('id', uid);
+    }catch(e){ console.error('reset failed', e); }
+    state = null;
+    inCombat = false; combatPhase = null; combatEnemy = null; combatEnemyHp = 0; pendingDefBuffs = {};
+    createSelectedLiver = null; createNameDraft = '';
+    colosseumView = { loading: true, floor: 1, record: null, isDummy: true };
+    render();
+  }
+
+  /* ---------------- コロシアムタワー: Supabase I/O ---------------- */
+  async function loadColosseumRecord(floor){
+    try{
+      const { data, error } = await sb.from('colosseum_floors').select('*').eq('floor', floor).maybeSingle();
+      if(error || !data || !data.holder_id) return null; // holder不在 = まだ誰も登録していない(ダミー扱い)
+      return {
+        holderId: data.holder_id, holderName: data.holder_name,
+        snapshot: data.snapshot || [], hpPool: data.hp_pool, maxHpPool: data.max_hp_pool,
+        wins: data.wins || 0
+      };
+    }catch(e){ return null; }
+  }
+
+  /* 自分宛てに溜まっているメダルを受け取り、自分の所持数に加算する。
+   * サーバー側のRPCが加算・ゼロリセットを1トランザクションで行う。 */
+  async function claimOwnMailbox(){
+    if(!state || !state.playerId) return;
+    try{
+      const { data, error } = await sb.rpc('claim_colosseum_mailbox');
+      if(error){ console.error('claim mailbox failed', error); return; }
+      const medals = data || 0;
+      if(medals > 0){
+        state.colosseum.medals += medals;
+        pushLog(`コロシアムの防衛報酬として、メダルを${medals}枚受け取った。`, 'reward');
+      }
+    }catch(e){ console.error('claim mailbox failed', e); }
+  }
+
+  /* ---------------- Logging ---------------- */
+  function pushLog(text, cls){
+    const entry = {text, cls: cls||''};
+    state.log.push(entry);
+    if(state.log.length > 6) state.log = state.log.slice(-6);
+
+    if(!state.history) state.history = [];
+    state.history.push(entry);
+    if(state.history.length > 100) state.history = state.history.slice(-100);
+  }
+
+  /* ---------------- Core actions ---------------- */
+  function grantExpToParty(amount){
+    state.party.forEach(id=>{
+      const ls = liverState(id);
+      if(ls.hp <= 0) return; // 戦闘不能中のメンバーは経験値を得ない
+      ls.exp += amount;
+      while(ls.exp >= expToNext(ls.level)){
+        ls.exp -= expToNext(ls.level);
+        ls.level += 1;
+        recomputeLiverMaxStats(id, true);
+        pushLog(`${liverDef(id).name}のレベルが ${ls.level} に上がった。傷が癒えていく。`, 'reward');
+      }
+    });
+    pushLog(`パーティは経験値を ${amount} 獲得した。`, 'reward');
+  }
+
+  const INVENTORY_MAX = 20;
+
+  function addItemToInventory(item){
+    if(state.inventory.length >= INVENTORY_MAX){
+      pushLog(`所持品がいっぱいで「${item.name}」を持ち帰れなかった。`, 'system');
+      return false;
+    }
+    state.inventory.push(item);
+    return true;
+  }
+
+  function maybeDropItem(depth){
+    if(Math.random() < 0.42){
+      const type = Math.random() < 0.5 ? 'weapon' : 'armor';
+      const item = makeItem(type, depth);
+      if(addItemToInventory(item)){
+        pushLog(`「${item.name}」を手に入れた。`, 'reward');
+      }
+    }
+    if(Math.random() < 0.3){
+      const g = Math.round(4 + depth*1.5 + Math.random()*6);
+      state.gold += g;
+      pushLog(`${g} 枚の古い硬貨を見つけた。`, 'reward');
+    }
+  }
+
+  function startCombat(enemy){
+    inCombat = true;
+    combatPhase = 'choice';
+    combatEnemy = enemy;
+    combatEnemyHp = enemy.hp;
+    combatEnemy._maxHp = enemy.maxHp;
+    combatEnemy._atk = enemy.atk;
+    combatEnemy._def = enemy.def;
+    combatEnemy.turnCount = 0;
+    combatEnemy.charging = null;
+    pendingDefBuffs = {};
+    pushLog(`Lv.${enemy.level} ${enemy.name}${enemy.boss?'が行く手を阻んだ！':'が現れた。'}`, 'danger');
+    render();
+  }
+
+  function alivePartyIds(){
+    return state.party.filter(id=>liverState(id) && liverState(id).hp > 0);
+  }
+  function isPartyWiped(){
+    return alivePartyIds().length === 0;
+  }
+  function pickRandomAliveTarget(){
+    const alive = alivePartyIds();
+    if(!alive.length) return null;
+    return alive[Math.floor(Math.random()*alive.length)];
+  }
+
+  function chooseFight(){
+    if(!inCombat || combatPhase !== 'choice') return;
+    combatPhase = 'auto';
+    render();
+    runAutoBattle();
+  }
+
+  /* プレイヤーのターン処理。
+   * 有効化されたスキル(loadout.enabled)と通常攻撃を、computeActionRatesで
+   * 算出した実発動率に従って毎ターン抽選する。選ばれたスキルのMPが
+   * 足りない場合はその場で候補から除外し、残りで再抽選する。
+   * kind: 'trueDamageSpell'(防御無視の攻撃) / 'bonusAttack'(追加攻撃)
+   *       'defBuff'(次の被弾を軽減) / 'heal'(自己回復)
+   */
+  function playerTurnAction(liverId){
+    const ls = liverState(liverId);
+    const name = liverDef(liverId).name;
+    const { atkRate, actions } = computeActionRates(liverId);
+    const pool = [{action:null, weight: atkRate}];
+    actions.forEach(a=>{
+      if(a.rate > 0 && ls.mp >= a.skill.mpCost) pool.push({action:a.skill, weight:a.rate});
+    });
+    const chosen = weightedPick(pool);
+
+    if(!chosen){
+      const dmg = Math.max(1, liverAtk(liverId) - combatEnemy._def + rnd(-1,2));
+      combatEnemyHp -= dmg;
+      pushLog(`${name}の攻撃！ ${combatEnemy.name}に ${dmg} のダメージ。`, 'combat');
+      return;
+    }
+
+    ls.mp -= chosen.mpCost;
+
+    if(chosen.kind === 'trueDamageSpell'){
+      const dmg = Math.max(1, Math.round(liverAtk(liverId)*chosen.mult) + rnd(-1,3));
+      combatEnemyHp -= dmg;
+      pushLog(`${name}の「${chosen.name}」！ 防御を貫く ${dmg} のダメージ。(MP-${chosen.mpCost})`, 'combat');
+      return;
+    }
+    if(chosen.kind === 'element'){
+      const isWeak = combatEnemy.weakness === chosen.element;
+      const mult = isWeak ? chosen.weaknessMult : chosen.offMult;
+      const dmg = Math.max(1, Math.round((liverAtk(liverId) - combatEnemy._def) * mult) + rnd(-1,2));
+      combatEnemyHp -= dmg;
+      const elLabel = ELEMENT_LABELS[chosen.element] || '';
+      pushLog(
+        isWeak
+          ? `${name}の「${chosen.name}」！ 弱点(${elLabel})を突き、${dmg} のダメージ！(MP-${chosen.mpCost})`
+          : `${name}の「${chosen.name}」！ ${dmg} のダメージ(弱点不一致)。(MP-${chosen.mpCost})`,
+        isWeak ? 'reward' : 'combat'
+      );
+      return;
+    }
+    if(chosen.kind === 'bonusAttack'){
+      const dmg1 = Math.max(1, liverAtk(liverId) - combatEnemy._def + rnd(-1,2));
+      const dmg2 = Math.max(1, Math.round(liverAtk(liverId)*0.6) - Math.round(combatEnemy._def*0.5) + rnd(-1,2));
+      combatEnemyHp -= (dmg1+dmg2);
+      pushLog(`${name}の「${chosen.name}」！ ${dmg1}+${dmg2} の連続攻撃。(MP-${chosen.mpCost})`, 'combat');
+      return;
+    }
+    if(chosen.kind === 'defBuff'){
+      pendingDefBuffs[liverId] = chosen.reduceMult || 0.6;
+      const dmg = Math.max(1, liverAtk(liverId) - combatEnemy._def + rnd(-1,2));
+      combatEnemyHp -= dmg;
+      pushLog(`${name}の「${chosen.name}」！ 身構えながら ${dmg} のダメージ。次の攻撃に備える。(MP-${chosen.mpCost})`, 'combat');
+      return;
+    }
+    if(chosen.kind === 'heal'){
+      const heal = Math.round(ls.maxHp*chosen.healMult);
+      ls.hp = Math.min(ls.maxHp, ls.hp+heal);
+      pushLog(`${name}の「${chosen.name}」！ HPが ${heal} 回復した。(MP-${chosen.mpCost})`, 'reward');
+      return;
+    }
+  }
+
+  function applyDamageToLiver(liverId, rawDmg, element){
+    const ls = liverState(liverId);
+    let dmg = rawDmg;
+    if(element){
+      dmg = Math.max(1, Math.round(dmg * liverElementalMultiplier(liverId, element)));
+    }
+    if(pendingDefBuffs[liverId]){
+      dmg = Math.max(1, Math.round(dmg*pendingDefBuffs[liverId]));
+      delete pendingDefBuffs[liverId];
+    }
+    ls.hp = Math.max(0, ls.hp - dmg);
+    return dmg;
+  }
+
+  /* 敵のターン処理。
+   * 1) 前ターンに「予告」していた大技があれば、ここで確定発動(防御力無視)
+   * 2) なければ通常通りターン数を数え、条件に合うスキルを判定
+   *    - trueDamage   : このターンに即、防御力無視の大ダメージ
+   *    - telegraphed  : このターンは攻撃せず予告のみ。次ターンに(1)で発動
+   * 3) どちらでもなければ通常攻撃
+   * いずれの被弾もapplyDamageToPlayerを通し、タンクの防御バフ・プレイヤーの
+   * 属性耐性(スキルにelementが設定されている場合のみ)を反映する。
+   * 通常攻撃には属性を持たせていないため、耐性の影響を受けない。
+   */
+  function enemyTurnDamage(){
+    combatEnemy.turnCount = (combatEnemy.turnCount||0) + 1;
+    const target = pickRandomAliveTarget();
+    if(!target) return; // 全滅済み(念のため)
+    const targetName = liverDef(target).name;
+
+    if(combatEnemy.charging){
+      const skill = combatEnemy.charging;
+      combatEnemy.charging = null;
+      const raw = Math.max(1, Math.round(combatEnemy._atk * skill.mult) + rnd(-1,2));
+      const dmg = applyDamageToLiver(target, raw, skill.element);
+      pushLog(`${(skill.executeText || (combatEnemy.name+'の渾身の一撃！')).replace('{name}', combatEnemy.name)} ${targetName}が ${dmg} のダメージを受けた。`, 'danger');
+      checkLiverKO(target);
+      return;
+    }
+
+    const skills = combatEnemy.skills || [];
+    const triggered = skills.find(s => s.everyNTurns && combatEnemy.turnCount % s.everyNTurns === 0);
+    if(triggered){
+      if(triggered.kind === 'telegraphed'){
+        combatEnemy.charging = triggered;
+        pushLog((triggered.warnText || `${combatEnemy.name}が力を溜めている……`).replace('{name}', combatEnemy.name), 'system');
+        return;
+      }
+      const raw = Math.max(1, Math.round(combatEnemy._atk * triggered.mult) + rnd(-1,2));
+      const dmg = applyDamageToLiver(target, raw, triggered.element);
+      pushLog(`${combatEnemy.name}の「${triggered.name}」！ ${targetName}が防御を貫く ${dmg} の会心の一撃を受けた！`, 'danger');
+      checkLiverKO(target);
+      return;
+    }
+
+    const raw = Math.max(1, combatEnemy._atk - liverDefStat(target) + rnd(-1,1));
+    const dmg = applyDamageToLiver(target, raw);
+    pushLog(`${combatEnemy.name}の反撃、${targetName}が ${dmg} のダメージを受けた。`, 'danger');
+    checkLiverKO(target);
+  }
+
+  function checkLiverKO(liverId){
+    if(liverState(liverId).hp <= 0){
+      pushLog(`${liverDef(liverId).name}が倒れた……！`, 'danger');
+    }
+  }
+
+  function checkPartyDefeated(){
+    if(isPartyWiped()){
+      handleDefeat();
+      return true;
+    }
+    return false;
+  }
+
+  async function runAutoBattle(){
+    while(inCombat && combatPhase === 'auto'){
+      await sleep(550);
+      if(!inCombat || combatPhase !== 'auto') return;
+
+      // パーティ全員が(生存していれば)順番に行動する。1人ずつログを反映してから
+      // 少し間を置くことで、誰が何をしたのか追いやすくする。
+      for(const id of state.party){
+        if(!inCombat || combatPhase !== 'auto') return;
+        if(liverState(id).hp <= 0) continue; // 戦闘不能者はスキップ
+        playerTurnAction(id);
+        render();
+        if(combatEnemyHp <= 0) break;
+        await sleep(280);
+        if(!inCombat || combatPhase !== 'auto') return;
+      }
+
+      if(combatEnemyHp <= 0){
+        if(combatEnemy.isColosseum){
+          await resolveColosseumVictory();
+          return;
+        }
+        pushLog(`${combatEnemy.name}を倒した。`, 'reward');
+        grantExpToParty(combatEnemy.exp);
+        const ds = currentDungeonState();
+        maybeDropItem(ds.depth);
+
+        if(combatEnemy.isDungeonBoss){
+          const dungeonDef = currentDungeonDef();
+          if(!ds.cleared){
+            ds.cleared = true;
+            pushLog(`${dungeonDef.name}を踏破した！`, 'reward');
+            const firstItem = firstClearRewardFor(state.activeDungeonId);
+            if(addItemToInventory(firstItem)){
+              pushLog(`初回撃破報酬として「${firstItem.name}」を手に入れた。`, 'reward');
+            }
+            if(dungeonDef.unlocksLiver){
+              if(!liverState(dungeonDef.unlocksLiver).unlocked){
+                unlockLiver(dungeonDef.unlocksLiver);
+              } else {
+                const subItem = substituteRewardFor(state.activeDungeonId);
+                if(addItemToInventory(subItem)){
+                  pushLog(`「${liverDef(dungeonDef.unlocksLiver).name}」は既に仲間なので、代わりに「${subItem.name}」を手に入れた。`, 'reward');
+                }
+              }
+            }
+            DUNGEON_DEFS.filter(d=>d.requires===state.activeDungeonId).forEach(d=>{
+              pushLog(`新たな地が解放された:「${d.name}」`, 'reward');
+            });
+          } else {
+            pushLog(`${combatEnemy.name}を再び打ち破った。`, 'reward');
+          }
+          ds.bossKillCount = (ds.bossKillCount||0) + 1;
+          ds.progress = 0; // ボス撃破のたびに踏破率はリセットし、また潜り直す必要がある
+        } else if(combatEnemy.pendingProgressOnWin){
+          addDungeonProgress(PROGRESS_PER_STEP);
+        }
+
+        inCombat = false; combatPhase = null; combatEnemy = null;
+        saveGame(); render();
+        return;
+      }
+
+      await sleep(550);
+      if(!inCombat || combatPhase !== 'auto') return;
+
+      enemyTurnDamage();
+      render();
+      if(checkPartyDefeated()) return;
+      // 注意: ここでは意図的にsaveGame()を呼ばない。ラウンドごとに保存すると
+      // 通信回数が戦闘の長さに比例して膨らむため、保存は「戦闘の決着がついた
+      // 瞬間(勝利/敗北/撤退)」にまとめて1回だけ行う設計にしている。
+      // トレードオフとして、戦闘の途中でブラウザが落ちた場合はそのラウンドの
+      // 進行(HP/MPの増減など)が失われる可能性があるが、1戦闘は数秒〜十数秒
+      // 程度なのでリスクは小さいと判断している。
+    }
+  }
+
+  /* ---------------- コロシアムタワー: 画面キャッシュ・入室・挑戦 ---------------- */
+  let colosseumView = { loading: true, floor: 1, record: null, isDummy: true };
+
+  async function refreshColosseumView(){
+    const floor = state.colosseum.floorRight;
+    colosseumView = { loading: true, floor, record: null, isDummy: true };
+    render();
+    let record = await loadColosseumRecord(floor);
+    let isDummy = false;
+    if(!record){ record = buildDummyGatekeeper(floor); isDummy = true; }
+    colosseumView = { loading: false, floor, record, isDummy };
+    render();
+  }
+
+  async function gotoColosseum(){
+    if(inCombat) return;
+    state.screen = 'colosseum';
+    saveGame(); render();
+    await claimOwnMailbox();
+    await refreshColosseumView();
+  }
+
+  async function challengeColosseum(){
+    if(inCombat) return;
+    if(!state.party.length){
+      pushLog('パーティが編成されていない。町で編成してから挑もう。', 'system');
+      render();
+      return;
+    }
+    const now = Date.now();
+    const remain = COLOSSEUM_COOLDOWN_MS - (now - (state.colosseum.lastChallengeAt||0));
+    if(remain > 0) return; // ボタン側でも無効化しているが念のため
+
+    // クールタイム表示はすぐに反映するが、実際の保存はresolve_colosseum_battle
+    // RPC(戦闘決着時)にまとめて任せる。
+    state.colosseum.lastChallengeAt = now;
+    render();
+
+    const floor = state.colosseum.floorRight;
+    let record = await loadColosseumRecord(floor);
+    let isDummy = false;
+    if(!record){
+      record = buildDummyGatekeeper(floor);
+      isDummy = true;
+    }
+    const agg = aggregateSnapshotStats(record.snapshot);
+
+    // 挑戦者側は毎回全回復した状態で挑む(門番側だけがダメージを引き継ぐ)
+    state.party.forEach(id=>{
+      const ls = liverState(id);
+      ls.hp = ls.maxHp; ls.mp = ls.maxMp;
+    });
+
+    const enemy = {
+      name: record.holderName || `${floor}Fの門番`,
+      level: agg.level,
+      hp: record.hpPool, maxHp: record.maxHpPool,
+      atk: agg.atk, def: agg.def,
+      exp: 0, boss: true,
+      skills: [{key:'crit', name:'連携の一撃', everyNTurns:4, kind:'trueDamage', mult:2.0}],
+      weakness: null,
+      isColosseum: true,
+      colosseumFloor: floor,
+      colosseumHolderId: isDummy ? null : record.holderId,
+      colosseumIsDummy: isDummy,
+      colosseumSnapshot: record.snapshot,
+      colosseumMaxHpPool: record.maxHpPool,
+      colosseumWins: record.wins || 0,
+      colosseumStartHp: record.hpPool // 今回の挑戦開始時点でのダメージ計算の基準値
+    };
+    startCombat(enemy);
+  }
+
+  async function resolveColosseumVictory(){
+    const floor = combatEnemy.colosseumFloor;
+    const enemyName = combatEnemy.name;
+    const damageDealt = Math.max(0, combatEnemy.colosseumStartHp - Math.max(0, combatEnemyHp));
+    const snapshot = buildPartySnapshot();
+    const maxHpPool = snapshot.reduce((s,m)=>s+m.maxHp, 0);
+
+    const { data, error } = await sb.rpc('resolve_colosseum_battle', {
+      p_floor: floor, p_damage_dealt: damageDealt, p_won: true,
+      p_new_snapshot: snapshot, p_new_max_hp_pool: maxHpPool
+    });
+    if(error){
+      console.error('resolve_colosseum_battle(win) failed', error);
+      pushLog('サーバーとの通信に失敗した。もう一度試してほしい。', 'danger');
+      inCombat = false; combatPhase = null; combatEnemy = null;
+      render();
+      return;
+    }
+    const medals = (data && data.medals_gained) || (floor >= COLOSSEUM_FLOORS ? 50 : 1);
+    state.colosseum.medals += medals;
+    if(floor < COLOSSEUM_FLOORS){
+      state.colosseum.floorRight = floor + 1;
+      pushLog(`${enemyName}を打ち破り、コロシアム${floor}Fの門番の座を奪った！(メダル+${medals})`, 'reward');
+    } else {
+      pushLog(`${enemyName}を打ち破り、コロシアムタワー${COLOSSEUM_FLOORS}Fを制覇した！(メダル+${medals})`, 'reward');
+    }
+
+    inCombat = false; combatPhase = null; combatEnemy = null;
+    render();
+    await refreshColosseumView();
+  }
+
+  /* 敗北時は、与えたダメージ(永続)と防衛勝利のカウント、メールボックスへの
+   * メダル加算を、すべてサーバー側のRPC(1トランザクション)で処理する。
+   * 1F以外での敗北は挑戦権を1Fへ戻す。ダミー相手の敗北は何も永続化しない。 */
+  async function resolveColosseumDefeat(ctx){
+    const damageDealt = Math.max(0, ctx.startHp - ctx.remainingHp);
+
+    const { error } = await sb.rpc('resolve_colosseum_battle', {
+      p_floor: ctx.floor, p_damage_dealt: damageDealt, p_won: false
+    });
+    if(error) console.error('resolve_colosseum_battle(lose) failed', error);
+
+    if(ctx.floor > 1){
+      state.colosseum.floorRight = 1;
+      pushLog(`コロシアム${ctx.floor}Fの門番に敗れた。挑戦権が1Fに戻された。`, 'danger');
+    } else {
+      pushLog(`コロシアム1Fの門番に敗れた。`, 'danger');
+    }
+    if(!ctx.isDummy && ctx.holderId === state.playerId){
+      // 自分自身が持つ記録に挑んで負けた特殊ケース。サーバー側で自分に加算済みなのでローカルにも反映
+      state.colosseum.medals += ctx.floor;
+    }
+
+    saveGame();
+    await refreshColosseumView();
+  }
+
+  function fleeCombat(){
+    if(!inCombat || combatPhase !== 'choice') return;
+    if(Math.random() < 0.6){
+      pushLog('なんとか逃げ出した。', 'system');
+      inCombat = false; combatPhase = null; combatEnemy = null;
+      saveGame(); render();
+    }else{
+      pushLog('逃げられなかった！', 'danger');
+      enemyTurnDamage();
+      if(checkPartyDefeated()) return;
+      saveGame(); render();
+    }
+  }
+
+  function handleDefeat(){
+    const wasColosseum = combatEnemy && combatEnemy.isColosseum;
+    const colosseumCtx = wasColosseum ? {
+      floor: combatEnemy.colosseumFloor,
+      holderId: combatEnemy.colosseumHolderId,
+      holderName: combatEnemy.name,
+      isDummy: combatEnemy.colosseumIsDummy,
+      snapshot: combatEnemy.colosseumSnapshot,
+      maxHpPool: combatEnemy.colosseumMaxHpPool,
+      wins: combatEnemy.colosseumWins,
+      startHp: combatEnemy.colosseumStartHp,
+      remainingHp: Math.max(0, combatEnemyHp)
+    } : null;
+
+    inCombat = false; combatPhase = null; combatEnemy = null;
+    state.party.forEach(id=>{
+      const ls = liverState(id);
+      ls.hp = ls.maxHp; // 全滅後、傷は癒えている
+      ls.mp = ls.maxMp;
+    });
+
+    if(wasColosseum){
+      resolveColosseumDefeat(colosseumCtx); // 非同期(fire-and-forget)。結果は再描画時に反映
+      render();
+      return;
+    }
+
+    const lost = Math.round(state.gold * 0.2);
+    state.gold -= lost;
+    state.pendingDefeatGoldLoss = lost;
+    state.screen = 'dead';
+    saveGame(); render();
+  }
+
+  function returnToTownAfterDeath(){
+    state.pendingDefeatGoldLoss = 0;
+    state.screen = 'town';
+    saveGame(); render();
+  }
+
+  function advance(){
+    if(inCombat) return;
+    const dungeonDef = currentDungeonDef();
+    const ds = currentDungeonState();
+    if(!dungeonDef || !ds) return;
+    if(!alivePartyIds().length) return; // 全員戦闘不能では進めない
+    ds.depth += 1;
+    const roll = Math.random();
+
+    if(roll < 0.55){
+      const enemy = spawnEnemy(dungeonDef, ds.depth, false);
+      enemy.pendingProgressOnWin = true;
+      startCombat(enemy);
+    } else if(roll < 0.72){
+      let healText = [];
+      state.party.forEach(id=>{
+        const ls = liverState(id);
+        if(ls.hp<=0) return;
+        const heal = Math.round(ls.maxHp*0.15);
+        const mpHeal = Math.round(ls.maxMp*0.15);
+        ls.hp = Math.min(ls.maxHp, ls.hp+heal);
+        ls.mp = Math.min(ls.maxMp, ls.mp+mpHeal);
+      });
+      pushLog(`静かな小部屋で一息ついた。パーティのHP・MPが少し回復した。`, 'system');
+      addDungeonProgress(PROGRESS_PER_STEP);
+      saveGame(); render();
+    } else if(roll < 0.90){
+      maybeDropItem(ds.depth);
+      if(state.log.length===0 || state.log[state.log.length-1].text.indexOf('見つけ')<0){
+        pushLog('崩れた棚の奥に何かが残っていた。', 'system');
+      }
+      addDungeonProgress(PROGRESS_PER_STEP);
+      saveGame(); render();
+    } else {
+      const target = pickRandomAliveTarget();
+      if(target){
+        const ls = liverState(target);
+        const dmg = Math.round(3 + ds.depth*0.4);
+        ls.hp = Math.max(1, ls.hp - dmg);
+        pushLog(`罠にかかった。${liverDef(target).name}が ${dmg} のダメージ。`, 'danger');
+      }
+      addDungeonProgress(PROGRESS_PER_STEP);
+      saveGame(); render();
+    }
+  }
+
+  function challengeBoss(){
+    if(inCombat || !alivePartyIds().length) return;
+    const dungeonDef = currentDungeonDef();
+    const ds = currentDungeonState();
+    if(!dungeonDef || !ds || ds.progress < 100) return;
+    const enemy = spawnEnemy(dungeonDef, ds.depth, true);
+    enemy.isDungeonBoss = true;
+    startCombat(enemy);
+  }
+
+  /* 装備の変更は町(ダンジョン探索中でない状態)でのみ許可する。 */
+  function canManageEquipment(){ return state.screen !== 'dungeon'; }
+
+  /* 装備は共有の所持品プールから、「編成」画面で装備を見ている最中のライバー
+   * (state.ui.equipViewLiver)へ割り当てる。常に誰かを対象として保持し続ける
+   * のではなく、装備画面を開いている間だけ有効な一時的な選択とする。 */
+  function equipItem(id){
+    if(!canManageEquipment()) return;
+    const targetId = state.ui.equipViewLiver;
+    if(!targetId || !liverState(targetId)) return;
+    const idx = state.inventory.findIndex(i=>i.id===id);
+    if(idx<0) return;
+    const item = state.inventory[idx];
+    const slot = item.type;
+    const ls = liverState(targetId);
+    const prev = ls.equipped[slot];
+    state.inventory.splice(idx,1);
+    if(prev) state.inventory.push(prev); // 元々装備していた物は所持品に戻す
+    ls.equipped[slot] = item;
+    pushLog(`${liverDef(targetId).name}が「${item.name}」を装備した。`, 'system');
+    saveGame(); render();
+  }
+
+  function unequipSlot(slot, liverId){
+    if(!canManageEquipment()) return;
+    const targetId = liverId || state.ui.equipViewLiver;
+    if(!targetId || !liverState(targetId)) return;
+    const ls = liverState(targetId);
+    const item = ls.equipped[slot];
+    if(!item) return;
+    if(state.inventory.length >= INVENTORY_MAX){
+      pushLog('所持品がいっぱいで外せない。', 'system');
+      return;
+    }
+    ls.equipped[slot] = null;
+    state.inventory.push(item);
+    pushLog(`${liverDef(targetId).name}の${slot==='weapon' ? '武器':'防具'}を外した。`, 'system');
+    saveGame(); render();
+  }
+
+  /* 「装備を見る」ボタンで開閉する。同じ相手をもう一度押すと閉じ、
+   * 別の相手を押すとそちらに切り替わる(常に1人だけが開いた状態)。 */
+  function toggleEquipView(id){
+    if(!liverState(id)) return;
+    state.ui.equipViewLiver = (state.ui.equipViewLiver === id) ? null : id;
+    render();
+  }
+
+  function discardItem(id){
+    state.inventory = state.inventory.filter(i=>i.id!==id);
+    saveGame(); render();
+  }
+
+  /* ---------------- 街・移動 ---------------- */
+  function gotoScreen(name){
+    if(inCombat) return;
+    if(name==='shop') shopStock = generateShopStock();
+    state.screen = name;
+    saveGame(); render();
+  }
+  function backToTown(){
+    if(inCombat) return;
+    state.screen = 'town';
+    saveGame(); render();
+  }
+  function enterDungeon(id){
+    if(inCombat) return;
+    if(!isDungeonUnlocked(id)) return;
+    if(!state.party.length){
+      pushLog('パーティが編成されていない。町で編成してから向かおう。', 'system');
+      render();
+      return;
+    }
+    state.activeDungeonId = id;
+    state.screen = 'dungeon';
+    state.log = [];
+    saveGame(); render();
+  }
+
+  function isPartyFull(){ return state.party.every(id=>{ const ls=liverState(id); return ls.hp>=ls.maxHp && ls.mp>=ls.maxMp; }); }
+
+  /* ---------------- 宿屋 ---------------- */
+  function stayAtInn(){
+    const cost = Math.max(5, partyLevel()*3);
+    if(state.gold < cost || isPartyFull() || !state.party.length) return;
+    state.gold -= cost;
+    state.party.forEach(id=>{
+      const ls = liverState(id);
+      ls.hp = ls.maxHp;
+      ls.mp = ls.maxMp;
+    });
+    pushLog('宿でぐっすり眠り、パーティの傷とMPが癒えた。', 'reward');
+    saveGame(); render();
+  }
+
+  /* ---------------- 商店 ---------------- */
+  function generateShopStock(){
+    const arr = [];
+    for(let i=0;i<4;i++){
+      const type = i%2===0 ? 'weapon' : 'armor';
+      const item = makeItem(type, Math.max(1, partyLevel()*2));
+      item.price = Math.max(10, Math.round(item.value*9));
+      arr.push(item);
+    }
+    return arr;
+  }
+  function buyShopItem(id){
+    const idx = shopStock.findIndex(i=>i.id===id);
+    if(idx<0) return;
+    const item = shopStock[idx];
+    if(state.gold < item.price) return;
+    if(state.inventory.length >= INVENTORY_MAX){
+      pushLog('所持品がいっぱいで購入できない。', 'system');
+      return;
+    }
+    state.gold -= item.price;
+    const { price, ...rest } = item;
+    state.inventory.push({...rest, id:'itm_'+Math.random().toString(36).slice(2,9)});
+    shopStock.splice(idx,1);
+    pushLog(`「${item.name}」を購入した。`, 'reward');
+    saveGame(); render();
+  }
+  function sellItem(id){
+    const idx = state.inventory.findIndex(i=>i.id===id);
+    if(idx<0) return;
+    const item = state.inventory[idx];
+    const price = Math.max(1, Math.round(item.value*3));
+    state.gold += price;
+    state.inventory.splice(idx,1);
+    pushLog(`「${item.name}」を ${price}G で売却した。`, 'system');
+    saveGame(); render();
+  }
+
+  /* ---------------- 家 ---------------- */
+  function renameCharacter(){
+    const input = document.getElementById('nameEditInput');
+    if(!input) return;
+    const val = input.value.trim();
+    if(val){
+      state.name = val;
+      pushLog('名を書き換えた。', 'system');
+      saveGame(); render();
+    }
+  }
+  function buyFurniture(id){
+    const item = FURNITURE_CATALOG.find(f=>f.id===id);
+    if(!item) return;
+    if(state.home.furniture.includes(id)) return;
+    if(state.gold < item.price) return;
+    state.gold -= item.price;
+    state.home.furniture.push(id);
+    pushLog(`「${item.name}」を家に置いた。`, 'reward');
+    saveGame(); render();
+  }
+
+  /* ---------------- Rendering ---------------- */
+  const app = document.getElementById('app');
+
+  function esc(s){
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function renderCreate(){
+    const liverCardsHtml = LIVER_DEFS.map(def=>{
+      const selected = createSelectedLiver === def.id;
+      return `
+        <button data-pick-liver="${def.id}" class="create-liver-card${selected?' selected':''}" style="${selected?`border-color:${def.color};`:''}">
+          <span class="create-liver-chip" style="background:${def.color};"></span>
+          <span class="create-liver-name">${esc(def.name)}</span>
+          <span class="create-liver-title">${esc(def.title)} ・ ${esc(JOB_DEFS[def.job].name)}</span>
+        </button>`;
+    }).join('');
+
+    app.innerHTML = `
+      <div class="create-box">
+        <h1>${GAME_TITLE_HTML}</h1>
+        <p class="subtitle">${GAME_SUBTITLE}</p>
+        <p>かつての文明が滅びてから幾星霜。地の底には、失われた時代の遺構が今も眠っている。<br>
+        あなたは再興された小さな町に降り立ち、糧となる何かを求めて迷宮へ向かおうとしている。</p>
+        <input id="nameInput" type="text" placeholder="冒険者の名を入力" maxlength="12" value="${esc(createNameDraft)}">
+        <p class="section-label" style="margin-top:18px;text-align:left;">最初の仲間を1人選ぼう</p>
+        <p style="color:var(--text-muted);font-size:11px;margin:0 0 10px;text-align:left;">選ばなかった仲間は、この先の迷宮の奥で出会うことになる。</p>
+        <div class="create-liver-grid">${liverCardsHtml}</div>
+        <div class="actions" style="justify-content:center;">
+          <button class="primary" id="startBtn" ${createSelectedLiver?'':'disabled'}>町へ降り立つ</button>
+        </div>
+      </div>
+    `;
+    document.querySelectorAll('[data-pick-liver]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        createNameDraft = document.getElementById('nameInput').value;
+        createSelectedLiver = b.getAttribute('data-pick-liver');
+        renderCreate();
+      });
+    });
+    document.getElementById('startBtn').addEventListener('click', async ()=>{
+      if(!createSelectedLiver) return;
+      const btn = document.getElementById('startBtn');
+      btn.disabled = true;
+      try{
+        const val = document.getElementById('nameInput').value.trim();
+        const name = val || '名もなき冒険者';
+        const starterName = liverDef(createSelectedLiver).name;
+        const uid = await ensureAuth();
+        state = newCharacter(name, createSelectedLiver, uid);
+        pushLog(`${name}は、${starterName}と共に再興の町に降り立った。`, 'system');
+        await saveGame();
+        render();
+      }catch(e){
+        console.error('character creation failed', e);
+        btn.disabled = false;
+        alert('データの初期化に失敗しました。通信状況を確認してもう一度試してください。');
+      }
+    });
+    document.getElementById('nameInput').addEventListener('input', (e)=>{ createNameDraft = e.target.value; });
+    document.getElementById('nameInput').addEventListener('keydown', (e)=>{
+      if(e.key==='Enter' && createSelectedLiver) document.getElementById('startBtn').click();
+    });
+  }
+
+  function renderLog(){
+    return state.log.map(l=>`<p class="log-entry ${l.cls}">${esc(l.text)}</p>`).join('');
+  }
+
+  function locationLabel(){
+    if(state.screen==='dungeon' && state.activeDungeonId){
+      const def = currentDungeonDef();
+      return def.name;
+    }
+    if(state.screen==='party') return 'パーティ編成';
+    if(state.screen==='colosseum') return (inCombat && combatEnemy && combatEnemy.isColosseum) ? `コロシアムタワー ${combatEnemy.colosseumFloor}F` : 'コロシアムタワー';
+    if(state.screen==='inn') return '宿屋';
+    if(state.screen==='shop') return '商店';
+    if(state.screen==='home') return 'マイホーム';
+    if(state.screen==='dead') return '……';
+    return '再興の町';
+  }
+
+  function renderHeaderBadge(){
+    let progressRow = '';
+    if(state.screen==='dungeon' && state.activeDungeonId){
+      const ds = currentDungeonState();
+      progressRow = `
+        <div class="badge-row">
+          <span>踏破率</span>
+          <span class="badge-progress-track"><span class="badge-progress-fill" style="width:${Math.min(100,ds.progress)}%;"></span></span>
+          <span>${ds.progress}%</span>
+        </div>`;
+    }
+    return `
+      <div class="depth-badge">
+        <div class="badge-row badge-location">${esc(locationLabel())}</div>
+        ${progressRow}
+        <div class="badge-row badge-gold">${state.gold} G</div>
+      </div>`;
+  }
+
+  function sceneHeadingHtml(text){
+    return `<p class="scene-heading">${esc(text)}</p>`;
+  }
+
+  function toggleGroup(groupId){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    const idx = state.ui.expandedGroups.indexOf(groupId);
+    if(idx>=0) state.ui.expandedGroups.splice(idx,1);
+    else state.ui.expandedGroups.push(groupId);
+    saveGame(); render();
+  }
+
+  function renderDungeonGroups(){
+    const groups = [];
+    const seen = {};
+    DUNGEON_DEFS.forEach(def=>{
+      if(!seen[def.group]){
+        seen[def.group] = {id:def.group, name:def.groupName, defs:[]};
+        groups.push(seen[def.group]);
+      }
+      seen[def.group].defs.push(def);
+    });
+
+    return groups.map(g=>{
+      const total = g.defs.length;
+      const clearedCount = g.defs.filter(d=>state.dungeons[d.id].cleared).length;
+      const expanded = !!(state.ui && state.ui.expandedGroups.includes(g.id));
+      const rows = g.defs.map(def=>{
+        const unlocked = isDungeonUnlocked(def.id);
+        const ds = state.dungeons[def.id];
+        const status = !unlocked
+          ? '🔒 未解放'
+          : ds.cleared
+            ? `踏破済み ×${ds.bossKillCount} (踏破率 ${ds.progress}%)`
+            : `踏破率 ${ds.progress}%`;
+        const label = def.floorLabel ? `${def.floorLabel}` : def.name;
+        return `
+          <div class="inv-item" style="${unlocked?'':'opacity:.55;'}">
+            <span class="inv-item-name">${esc(label)}<br><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${status}</span></span>
+            <span class="inv-item-actions">${unlocked ? `<button data-enter-dungeon="${def.id}">入る</button>` : ''}</span>
+          </div>`;
+      }).join('');
+
+      return `
+        <div style="margin-bottom:8px;">
+          <button data-toggle-group="${esc(g.id)}" style="width:100%;display:flex;justify-content:space-between;align-items:center;text-align:left;">
+            <span>${expanded?'▼':'▶'} ${esc(g.name)}</span>
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--gold);">${clearedCount}/${total}</span>
+          </button>
+          ${expanded ? `<div style="margin-top:8px;">${rows}</div>` : ''}
+        </div>`;
+    }).join('');
+  }
+
+  function renderDungeonInner(){
+    const dungeonDef = currentDungeonDef();
+    const ds = currentDungeonState();
+    if(inCombat){
+      const hpPct = Math.max(0,Math.round(combatEnemyHp/combatEnemy._maxHp*100));
+      const weaknessLabel = combatEnemy.weakness ? (ELEMENT_LABELS[combatEnemy.weakness]||'?') : '不明';
+      const partyRowsHtml = renderPartyCompactRows();
+      const actionsHtml = combatPhase === 'choice'
+        ? `
+          <div class="actions">
+            <button class="primary" id="fightBtn">戦う</button>
+            <button class="danger" id="fleeBtn">逃げる</button>
+          </div>`
+        : `<div class="actions"><button disabled>戦闘中…</button></div>`;
+      return `
+        <div class="scene-text">
+          ${sceneHeadingHtml(dungeonDef.name)}
+          ${actionsHtml}
+          <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--text-muted);margin-top:16px;">
+            Lv.${combatEnemy.level} ${esc(combatEnemy.name)} — HP ${Math.max(0,combatEnemyHp)}/${combatEnemy._maxHp} ・ 弱点属性: ${esc(weaknessLabel)}
+          </p>
+          <div class="bar-track" style="margin-bottom:14px;"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#c62f2f,var(--hp-red));height:100%;"></div></div>
+          <div style="margin-bottom:14px;">${partyRowsHtml}</div>
+          ${renderLog()}
+        </div>`;
+    }
+
+    const bossReady = ds.progress >= 100;
+    const actionsHtml = `
+      <div class="actions">
+        <button class="primary" id="advBtn" ${!alivePartyIds().length?'disabled':''}>奥へ進む</button>
+        ${bossReady ? `<button class="danger" id="bossBtn" ${!alivePartyIds().length?'disabled':''}>${ds.cleared ? 'ボスに再挑戦' : 'ボスに挑む'}</button>` : ''}
+        <button id="backTownBtn">町に戻る</button>
+      </div>`;
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml(dungeonDef.name)}
+        ${actionsHtml}
+        <div style="margin-top:16px;">
+          ${renderLog() || '<p class="log-entry system">静寂が続いている……</p>'}
+        </div>
+      </div>`;
+  }
+
+  function renderTownInner(){
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('再興の町')}
+        <p class="log-entry system">かつての瓦礫の上に、人々が再び火を灯し始めた場所。宿の煙突からは絶えず煙が上がり、市場には迷宮帰りの冒険者たちの姿がある。</p>
+      </div>
+      <div class="actions">
+        <button class="primary" id="gotoPartyBtn">編成</button>
+        <button class="primary" id="gotoInnBtn">宿屋</button>
+        <button class="primary" id="gotoShopBtn">商店</button>
+        <button class="primary" id="gotoHomeBtn">家へ帰る</button>
+        <button class="danger" id="gotoColosseumBtn">コロシアムタワー</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">ダンジョン</p>
+        ${renderDungeonGroups()}
+      </div>
+    `;
+  }
+
+  function renderPartyMemberRow(def){
+    const ls = liverState(def.id);
+    const inParty = state.party.includes(def.id);
+    const expanded = state.ui.equipViewLiver === def.id;
+    const weapon = ls.equipped.weapon;
+    const armor = ls.equipped.armor;
+
+    const summaryRow = `
+      <div class="inv-item" style="${inParty?'border-left-color:var(--gold);':''}">
+        <span style="width:10px;height:10px;background:${def.color};display:inline-block;margin-right:8px;"></span>
+        <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${ls.level} ・ ${esc(JOB_DEFS[ls.job].name)}</span></span>
+        <span class="inv-item-actions">
+          <button data-toggle-party="${def.id}" ${(!inParty && state.party.length>=PARTY_MAX)?'disabled':''}>${inParty?'外す':'編成に入れる'}</button>
+          <button data-toggle-equip-view="${def.id}" class="${expanded?'primary':''}">${expanded?'装備を閉じる':'装備を見る'}</button>
+        </span>
+      </div>`;
+
+    const equipHtml = expanded ? `
+      <div style="margin:6px 0 14px 10px;">
+        <div class="equip-row">
+          <span class="equip-slot">武器</span>
+          <span>${weapon ? `${esc(weapon.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(weapon))}</span>` : '未装備'}${weapon ? `<button data-unequip="weapon" data-unequip-for="${def.id}">外す</button>` : ''}</span>
+        </div>
+        <div class="equip-row">
+          <span class="equip-slot">防具</span>
+          <span>${armor ? `${esc(armor.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(armor))}</span>` : '未装備'}${armor ? `<button data-unequip="armor" data-unequip-for="${def.id}">外す</button>` : ''}</span>
+        </div>
+        <p style="color:var(--text-muted);font-size:11px;margin:8px 0 0;">右の「所持品」パネルに装備ボタンが表示される。他の武器・防具を選んで装備できる。</p>
+      </div>` : '';
+
+    return summaryRow + equipHtml;
+  }
+
+  function renderPartyInner(){
+    const unlockedDefs = LIVER_DEFS.filter(d=>liverState(d.id).unlocked);
+    const inPartyDefs = unlockedDefs.filter(d=>state.party.includes(d.id));
+    const benchedDefs = unlockedDefs.filter(d=>!state.party.includes(d.id));
+    const lockedDefs = LIVER_DEFS.filter(d=>!liverState(d.id).unlocked);
+
+    const partyRows = inPartyDefs.length
+      ? inPartyDefs.map(renderPartyMemberRow).join('')
+      : `<p class="inv-empty">まだ誰も編成されていない。下の「待機中」から選ぼう。</p>`;
+
+    const benchRows = benchedDefs.length
+      ? benchedDefs.map(renderPartyMemberRow).join('')
+      : `<p class="inv-empty">${unlockedDefs.length ? '仲間は全員編成済み。' : 'まだ仲間がいない。'}</p>`;
+
+    const lockedRows = lockedDefs.map(def=>{
+      const hint = def.unlockDungeon ? `${dungeonDefById(def.unlockDungeon).name}を踏破すると仲間になる` : '未解放';
+      return `
+        <div class="inv-item" style="opacity:.5;">
+          <span class="inv-item-name">🔒 ${esc(def.name)}<br><span style="color:var(--text-muted);font-size:11px;">${esc(hint)}</span></span>
+        </div>`;
+    }).join('');
+
+    const fullNotice = (state.party.length>=PARTY_MAX && benchedDefs.length)
+      ? `<p style="color:var(--text-muted);font-size:11px;margin:6px 0 0;">編成は満員。待機中の仲間を入れるには、まず誰かを外そう。</p>`
+      : '';
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('パーティ編成')}
+        <p class="log-entry system">最大${PARTY_MAX}人まで編成できる。ダンジョンにはここで選んだ仲間だけが同行する。装備の変更も町にいる間だけ行える。</p>
+        <p class="log-entry" style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">現在の編成: ${state.party.length}/${PARTY_MAX} ・ 仲間の総数: ${unlockedDefs.length}</p>
+      </div>
+      <div class="actions"><button id="backTownBtn">町に戻る</button></div>
+      <div class="section-block">
+        <p class="section-label">編成中</p>
+        ${partyRows}
+      </div>
+      <div class="section-block">
+        <p class="section-label">待機中</p>
+        ${benchRows}
+        ${fullNotice}
+      </div>
+      ${lockedDefs.length ? `
+      <div class="section-block">
+        <p class="section-label">未解放</p>
+        ${lockedRows}
+      </div>` : ''}
+    `;
+  }
+
+  function renderInnInner(){
+    const line = INNKEEPER_LINES[Math.floor(Math.random()*INNKEEPER_LINES.length)];
+    const cost = Math.max(5, partyLevel()*3);
+    const full = isPartyFull();
+    const partyStatusHtml = state.party.map(id=>{
+      const ls = liverState(id);
+      return `<p class="log-entry" style="font-size:12px;">${esc(liverDef(id).name)}: HP ${ls.hp}/${ls.maxHp} ・ MP ${ls.mp}/${ls.maxMp}</p>`;
+    }).join('') || `<p class="log-entry system">パーティが編成されていない。</p>`;
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('宿屋')}
+        <p class="log-entry system">宿屋の女将マーレ:「${esc(line)}」</p>
+        ${partyStatusHtml}
+      </div>
+      <div class="actions">
+        <button class="primary" id="stayBtn" ${(full||state.gold<cost||!state.party.length)?'disabled':''}>パーティ全員で泊まる (${cost}G)</button>
+        <button id="backTownBtn">町に戻る</button>
+      </div>
+    `;
+  }
+
+  function renderShopInner(){
+    const line = SHOPKEEPER_LINES[Math.floor(Math.random()*SHOPKEEPER_LINES.length)];
+    const buyHtml = shopStock.length ? shopStock.map(item=>`
+      <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
+        <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
+        <span class="inv-item-actions">
+          <button data-buy-shop="${item.id}" ${(state.gold<item.price || state.inventory.length>=INVENTORY_MAX)?'disabled':''}>${item.price}G 購入</button>
+        </span>
+      </div>`).join('') : `<p class="inv-empty">今日の品はもう出払っている。</p>`;
+
+    const sellHtml = state.inventory.length ? state.inventory.map(item=>`
+      <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
+        <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
+        <span class="inv-item-actions">
+          <button data-sell="${item.id}">${Math.max(1,Math.round(item.value*3))}G で売る</button>
+        </span>
+      </div>`).join('') : `<p class="inv-empty">売れる物がない。</p>`;
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('商店')}
+        <p class="log-entry system">商人オーレンス:「${esc(line)}」</p>
+      </div>
+      <div class="actions"><button id="backTownBtn">町に戻る</button></div>
+      <div class="section-block">
+        <p class="section-label">購入</p>
+        ${buyHtml}
+      </div>
+      <div class="section-block">
+        <p class="section-label">売却</p>
+        ${sellHtml}
+      </div>
+    `;
+  }
+
+  function renderResistancePanel(liverId){
+    const res = liverResistances(liverId);
+    const rows = Object.keys(ELEMENT_LABELS).map(el=>{
+      const value = res[el] || 0;
+      const pct = value * 3;
+      const pctLabel = pct === 0 ? '±0%' : (pct > 0 ? `-${pct}%` : `+${Math.abs(pct)}%`);
+      const color = value > 0 ? 'var(--rare-uncommon)' : (value < 0 ? 'var(--danger)' : 'var(--text-muted)');
+      return `
+        <div class="inv-item">
+          <span class="inv-item-name">${ELEMENT_LABELS[el]}属性</span>
+          <span class="inv-item-actions" style="font-family:var(--font-mono);font-size:12px;color:${color};">
+            ${value>0?'+':''}${value} <span style="color:var(--text-muted);">(被ダメージ ${pctLabel})</span>
+          </span>
+        </div>`;
+    }).join('');
+    return rows + `<p style="color:var(--text-muted);font-size:11px;margin:6px 0 0;">レベルアップでは変化しません。装備品(主に防具)に付く耐性値によってのみ増減します。</p>`;
+  }
+
+  function renderHomeInner(){
+    const ownedHtml = state.home.furniture.length
+      ? state.home.furniture.map(id=>{
+          const f = FURNITURE_CATALOG.find(x=>x.id===id);
+          return `<div class="inv-item uncommon"><span>${esc(f.name)}<br><span style="color:var(--text-muted);font-size:11px;">${esc(f.flavor)}</span></span></div>`;
+        }).join('')
+      : `<p class="inv-empty">まだ何も置かれていない。</p>`;
+
+    const catalogHtml = FURNITURE_CATALOG.filter(f=>!state.home.furniture.includes(f.id)).map(f=>`
+      <div class="inv-item">
+        <span class="inv-item-name">${esc(f.name)} <span style="color:var(--gold);font-family:var(--font-mono);font-size:11px;">${f.price}G</span></span>
+        <span class="inv-item-actions">
+          <button data-buy-furniture="${f.id}" ${state.gold<f.price?'disabled':''}>設置</button>
+        </span>
+      </div>`).join('');
+
+    const rosterHtml = LIVER_DEFS.filter(def=>liverState(def.id).unlocked).map(def=>{
+      const id = def.id;
+      const ls = liverState(id);
+      const job = JOB_DEFS[ls.job];
+      const expanded = !!(state.ui.expandedGroups.includes('liver:'+id));
+      const { atkRate, actions } = computeActionRates(id);
+      const actualRateOf = key => {
+        const found = actions.find(a=>a.skill.key===key);
+        return found ? Math.round(found.rate) : 0;
+      };
+
+      const jobSwitchHtml = Object.keys(JOB_DEFS).map(jobId=>`
+        <button data-switch-liver-job="${id}:${jobId}" ${ls.job===jobId?'disabled':''} style="padding:3px 9px;font-size:11px;">${ls.job===jobId?'◆ ':''}${esc(JOB_DEFS[jobId].name)}</button>`).join('');
+
+      const atkRow = `
+        <div class="inv-item" style="border-left-color:var(--text-muted);opacity:.85;">
+          <span class="inv-item-name">通常攻撃 <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(常時習得済み・下限50%)</span></span>
+          <span class="inv-item-actions">
+            <span style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">${Math.round(atkRate)}%</span>
+          </span>
+        </div>`;
+
+      const skillRows = job.skills.map(s=>{
+        const enabled = ls.loadout.enabled.includes(s.key);
+        return `
+          <div class="inv-item" style="${enabled?'':'opacity:.5;'}">
+            <span class="inv-item-name">
+              ${esc(s.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${s.element?`${ELEMENT_LABELS[s.element]}属性 ・ `:''}MP${s.mpCost} ・ 発動率${s.baseRate}%${enabled?` → 実質${actualRateOf(s.key)}%`:''})</span><br>
+              <span style="color:var(--text-muted);font-size:11px;">${esc(s.desc)}</span>
+            </span>
+            <span class="inv-item-actions">
+              <button data-toggle-skill="${id}:${s.key}">${enabled?'無効化':'有効化'}</button>
+            </span>
+          </div>`;
+      }).join('');
+
+      const summaryRow = `
+        <button data-toggle-group="liver:${id}" style="width:100%;display:flex;justify-content:space-between;align-items:center;text-align:left;">
+          <span><span style="width:9px;height:9px;background:${def.color};display:inline-block;margin-right:6px;"></span>${expanded?'▼':'▶'} ${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${ls.level} ・ ${esc(job.name)}${state.party.includes(id)?' ・ 編成中':''}</span></span>
+        </button>`;
+
+      const detailHtml = expanded ? `
+        <div style="margin:8px 0 14px 10px;">
+          <p style="color:var(--text-muted);font-size:11px;margin:0 0 6px;">EXP ${ls.exp}/${expToNext(ls.level)} ・ ${esc(job.desc)}</p>
+          <p class="section-label" style="margin:6px 0 6px;">ジョブ</p>
+          <div class="actions" style="margin-top:0;margin-bottom:10px;">${jobSwitchHtml}</div>
+          <p class="section-label" style="margin:6px 0 6px;">スキル</p>
+          ${atkRow}
+          ${skillRows}
+          <p style="color:var(--text-muted);font-size:11px;margin:4px 0 0;">有効スキルは最大${SKILL_LOADOUT_MAX}つまで。希望発動率の合計が50%を超える分は自動的に按分されます。</p>
+          <p class="section-label" style="margin:10px 0 6px;">属性耐性</p>
+          ${renderResistancePanel(id)}
+        </div>` : '';
+
+      return `<div style="margin-bottom:6px;">${summaryRow}${detailHtml}</div>`;
+    }).join('');
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('マイホーム')}
+        <p class="log-entry system">あなただけの小さな家。まだ何もない部屋だが、少しずつ形にしていけばいい。</p>
+        <p class="log-entry" style="margin-top:10px;">現在の名前: <strong>${esc(state.name)}</strong></p>
+        <input id="nameEditInput" class="name-input" type="text" maxlength="12" placeholder="新しい名前">
+      </div>
+      <div class="actions">
+        <button id="renameBtn">名前を変更</button>
+        <button id="backTownBtn">町に戻る</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">仲間の管理(ジョブ・スキル・耐性)</p>
+        ${rosterHtml}
+      </div>
+      <div class="section-block">
+        <p class="section-label">設置済みの家具</p>
+        ${ownedHtml}
+      </div>
+      <div class="section-block">
+        <p class="section-label">家具カタログ</p>
+        ${catalogHtml || '<p class="inv-empty">すべて設置済み。</p>'}
+      </div>
+      <div class="section-block">
+        <p class="section-label">デバッグ</p>
+        <p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">セーブデータを完全に削除し、キャラ作成からやり直す。動作確認用の機能。</p>
+        <button class="danger" id="resetGameBtn">セーブデータをリセット</button>
+      </div>
+    `;
+  }
+
+  function renderDeadInner(){
+    const lost = state.pendingDefeatGoldLoss || 0;
+    return `
+      <div class="scene-text" style="text-align:center;padding:24px 0 8px;">
+        <p style="font-family:var(--font-display);font-weight:700;font-size:30px;color:var(--danger);text-shadow:2px 2px 0 #2c5c2c;margin:0 0 16px;">力尽きた……</p>
+        <p class="log-entry system">意識が遠のく中、誰かに担がれて街まで運ばれたようだ。</p>
+        ${lost>0 ? `<p class="log-entry danger">所持金を ${lost} 枚落としてしまった。</p>` : ''}
+      </div>
+      <div class="actions" style="justify-content:center;">
+        <button class="primary" id="returnTownBtn">街に戻る</button>
+      </div>
+    `;
+  }
+
+  function renderMainArea(){
+    let inner;
+    if(state.screen === 'dungeon') inner = renderDungeonInner();
+    else if(state.screen === 'party') inner = renderPartyInner();
+    else if(state.screen === 'colosseum') inner = renderColosseumInner();
+    else if(state.screen === 'inn') inner = renderInnInner();
+    else if(state.screen === 'shop') inner = renderShopInner();
+    else if(state.screen === 'home') inner = renderHomeInner();
+    else if(state.screen === 'dead') inner = renderDeadInner();
+    else inner = renderTownInner();
+    return `<div class="scene">${inner}</div>`;
+  }
+
+  function renderPartyCompactRows(){
+    return state.party.map(id=>{
+      const ls = liverState(id);
+      const def = liverDef(id);
+      const hpPct = ls.maxHp>0 ? Math.round(ls.hp/ls.maxHp*100) : 0;
+      const mpPct = ls.maxMp>0 ? Math.round(ls.mp/ls.maxMp*100) : 0;
+      return `
+        <div class="party-compact-row${ls.hp<=0?' ko':''}">
+          <span class="party-compact-chip" style="background:${def.color};"></span>
+          <span class="party-compact-name">${esc(def.name)}<span class="party-compact-lv">Lv.${ls.level}</span></span>
+          <span class="party-compact-bars">
+            <span class="mini-bar-track"><span class="mini-bar-fill hp" style="width:${hpPct}%;"></span></span>
+            <span class="mini-bar-track"><span class="mini-bar-fill mp" style="width:${mpPct}%;"></span></span>
+          </span>
+          <span class="party-compact-hp">${ls.hp<=0?'戦闘不能':`${ls.hp}/${ls.maxHp}`}</span>
+        </div>`;
+    }).join('');
+  }
+
+  function renderColosseumInner(){
+    if(inCombat && combatEnemy && combatEnemy.isColosseum){
+      const hpPct = Math.max(0, Math.round(combatEnemyHp/combatEnemy._maxHp*100));
+      const partyRowsHtml = renderPartyCompactRows();
+      const actionsHtml = combatPhase === 'choice'
+        ? `
+          <div class="actions">
+            <button class="primary" id="fightBtn">戦う</button>
+            <button class="danger" id="fleeBtn">逃げる</button>
+          </div>`
+        : `<div class="actions"><button disabled>戦闘中…</button></div>`;
+      return `
+        <div class="scene-text">
+          ${sceneHeadingHtml(`コロシアムタワー ${combatEnemy.colosseumFloor}F`)}
+          ${actionsHtml}
+          <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--text-muted);margin-top:16px;">
+            Lv.${combatEnemy.level} ${esc(combatEnemy.name)} — HP ${Math.max(0,combatEnemyHp)}/${combatEnemy._maxHp}
+          </p>
+          <div class="bar-track" style="margin-bottom:14px;"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#7a2fc6,#b06bff);height:100%;"></div></div>
+          <div style="margin-bottom:14px;">${partyRowsHtml}</div>
+          ${renderLog()}
+        </div>`;
+    }
+
+    const cs = state.colosseum;
+    const now = Date.now();
+    const cooldownLeft = Math.max(0, COLOSSEUM_COOLDOWN_MS - (now - (cs.lastChallengeAt||0)));
+    const canChallenge = cooldownLeft <= 0 && state.party.length > 0;
+
+    let gatekeeperHtml = '<p class="log-entry system">門番の情報を読み込み中……</p>';
+    if(!colosseumView.loading && colosseumView.floor === cs.floorRight && colosseumView.record){
+      const rec = colosseumView.record;
+      const hpPct = rec.maxHpPool>0 ? Math.max(0,Math.round(rec.hpPool/rec.maxHpPool*100)) : 0;
+      const memberRows = rec.snapshot.map(m=>`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <span style="width:8px;height:8px;background:${m.color};display:inline-block;flex:0 0 auto;"></span>
+          <span style="font-family:var(--font-mono);font-size:11px;">${esc(m.name)} <span style="color:var(--text-muted);">Lv.${m.level} ・ ${esc((JOB_DEFS[m.job]&&JOB_DEFS[m.job].name)||m.job)}</span></span>
+        </div>`).join('');
+      gatekeeperHtml = `
+        <p class="log-entry" style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">
+          ${cs.floorRight}Fの門番: ${esc(rec.holderName || '(まだ誰も登録していない)')}
+        </p>
+        <p class="log-entry" style="font-size:12px;color:var(--text-muted);">残りHP: ${rec.hpPool} / ${rec.maxHpPool} (${hpPct}%)${rec.wins ? ` ・ 防衛${rec.wins}勝` : ''}</p>
+        <div class="bar-track" style="margin-bottom:10px;"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#7a2fc6,#b06bff);height:100%;"></div></div>
+        <div style="margin-bottom:14px;">${memberRows}</div>
+      `;
+    }
+
+    const cooldownHtml = cooldownLeft > 0
+      ? `<p class="log-entry danger">クールタイム中: 残り約${Math.ceil(cooldownLeft/1000)}秒</p>`
+      : '';
+
+    const ladderHtml = Array.from({length: COLOSSEUM_FLOORS}, (_,i)=>i+1).map(f=>{
+      const st = f < cs.floorRight ? 'clear' : (f === cs.floorRight ? 'current' : 'locked');
+      return `<span style="display:inline-block;padding:3px 8px;margin:2px 4px 2px 0;border:1px solid ${st==='current'?'var(--gold)':'var(--win-border)'};font-family:var(--font-mono);font-size:10px;color:${st==='locked'?'var(--text-muted)':'#fff'};opacity:${st==='locked'?0.5:1};">${f}F</span>`;
+    }).join('');
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('コロシアムタワー')}
+        <p class="log-entry system">全プレイヤー共有のPvPタワー。門番に勝てば次のフロアへの挑戦権とメダルを獲得できる。負けると1Fからやり直しになる。</p>
+        <p class="log-entry" style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">挑戦権: ${cs.floorRight}F ・ メダル所持数: ${cs.medals}</p>
+        <div style="margin:10px 0 14px;">${ladderHtml}</div>
+        ${cooldownHtml}
+        ${gatekeeperHtml}
+      </div>
+      <div class="actions">
+        <button class="primary" id="colosseumChallengeBtn" ${canChallenge?'':'disabled'}>挑戦する</button>
+        <button id="backTownBtn">町に戻る</button>
+      </div>
+    `;
+  }
+
+  function renderCharacterLane(){
+    if(!state.party.length){
+      return `
+        <div class="panel">
+          <h2>パーティ</h2>
+          <p class="log-entry system">まだ誰も編成されていない。町で「編成」から仲間を選ぼう。</p>
+        </div>`;
+    }
+
+    return `
+      <div class="panel">
+        <h2>パーティ</h2>
+        ${renderPartyCompactRows()}
+        <p style="color:var(--text-muted);font-size:11px;margin:10px 0 0;">詳細(レベル・EXP・ジョブ・スキル・装備)は町の「マイホーム」「編成」から確認・変更できる。</p>
+      </div>
+    `;
+  }
+
+  function renderInventoryLane(){
+    const manageOk = canManageEquipment();
+    const viewingId = state.ui.equipViewLiver;
+    const targetName = manageOk && viewingId && liverState(viewingId) ? liverDef(viewingId).name : null;
+    const inv = state.inventory.length
+      ? state.inventory.map(i=>`
+          <div class="inv-item ${i.rarityLabel}" title="${esc(itemDetailText(i))}">
+            <span class="inv-item-name">${esc(i.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(i))}</span></span>
+            <span class="inv-item-actions">
+              ${targetName ? `<button data-equip="${i.id}">装備</button>` : ''}
+              <button data-discard="${i.id}">破棄</button>
+            </span>
+          </div>`).join('')
+      : `<p class="inv-empty">所持品はまだない。</p>`;
+
+    const noteHtml = !manageOk
+      ? `<p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">※装備の変更は町にいる間だけ行える。</p>`
+      : (targetName
+          ? `<p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">装備対象: <strong style="color:var(--gold);">${esc(targetName)}</strong></p>`
+          : '');
+
+    return `
+      <div class="panel">
+        <h2>所持品</h2>
+        ${noteHtml}
+        <p class="inventory-count">${state.inventory.length} / ${INVENTORY_MAX}</p>
+        <div class="scrollbox inventory-scroll">${inv}</div>
+      </div>
+    `;
+  }
+
+  function bindEvents(){
+    const on = (id, fn) => { const el = document.getElementById(id); if(el) el.addEventListener('click', fn); };
+    on('advBtn', advance);
+    on('bossBtn', challengeBoss);
+    on('fightBtn', chooseFight);
+    on('fleeBtn', fleeCombat);
+    on('backTownBtn', backToTown);
+    on('gotoInnBtn', ()=>gotoScreen('inn'));
+    on('gotoShopBtn', ()=>gotoScreen('shop'));
+    on('gotoHomeBtn', ()=>gotoScreen('home'));
+    on('gotoPartyBtn', ()=>gotoScreen('party'));
+    on('gotoColosseumBtn', gotoColosseum);
+    on('colosseumChallengeBtn', challengeColosseum);
+    on('stayBtn', stayAtInn);
+    on('renameBtn', renameCharacter);
+    on('resetGameBtn', resetGameData);
+    on('returnTownBtn', returnToTownAfterDeath);
+    on('sendChatBtn', ()=>{
+      const input = document.getElementById('chatInput');
+      if(!input) return;
+      const text = input.value;
+      input.value = '';
+      sendChatMessage(text);
+    });
+
+    const chatInput = document.getElementById('chatInput');
+    if(chatInput) chatInput.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter'){ document.getElementById('sendChatBtn').click(); }
+    });
+
+    document.querySelectorAll('[data-bottom-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>toggleBottomTab(b.getAttribute('data-bottom-tab')));
+    });
+    document.querySelectorAll('[data-toggle-group]').forEach(b=>{
+      b.addEventListener('click', ()=>toggleGroup(b.getAttribute('data-toggle-group')));
+    });
+    document.querySelectorAll('[data-enter-dungeon]').forEach(b=>{
+      b.addEventListener('click', ()=>enterDungeon(b.getAttribute('data-enter-dungeon')));
+    });
+    document.querySelectorAll('[data-equip]').forEach(b=>{
+      b.addEventListener('click', ()=>equipItem(b.getAttribute('data-equip')));
+    });
+    document.querySelectorAll('[data-discard]').forEach(b=>{
+      b.addEventListener('click', ()=>discardItem(b.getAttribute('data-discard')));
+    });
+    document.querySelectorAll('[data-unequip]').forEach(b=>{
+      b.addEventListener('click', ()=>unequipSlot(b.getAttribute('data-unequip'), b.getAttribute('data-unequip-for')));
+    });
+    document.querySelectorAll('[data-buy-shop]').forEach(b=>{
+      b.addEventListener('click', ()=>buyShopItem(b.getAttribute('data-buy-shop')));
+    });
+    document.querySelectorAll('[data-sell]').forEach(b=>{
+      b.addEventListener('click', ()=>sellItem(b.getAttribute('data-sell')));
+    });
+    document.querySelectorAll('[data-buy-furniture]').forEach(b=>{
+      b.addEventListener('click', ()=>buyFurniture(b.getAttribute('data-buy-furniture')));
+    });
+    document.querySelectorAll('[data-switch-liver-job]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const [liverId, jobId] = b.getAttribute('data-switch-liver-job').split(':');
+        switchLiverJob(liverId, jobId);
+      });
+    });
+    document.querySelectorAll('[data-toggle-skill]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const [liverId, skillKey] = b.getAttribute('data-toggle-skill').split(':');
+        toggleSkillEnabled(liverId, skillKey);
+      });
+    });
+    document.querySelectorAll('[data-toggle-party]').forEach(b=>{
+      b.addEventListener('click', ()=>togglePartyMember(b.getAttribute('data-toggle-party')));
+    });
+    document.querySelectorAll('[data-toggle-equip-view]').forEach(b=>{
+      b.addEventListener('click', ()=>toggleEquipView(b.getAttribute('data-toggle-equip-view')));
+    });
+  }
+
+  /* ---------------- チャット(全ユーザー共有、Supabase Realtime) ---------------- */
+  let chatCache = [];
+  let chatChannel = null;
+
+  async function loadChat(){
+    try{
+      const { data, error } = await sb.from('chat_messages')
+        .select('*').order('created_at', {ascending:false}).limit(100);
+      if(error) throw error;
+      return (data||[]).slice().reverse().map(m=>(
+        { name: m.player_name, text: m.body, ts: new Date(m.created_at).getTime() }
+      ));
+    }catch(e){
+      console.error('load chat failed', e);
+      return [];
+    }
+  }
+
+  function renderChatMessages(){
+    if(!chatCache.length) return '<p style="color:var(--text-muted);">まだ発言はない。</p>';
+    return chatCache.map(m=>`<p><span style="color:var(--gold);">${esc(m.name)}:</span> ${esc(m.text)}</p>`).join('');
+  }
+
+  async function refreshChatDOM(){
+    const el = document.getElementById('chatLog');
+    if(!el) return;
+    chatCache = await loadChat();
+    el.innerHTML = renderChatMessages();
+    el.scrollTop = el.scrollHeight;
+  }
+
+  async function sendChatMessage(rawText){
+    const text = (rawText||'').trim().slice(0,200);
+    if(!text || !state) return;
+    try{
+      const { error } = await sb.from('chat_messages').insert({
+        player_id: state.playerId, player_name: state.name, body: text
+      });
+      if(error) throw error;
+      // 表示への反映は、下のRealtime購読側のINSERTイベントで(自分の発言も含めて)行われる
+    }catch(e){
+      console.error('send chat failed', e);
+      pushLog('チャットの送信に失敗した。通信状況を確認してほしい。', 'system');
+      render();
+    }
+  }
+
+  function toggleBottomTab(tab){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.bottomTab = tab;
+    saveGame(); render();
+    if(tab === 'chat') refreshChatDOM();
+  }
+
+  /* ポーリングではなく、Supabase Realtimeで新着メッセージをプッシュ受信する。
+   * ページを開いた時に1回だけ購読を開始し、以降は通信を発生させずに
+   * 新着があった時だけイベントが飛んでくる。 */
+  function startChatPolling(){
+    if(chatChannel) return;
+    chatChannel = sb.channel('public:chat_messages')
+      .on('postgres_changes', {event:'INSERT', schema:'public', table:'chat_messages'}, (payload)=>{
+        const m = payload.new;
+        chatCache.push({ name: m.player_name, text: m.body, ts: new Date(m.created_at).getTime() });
+        if(chatCache.length > 100) chatCache.shift();
+        if(state && state.ui && state.ui.bottomTab === 'chat'){
+          const el = document.getElementById('chatLog');
+          if(el){ el.innerHTML = renderChatMessages(); el.scrollTop = el.scrollHeight; }
+        }
+      })
+      .subscribe();
+  }
+
+  function renderBottomPanel(){
+    const tab = (state.ui && state.ui.bottomTab) || 'log';
+    const logActive = tab === 'log';
+    const tabsHtml = `
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button data-bottom-tab="log" class="${logActive?'primary':''}" style="padding:6px 14px;font-size:12px;">冒険の記録</button>
+        <button data-bottom-tab="chat" class="${!logActive?'primary':''}" style="padding:6px 14px;font-size:12px;">チャット</button>
+      </div>`;
+    let body;
+    if(logActive){
+      const rows = (state.history||[]).map(l=>`<p class="${l.cls}">${esc(l.text)}</p>`).join('')
+        || '<p style="color:var(--text-muted);">まだ記録はない。</p>';
+      body = `<div class="scrollbox history-log" id="historyLog">${rows}</div>`;
+    } else {
+      body = `
+        <div class="scrollbox history-log" id="chatLog">${renderChatMessages()}</div>
+        <div class="actions" style="margin-top:10px;flex-wrap:nowrap;">
+          <input id="chatInput" class="name-input" style="flex:1;margin:0;" type="text" maxlength="200" placeholder="全体チャットに発言(他の全ユーザーに公開されます)">
+          <button class="primary" id="sendChatBtn">送信</button>
+        </div>`;
+    }
+    return `<div class="panel history-panel">${tabsHtml}${body}</div>`;
+  }
+
+  function render(){
+    if(!state){ renderCreate(); return; }
+    app.innerHTML = `
+      <header>
+        <div>
+          <h1>${GAME_TITLE_HTML}</h1>
+          <p class="subtitle">${GAME_SUBTITLE}</p>
+        </div>
+        <div class="depth-badge-slot">${renderHeaderBadge()}</div>
+      </header>
+      <div class="layout">
+        <div>${renderMainArea()}</div>
+        <div>${renderCharacterLane()}</div>
+        <div>${renderInventoryLane()}</div>
+      </div>
+      ${renderBottomPanel()}
+    `;
+    bindEvents();
+    const historyEl = document.getElementById('historyLog');
+    if(historyEl) historyEl.scrollTop = historyEl.scrollHeight;
+    const chatEl = document.getElementById('chatLog');
+    if(chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  /* ---------------- Init / セーブのマイグレーション ---------------- */
+  (async function init(){
+    app.innerHTML = `<p style="text-align:center;color:var(--text-muted);margin-top:80px;font-family:var(--font-mono);">呼び起こしている……</p>`;
+    const loaded = await loadGame();
+    if(loaded){
+      state = loaded;
+      // 念のための軽い安全確認(想定外のDB状態に対する保険)
+      state.party = (state.party||[]).filter(id=>state.roster[id] && state.roster[id].unlocked).slice(0, PARTY_MAX);
+      if(state.ui.equipViewLiver && !state.roster[state.ui.equipViewLiver]) state.ui.equipViewLiver = null;
+    }
+    render();
+    startChatPolling();
+    setInterval(()=>{
+      if(state && state.screen === 'colosseum' && !inCombat){
+        const remain = COLOSSEUM_COOLDOWN_MS - (Date.now() - (state.colosseum.lastChallengeAt||0));
+        if(remain > 0) render();
+      }
+    }, 5000);
+  })();
+
+})();
+</script>
+</body>
+</html>
