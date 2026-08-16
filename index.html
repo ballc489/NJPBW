@@ -488,8 +488,7 @@
       bossLevelBonus:0, rewardMult:1.0,
       boss:{ name:'古の守護者', hpMult:1.7, atkMult:1.15, defMult:1.3, weakness:'ice',
         skills:[{key:'crit', name:'渾身の一撃', everyNTurns:3, kind:'trueDamage', mult:2.2}] },
-      firstClearReward:{name:'守護者の心臓', type:'armor'},
-      unlocksLiver:'liver_1'
+      firstClearReward:{name:'守護者の心臓', type:'armor'}
     },
     {
       id:'spire_f1', name:'星詠みの尖塔 1F', pool:'spire', requires:'ashen_ruins',
@@ -497,8 +496,7 @@
       bossLevelBonus:0, rewardMult:1.1,
       boss:{ name:'尖塔の門番', hpMult:1.6, atkMult:1.1, defMult:1.3, weakness:'fire',
         skills:[{key:'crit', name:'閃光の一閃', everyNTurns:3, kind:'trueDamage', mult:2.0, element:'fire'}] },
-      firstClearReward:{name:'門番の鍵爪', type:'weapon'},
-      unlocksLiver:'liver_2'
+      firstClearReward:{name:'門番の鍵爪', type:'weapon'}
     },
     {
       id:'spire_f2', name:'星詠みの尖塔 2F', pool:'spire', requires:'spire_f1',
@@ -507,8 +505,7 @@
       boss:{ name:'覚醒せし魔導兵', hpMult:1.8, atkMult:1.1, defMult:1.3, weakness:'thunder',
         skills:[{key:'charge', name:'収束する光弾', everyNTurns:4, kind:'telegraphed', mult:3.0, element:'thunder',
           warnText:'{name}が光を収束させ始めた……', executeText:'収束した光弾が直撃した！'}] },
-      firstClearReward:{name:'魔導兵の核', type:'armor'},
-      unlocksLiver:'liver_3'
+      firstClearReward:{name:'魔導兵の核', type:'armor'}
     },
     {
       id:'spire_f3', name:'星詠みの尖塔 3F', pool:'spire', requires:'spire_f2',
@@ -520,8 +517,7 @@
           {key:'charge', name:'崩星の一撃', everyNTurns:6, kind:'telegraphed', mult:3.4, element:'ice',
             warnText:'{name}の周囲に瓦礫が渦巻き始めた……', executeText:'崩れ落ちる瓦礫が降り注いだ！'}
         ] },
-      firstClearReward:{name:'尖塔主の遺灯', type:'weapon'},
-      unlocksLiver:'liver_4'
+      firstClearReward:{name:'尖塔主の遺灯', type:'weapon'}
     },
     {
       id:'spire_f4', name:'星詠みの尖塔 4F', pool:'spire', requires:'spire_f3',
@@ -533,8 +529,7 @@
           {key:'charge', name:'星喰らいの顎', everyNTurns:5, kind:'telegraphed', mult:3.6, element:'ice',
             warnText:'{name}が影の顎を大きく開いた……', executeText:'冷気を帯びた顎が食らいついた！'}
         ] },
-      firstClearReward:{name:'星喰らいの残滓', type:'armor'},
-      unlocksLiver:'liver_5'
+      firstClearReward:{name:'星喰らいの残滓', type:'armor'}
     },
     {
       id:'spire_f5', name:'星詠みの尖塔 5F', pool:'spire', requires:'spire_f4',
@@ -624,23 +619,6 @@
     const def = dungeonDefById(dungeonId);
     const tmpl = def.firstClearReward || {name:'名もなき勲章', type:'armor'};
     const mult = def.rewardMult || 1;
-    return {
-      id: 'itm_'+Math.random().toString(36).slice(2,9),
-      type: tmpl.type,
-      rarity:'epic', rarityLabel:'epic',
-      name: tmpl.name,
-      value: Math.round((8 + partyLevel()*2) * mult)
-    };
-  }
-
-  /* 本来ならライバー解放になるはずだったボス撃破が、そのライバーを既に
-   * 持っている(=キャラ作成時に選んだ)場合の代替報酬。そのライバーに
-   * ちなんだ「絆」武具として、通常の初回撃破報酬よりもさらに強い一品を渡す。 */
-  function substituteRewardFor(dungeonId){
-    const def = dungeonDefById(dungeonId);
-    const liver = liverDef(def.unlocksLiver);
-    const tmpl = (liver && liver.substituteReward) || {name:'絆の証', type:'weapon'};
-    const mult = (def.rewardMult || 1) * 1.4; // 通常の初回撃破報酬よりも一段強い代替品にする
     return {
       id: 'itm_'+Math.random().toString(36).slice(2,9),
       type: tmpl.type,
@@ -745,8 +723,9 @@
    * 実際の題材(名前・カラー・スキル演出等)が決まり次第、この配列を
    * 差し替えるだけで反映されるように設計しています。
    * job: そのライバーの初期担当ジョブ(後からホーム画面で変更可能)
-   * startUnlocked: ゲーム開始時から編成可能かどうか
-   * unlockDungeon: 指定ダンジョンの初回踏破で解放される場合のID
+   * startUnlocked: ゲーム開始時から編成可能かどうか(キャラ作成時に選んだ1人のみtrue)
+   * 未解放のライバーは「運命のチケット」ガチャ、または「確約されし運命の
+   * チケット」での指名によって仲間になる(交換所で入手・使用する)。
    * passive: ライバー固有の常時能力。ジョブとは独立して個性を出すためのもの。
    *   kind:'statMult'       常時ステータス補正(ログには出さない)
    *   kind:'lowHpMitigate'  自身のHPが割合threshold以下の間、被ダメージをmult倍(軽減)。発動時にログを出す
@@ -754,24 +733,19 @@
    *   kind:'allyDownRage'   味方が戦闘不能になった瞬間、以後の自分の攻撃力をmult倍(1戦闘に1度)。発動時にログを出す
    * --------------------------------------------------------------- */
   const LIVER_DEFS = [
-    {id:'liver_1', name:'(仮)ライバーA', title:'盾役', color:'#ff9f5a', job:'tank', startUnlocked:false, unlockDungeon:'ashen_ruins',
-      substituteReward:{name:'(仮)ライバーAの絆の盾', type:'armor'},
+    {id:'liver_1', name:'(仮)ライバーA', title:'盾役', color:'#ff9f5a', job:'tank', startUnlocked:false,
       passive:{name:'鉄壁の心得', kind:'statMult', stat:'def', mult:1.15,
         desc:'常時、防御力が15%上昇する。'}},
-    {id:'liver_2', name:'(仮)ライバーB', title:'アタッカー', color:'#5a9bf0', job:'dps', startUnlocked:false, unlockDungeon:'spire_f1',
-      substituteReward:{name:'(仮)ライバーBの絆の刃', type:'weapon'},
+    {id:'liver_2', name:'(仮)ライバーB', title:'アタッカー', color:'#5a9bf0', job:'dps', startUnlocked:false,
       passive:{name:'トドメの一撃', kind:'lowEnemyHpBoost', threshold:0.3, mult:1.25,
         desc:'敵の残りHPが30%以下のとき、与えるダメージが25%上昇する。'}},
-    {id:'liver_3', name:'(仮)ライバーC', title:'魔導師', color:'#ffd863', job:'mage', startUnlocked:false, unlockDungeon:'spire_f2',
-      substituteReward:{name:'(仮)ライバーCの絆の杖', type:'weapon'},
+    {id:'liver_3', name:'(仮)ライバーC', title:'魔導師', color:'#ffd863', job:'mage', startUnlocked:false,
       passive:{name:'魔力の泉', kind:'statMult', stat:'mp', mult:1.2,
         desc:'常時、最大MPが20%上昇する。'}},
-    {id:'liver_4', name:'(仮)ライバーD', title:'アタッカー', color:'#8fe08f', job:'dps', startUnlocked:false, unlockDungeon:'spire_f3',
-      substituteReward:{name:'(仮)ライバーDの絆の籠手', type:'weapon'},
+    {id:'liver_4', name:'(仮)ライバーD', title:'アタッカー', color:'#8fe08f', job:'dps', startUnlocked:false,
       passive:{name:'弔い合戦', kind:'allyDownRage', mult:1.2,
         desc:'仲間が戦闘不能になると、闘志が燃え上がり以後の攻撃力が20%上昇する。(1戦闘に1度)'}},
-    {id:'liver_5', name:'(仮)ライバーE', title:'盾役', color:'#c77dff', job:'tank', startUnlocked:false, unlockDungeon:'spire_f4',
-      substituteReward:{name:'(仮)ライバーEの絆の鎧', type:'armor'},
+    {id:'liver_5', name:'(仮)ライバーE', title:'盾役', color:'#c77dff', job:'tank', startUnlocked:false,
       passive:{name:'不屈の護り', kind:'lowHpMitigate', threshold:0.3, mult:0.8,
         desc:'自身のHPが30%以下のとき、受けるダメージが20%軽減される。'}},
   ];
@@ -883,7 +857,8 @@
       ui: { expandedGroups: [], bottomTab: 'log', equipViewLiver: null },
       pendingDefeatGoldLoss: 0,
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
-      colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 }
+      colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
+      destinyTickets: 0, guaranteedTickets: 0
     };
   }
 
@@ -991,6 +966,80 @@
     if(state.party.length < PARTY_MAX) state.party.push(id);
   }
 
+  /* ---------------- 交換所: 運命のチケット・ガチャ ----------------
+   * 未解放ライバーの中からランダムに1名を選ぶ「運命のチケット」ガチャと、
+   * 5枚のチケットと交換できる「確約されし運命のチケット」(指名して確実に
+   * 仲間にできる)の2本立て。
+   * pendingGachaは戦闘中のcombatEnemy等と同様、セーブ不要な一時状態として
+   * モジュールスコープの変数で保持する(結果確定前にリロードされた場合、
+   * 消費したチケットは戻らない点は割り切りとする)。 */
+  const DESTINY_EXCHANGE_COST = 5;
+  const DESTINY_MAX_REROLLS = 3;
+  let pendingGacha = null; // { candidateId, rerollsUsed, rolling }
+
+  function unclaimedLiverDefs(){ return LIVER_DEFS.filter(d=>!liverState(d.id).unlocked); }
+
+  function drawDestinyCandidate(){
+    const pool = unclaimedLiverDefs();
+    if(!pool.length) return null;
+    return pool[Math.floor(Math.random()*pool.length)].id;
+  }
+
+  function pullDestinyTicket(){
+    if(inCombat || pendingGacha) return;
+    if(state.destinyTickets <= 0) return;
+    const candidate = drawDestinyCandidate();
+    if(!candidate){
+      pushLog('すでに全員のライバーと出会っている。', 'system');
+      render();
+      return;
+    }
+    state.destinyTickets -= 1;
+    pendingGacha = { candidateId: candidate, rerollsUsed: 0, rolling: false };
+    saveGame(); render();
+  }
+
+  /* 広告視聴による引き直し。現時点では実際の広告SDKが未導入のため、
+   * 数秒待たせる疑似演出で代用している。広告SDK導入時はここを差し替える。 */
+  async function rerollDestinyGacha(){
+    if(!pendingGacha || pendingGacha.rolling) return;
+    if(pendingGacha.rerollsUsed >= DESTINY_MAX_REROLLS) return;
+    if(unclaimedLiverDefs().length <= 1) return; // 候補が1人以下なら引き直す意味がない
+    pendingGacha.rolling = true;
+    render();
+    await sleep(2000);
+    pendingGacha.candidateId = drawDestinyCandidate() || pendingGacha.candidateId;
+    pendingGacha.rerollsUsed += 1;
+    pendingGacha.rolling = false;
+    render();
+  }
+
+  function acceptDestinyGacha(){
+    if(!pendingGacha || pendingGacha.rolling) return;
+    unlockLiver(pendingGacha.candidateId);
+    pendingGacha = null;
+    saveGame(); render();
+  }
+
+  function exchangeForGuaranteedTicket(){
+    if(inCombat || pendingGacha) return;
+    if(state.destinyTickets < DESTINY_EXCHANGE_COST) return;
+    state.destinyTickets -= DESTINY_EXCHANGE_COST;
+    state.guaranteedTickets += 1;
+    pushLog(`運命のチケットを${DESTINY_EXCHANGE_COST}枚使い、「確約されし運命のチケット」と交換した。`, 'reward');
+    saveGame(); render();
+  }
+
+  function useGuaranteedTicket(liverId){
+    if(inCombat || pendingGacha) return;
+    if(state.guaranteedTickets <= 0) return;
+    const ls = liverState(liverId);
+    if(!ls || ls.unlocked) return;
+    state.guaranteedTickets -= 1;
+    unlockLiver(liverId);
+    saveGame(); render();
+  }
+
   /* ---------------- Persistence(Supabase) ---------------- */
 
   /* stateオブジェクトの形は今まで通り保ったまま、読み書きの中身だけを
@@ -1042,7 +1091,9 @@
         p_colosseum_last_challenge_at: state.colosseum.lastChallengeAt ? new Date(state.colosseum.lastChallengeAt).toISOString() : null,
         p_roster: rosterRows,
         p_inventory: inventoryRows,
-        p_dungeons: dungeonRows
+        p_dungeons: dungeonRows,
+        p_destiny_tickets: state.destinyTickets,
+        p_guaranteed_tickets: state.guaranteedTickets
       });
       if(error) console.error('save_full_state failed', error);
     }catch(e){ console.error('save failed', e); }
@@ -1123,7 +1174,9 @@
           floorRight: playerRow.colosseum_floor_right,
           medals: playerRow.colosseum_medals,
           lastChallengeAt: playerRow.colosseum_last_challenge_at ? new Date(playerRow.colosseum_last_challenge_at).getTime() : 0
-        }
+        },
+        destinyTickets: playerRow.destiny_tickets || 0,
+        guaranteedTickets: playerRow.guaranteed_tickets || 0
       };
     }catch(e){
       console.error('load failed', e);
@@ -1143,6 +1196,7 @@
     }catch(e){ console.error('reset failed', e); }
     state = null;
     inCombat = false; combatPhase = null; combatEnemy = null; combatEnemyHp = 0; pendingDefBuffs = {};
+    pendingGacha = null;
     createSelectedLiver = null; createNameDraft = '';
     colosseumView = { loading: true, floor: 1, record: null, isDummy: true };
     render();
@@ -1464,16 +1518,8 @@
             if(addItemToInventory(firstItem)){
               pushLog(`初回撃破報酬として「${firstItem.name}」を手に入れた。`, 'reward');
             }
-            if(dungeonDef.unlocksLiver){
-              if(!liverState(dungeonDef.unlocksLiver).unlocked){
-                unlockLiver(dungeonDef.unlocksLiver);
-              } else {
-                const subItem = substituteRewardFor(state.activeDungeonId);
-                if(addItemToInventory(subItem)){
-                  pushLog(`「${liverDef(dungeonDef.unlocksLiver).name}」は既に仲間なので、代わりに「${subItem.name}」を手に入れた。`, 'reward');
-                }
-              }
-            }
+            state.destinyTickets += 1;
+            pushLog(`初回撃破報酬として「運命のチケット」を手に入れた。`, 'reward');
             DUNGEON_DEFS.filter(d=>d.requires===state.activeDungeonId).forEach(d=>{
               pushLog(`新たな地が解放された:「${d.name}」`, 'reward');
             });
@@ -2115,12 +2161,66 @@
         <button class="primary" id="gotoPartyBtn">編成</button>
         <button class="primary" id="gotoInnBtn">宿屋</button>
         <button class="primary" id="gotoShopBtn">商店</button>
+        <button class="primary" id="gotoExchangeBtn">交換所</button>
         <button class="primary" id="gotoHomeBtn">家へ帰る</button>
         <button class="danger" id="gotoColosseumBtn">コロシアムタワー</button>
       </div>
       <div class="section-block">
         <p class="section-label">ダンジョン</p>
         ${renderDungeonGroups()}
+      </div>
+    `;
+  }
+
+  function renderExchangeInner(){
+    if(pendingGacha){
+      const candidateDef = liverDef(pendingGacha.candidateId);
+      const rerollsLeft = DESTINY_MAX_REROLLS - pendingGacha.rerollsUsed;
+      const canReroll = !pendingGacha.rolling && rerollsLeft > 0 && unclaimedLiverDefs().length > 1;
+      return `
+        <div class="scene-text">
+          ${sceneHeadingHtml('交換所 ― 運命のガチャ')}
+          <p class="log-entry system">運命の糸が、ひとりのライバーを示している……</p>
+          <div class="inv-item" style="border-left-color:${candidateDef.color};">
+            <span style="width:10px;height:10px;background:${candidateDef.color};display:inline-block;margin-right:8px;"></span>
+            <span class="inv-item-name">${esc(candidateDef.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(candidateDef.title)}</span></span>
+          </div>
+          <p style="color:var(--text-muted);font-size:11px;margin:8px 0 0;">
+            ${pendingGacha.rolling ? '広告を視聴中……' : `引き直し残り ${rerollsLeft}/${DESTINY_MAX_REROLLS}回(広告視聴で引き直せる。現在は仮の演出です)`}
+          </p>
+        </div>
+        <div class="actions">
+          <button class="primary" id="acceptGachaBtn" ${pendingGacha.rolling?'disabled':''}>この仲間を迎える</button>
+          <button id="rerollGachaBtn" ${canReroll?'':'disabled'}>${pendingGacha.rolling?'視聴中…':'広告を見て引き直す'}</button>
+        </div>
+      `;
+    }
+
+    const unclaimed = unclaimedLiverDefs();
+    const guaranteedRows = unclaimed.length ? unclaimed.map(def=>`
+        <div class="inv-item" style="border-left-color:${def.color};">
+          <span style="width:10px;height:10px;background:${def.color};display:inline-block;margin-right:8px;"></span>
+          <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(def.title)}</span></span>
+          <span class="inv-item-actions">
+            <button data-use-guaranteed="${def.id}" ${state.guaranteedTickets<=0?'disabled':''}>指名して迎える</button>
+          </span>
+        </div>`).join('')
+      : `<p class="inv-empty">すでに全員のライバーと出会っている。</p>`;
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('交換所')}
+        <p class="log-entry system">運命の糸を手繰り寄せる場所。ダンジョンの初回踏破で手に入る「運命のチケット」で、まだ出会っていないライバーの誰かと巡り会える。</p>
+        <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--gold);">運命のチケット: ${state.destinyTickets}枚 ・ 確約されし運命のチケット: ${state.guaranteedTickets}枚</p>
+      </div>
+      <div class="actions">
+        <button id="backTownBtn">町に戻る</button>
+        <button class="primary" id="pullGachaBtn" ${(state.destinyTickets<=0 || !unclaimed.length)?'disabled':''}>運命のチケットを使う</button>
+        <button id="exchangeGuaranteedBtn" ${state.destinyTickets<DESTINY_EXCHANGE_COST?'disabled':''}>チケット${DESTINY_EXCHANGE_COST}枚 → 確約されしチケット</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">確約されし運命のチケットで指名する</p>
+        ${guaranteedRows}
       </div>
     `;
   }
@@ -2173,7 +2273,7 @@
       : `<p class="inv-empty">${unlockedDefs.length ? '仲間は全員編成済み。' : 'まだ仲間がいない。'}</p>`;
 
     const lockedRows = lockedDefs.map(def=>{
-      const hint = def.unlockDungeon ? `${dungeonDefById(def.unlockDungeon).name}を踏破すると仲間になる` : '未解放';
+      const hint = '「交換所」で運命のチケットを使うと仲間になる';
       return `
         <div class="inv-item" style="opacity:.5;">
           <span class="inv-item-name">🔒 ${esc(def.name)}<br><span style="color:var(--text-muted);font-size:11px;">${esc(hint)}</span></span>
@@ -2418,6 +2518,7 @@
     else if(state.screen === 'colosseum') inner = renderColosseumInner();
     else if(state.screen === 'inn') inner = renderInnInner();
     else if(state.screen === 'shop') inner = renderShopInner();
+    else if(state.screen === 'exchange') inner = renderExchangeInner();
     else if(state.screen === 'home') inner = renderHomeInner();
     else if(state.screen === 'dead') inner = renderDeadInner();
     else inner = renderTownInner();
@@ -2574,7 +2675,12 @@
     on('backTownBtn', backToTown);
     on('gotoInnBtn', ()=>gotoScreen('inn'));
     on('gotoShopBtn', ()=>gotoScreen('shop'));
+    on('gotoExchangeBtn', ()=>gotoScreen('exchange'));
     on('gotoHomeBtn', ()=>gotoScreen('home'));
+    on('pullGachaBtn', pullDestinyTicket);
+    on('acceptGachaBtn', acceptDestinyGacha);
+    on('rerollGachaBtn', rerollDestinyGacha);
+    on('exchangeGuaranteedBtn', exchangeForGuaranteedTicket);
     on('gotoPartyBtn', ()=>gotoScreen('party'));
     on('gotoColosseumBtn', gotoColosseum);
     on('colosseumChallengeBtn', challengeColosseum);
@@ -2615,6 +2721,9 @@
     });
     document.querySelectorAll('[data-buy-shop]').forEach(b=>{
       b.addEventListener('click', ()=>buyShopItem(b.getAttribute('data-buy-shop')));
+    });
+    document.querySelectorAll('[data-use-guaranteed]').forEach(b=>{
+      b.addEventListener('click', ()=>useGuaranteedTicket(b.getAttribute('data-use-guaranteed')));
     });
     document.querySelectorAll('[data-sell]').forEach(b=>{
       b.addEventListener('click', ()=>sellItem(b.getAttribute('data-sell')));
