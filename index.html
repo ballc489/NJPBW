@@ -681,6 +681,7 @@
   let combatEnemy = null;
   let combatEnemyHp = 0;
   let pendingDefBuffs = {}; // { liverId: reduceMult } その本人の次の被弾にのみ適用
+  let combatPassiveFlags = {}; // { liverId: {...} } 条件付きパッシブの発動状態・ログ済みフラグ。戦闘開始時にリセット
   let shopStock = []; // セーブしない一時データ。商店に入るたび再生成
 
   function expToNext(level){ return Math.floor(20 * Math.pow(level, 1.5)); }
@@ -746,18 +747,33 @@
    * job: そのライバーの初期担当ジョブ(後からホーム画面で変更可能)
    * startUnlocked: ゲーム開始時から編成可能かどうか
    * unlockDungeon: 指定ダンジョンの初回踏破で解放される場合のID
+   * passive: ライバー固有の常時能力。ジョブとは独立して個性を出すためのもの。
+   *   kind:'statMult'       常時ステータス補正(ログには出さない)
+   *   kind:'lowHpMitigate'  自身のHPが割合threshold以下の間、被ダメージをmult倍(軽減)。発動時にログを出す
+   *   kind:'lowEnemyHpBoost' 敵の残りHPが割合threshold以下の間、自分の与ダメージをmult倍。発動時にログを出す
+   *   kind:'allyDownRage'   味方が戦闘不能になった瞬間、以後の自分の攻撃力をmult倍(1戦闘に1度)。発動時にログを出す
    * --------------------------------------------------------------- */
   const LIVER_DEFS = [
     {id:'liver_1', name:'(仮)ライバーA', title:'盾役', color:'#ff9f5a', job:'tank', startUnlocked:false, unlockDungeon:'ashen_ruins',
-      substituteReward:{name:'(仮)ライバーAの絆の盾', type:'armor'}},
+      substituteReward:{name:'(仮)ライバーAの絆の盾', type:'armor'},
+      passive:{name:'鉄壁の心得', kind:'statMult', stat:'def', mult:1.15,
+        desc:'常時、防御力が15%上昇する。'}},
     {id:'liver_2', name:'(仮)ライバーB', title:'アタッカー', color:'#5a9bf0', job:'dps', startUnlocked:false, unlockDungeon:'spire_f1',
-      substituteReward:{name:'(仮)ライバーBの絆の刃', type:'weapon'}},
+      substituteReward:{name:'(仮)ライバーBの絆の刃', type:'weapon'},
+      passive:{name:'トドメの一撃', kind:'lowEnemyHpBoost', threshold:0.3, mult:1.25,
+        desc:'敵の残りHPが30%以下のとき、与えるダメージが25%上昇する。'}},
     {id:'liver_3', name:'(仮)ライバーC', title:'魔導師', color:'#ffd863', job:'mage', startUnlocked:false, unlockDungeon:'spire_f2',
-      substituteReward:{name:'(仮)ライバーCの絆の杖', type:'weapon'}},
+      substituteReward:{name:'(仮)ライバーCの絆の杖', type:'weapon'},
+      passive:{name:'魔力の泉', kind:'statMult', stat:'mp', mult:1.2,
+        desc:'常時、最大MPが20%上昇する。'}},
     {id:'liver_4', name:'(仮)ライバーD', title:'アタッカー', color:'#8fe08f', job:'dps', startUnlocked:false, unlockDungeon:'spire_f3',
-      substituteReward:{name:'(仮)ライバーDの絆の籠手', type:'weapon'}},
+      substituteReward:{name:'(仮)ライバーDの絆の籠手', type:'weapon'},
+      passive:{name:'弔い合戦', kind:'allyDownRage', mult:1.2,
+        desc:'仲間が戦闘不能になると、闘志が燃え上がり以後の攻撃力が20%上昇する。(1戦闘に1度)'}},
     {id:'liver_5', name:'(仮)ライバーE', title:'盾役', color:'#c77dff', job:'tank', startUnlocked:false, unlockDungeon:'spire_f4',
-      substituteReward:{name:'(仮)ライバーEの絆の鎧', type:'armor'}},
+      substituteReward:{name:'(仮)ライバーEの絆の鎧', type:'armor'},
+      passive:{name:'不屈の護り', kind:'lowHpMitigate', threshold:0.3, mult:0.8,
+        desc:'自身のHPが30%以下のとき、受けるダメージが20%軽減される。'}},
   ];
   const PARTY_MAX = 4; // 編成上限は4のまま。ライバーが5人以上に増えても「誰を連れて行くか」の選択が生まれる設計にする
   function liverDef(id){ return LIVER_DEFS.find(d=>d.id===id); }
@@ -768,6 +784,13 @@
   function jobBaseAtk(jobId, level){ return Math.round(baseAtkFor(level) * JOB_DEFS[jobId].atkMult); }
   function jobBaseDef(jobId, level){ return Math.round(baseDefFor(level) * JOB_DEFS[jobId].defMult); }
   function jobMaxMp(jobId, level){ return Math.round(baseMpFor(level) * JOB_DEFS[jobId].mpMult); }
+
+  /* 常時発動系パッシブ(kind:'statMult')による倍率。対象外なら1を返す。 */
+  function passiveStatMult(liverId, stat){
+    const p = liverDef(liverId).passive;
+    if(p && p.kind==='statMult' && p.stat===stat) return p.mult;
+    return 1;
+  }
 
   function defaultLoadout(jobId){
     const enabled = JOB_DEFS[jobId].skills.slice(0, SKILL_LOADOUT_MAX).map(s=>s.key);
@@ -816,8 +839,8 @@
 
   function recomputeLiverMaxStats(id, fullRestore){
     const ls = liverState(id);
-    const newMaxHp = jobMaxHp(ls.job, ls.level);
-    const newMaxMp = jobMaxMp(ls.job, ls.level);
+    const newMaxHp = Math.round(jobMaxHp(ls.job, ls.level) * passiveStatMult(id, 'hp'));
+    const newMaxMp = Math.round(jobMaxMp(ls.job, ls.level) * passiveStatMult(id, 'mp'));
     ls.maxHp = newMaxHp;
     ls.maxMp = newMaxMp;
     if(fullRestore){
@@ -831,8 +854,8 @@
 
   function newLiverProgress(liverDefObj){
     const job = liverDefObj.job;
-    const maxHp = jobMaxHp(job, 1);
-    const maxMp = jobMaxMp(job, 1);
+    const maxHp = Math.round(jobMaxHp(job, 1) * passiveStatMult(liverDefObj.id, 'hp'));
+    const maxMp = Math.round(jobMaxMp(job, 1) * passiveStatMult(liverDefObj.id, 'mp'));
     return {
       job, level:1, exp:0,
       hp:maxHp, maxHp, mp:maxMp, maxMp,
@@ -867,12 +890,43 @@
   function liverAtk(id){
     const ls = liverState(id);
     const w = ls.equipped.weapon;
-    return jobBaseAtk(ls.job, ls.level) + (w ? w.value : 0);
+    const atk = jobBaseAtk(ls.job, ls.level) + (w ? w.value : 0);
+    return Math.round(atk * passiveStatMult(id, 'atk'));
   }
   function liverDefStat(id){
     const ls = liverState(id);
     const a = ls.equipped.armor;
-    return jobBaseDef(ls.job, ls.level) + (a ? a.value : 0);
+    const def = jobBaseDef(ls.job, ls.level) + (a ? a.value : 0);
+    return Math.round(def * passiveStatMult(id, 'def'));
+  }
+
+  /* 条件付きパッシブによる「戦闘中のみ」の与ダメージ倍率。
+   * lowEnemyHpBoost/allyDownRageはliverAtk自体には織り込まない
+   * (liverAtkはパーティ画面のステータス表示等、戦闘外でも使われるため)。
+   * 条件をまたいだ瞬間にのみpushLogで発動を知らせ、以後は同じ戦闘中は
+   * 再通知しない。 */
+  function activeCombatAtkMult(id){
+    const p = liverDef(id).passive;
+    if(!p) return 1;
+    if(!combatPassiveFlags[id]) combatPassiveFlags[id] = {};
+    const flags = combatPassiveFlags[id];
+    if(p.kind === 'allyDownRage'){
+      return flags.rageActive ? p.mult : 1;
+    }
+    if(p.kind === 'lowEnemyHpBoost' && combatEnemy && combatEnemy._maxHp > 0){
+      const ratio = Math.max(0, combatEnemyHp) / combatEnemy._maxHp;
+      const active = ratio <= p.threshold;
+      if(active && !flags.lowEnemyLogged){
+        flags.lowEnemyLogged = true;
+        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ ${combatEnemy.name}の弱った隙を突き、火力が上がった！`, 'system');
+      }
+      if(!active) flags.lowEnemyLogged = false;
+      return active ? p.mult : 1;
+    }
+    return 1;
+  }
+  function combatAtk(id){
+    return Math.round(liverAtk(id) * activeCombatAtkMult(id));
   }
 
   /* ライバーの属性耐性。レベルアップでは伸びず、装備(・将来的にはスキル等の
@@ -1186,6 +1240,7 @@
     combatEnemy.turnCount = 0;
     combatEnemy.charging = null;
     pendingDefBuffs = {};
+    combatPassiveFlags = {};
     pushLog(`Lv.${enemy.level} ${enemy.name}${enemy.boss?'が行く手を阻んだ！':'が現れた。'}`, 'danger');
     render();
   }
@@ -1227,7 +1282,7 @@
     const chosen = weightedPick(pool);
 
     if(!chosen){
-      const dmg = Math.max(1, liverAtk(liverId) - combatEnemy._def + rnd(-1,2));
+      const dmg = Math.max(1, combatAtk(liverId) - combatEnemy._def + rnd(-1,2));
       combatEnemyHp -= dmg;
       pushLog(`${name}の攻撃！ ${combatEnemy.name}に ${dmg} のダメージ。`, 'combat');
       return;
@@ -1236,7 +1291,7 @@
     ls.mp -= chosen.mpCost;
 
     if(chosen.kind === 'trueDamageSpell'){
-      const dmg = Math.max(1, Math.round(liverAtk(liverId)*chosen.mult) + rnd(-1,3));
+      const dmg = Math.max(1, Math.round(combatAtk(liverId)*chosen.mult) + rnd(-1,3));
       combatEnemyHp -= dmg;
       pushLog(`${name}の「${chosen.name}」！ 防御を貫く ${dmg} のダメージ。(MP-${chosen.mpCost})`, 'combat');
       return;
@@ -1244,7 +1299,7 @@
     if(chosen.kind === 'element'){
       const isWeak = combatEnemy.weakness === chosen.element;
       const mult = isWeak ? chosen.weaknessMult : chosen.offMult;
-      const dmg = Math.max(1, Math.round((liverAtk(liverId) - combatEnemy._def) * mult) + rnd(-1,2));
+      const dmg = Math.max(1, Math.round((combatAtk(liverId) - combatEnemy._def) * mult) + rnd(-1,2));
       combatEnemyHp -= dmg;
       const elLabel = ELEMENT_LABELS[chosen.element] || '';
       pushLog(
@@ -1256,15 +1311,15 @@
       return;
     }
     if(chosen.kind === 'bonusAttack'){
-      const dmg1 = Math.max(1, liverAtk(liverId) - combatEnemy._def + rnd(-1,2));
-      const dmg2 = Math.max(1, Math.round(liverAtk(liverId)*0.6) - Math.round(combatEnemy._def*0.5) + rnd(-1,2));
+      const dmg1 = Math.max(1, combatAtk(liverId) - combatEnemy._def + rnd(-1,2));
+      const dmg2 = Math.max(1, Math.round(combatAtk(liverId)*0.6) - Math.round(combatEnemy._def*0.5) + rnd(-1,2));
       combatEnemyHp -= (dmg1+dmg2);
       pushLog(`${name}の「${chosen.name}」！ ${dmg1}+${dmg2} の連続攻撃。(MP-${chosen.mpCost})`, 'combat');
       return;
     }
     if(chosen.kind === 'defBuff'){
       pendingDefBuffs[liverId] = chosen.reduceMult || 0.6;
-      const dmg = Math.max(1, liverAtk(liverId) - combatEnemy._def + rnd(-1,2));
+      const dmg = Math.max(1, combatAtk(liverId) - combatEnemy._def + rnd(-1,2));
       combatEnemyHp -= dmg;
       pushLog(`${name}の「${chosen.name}」！ 身構えながら ${dmg} のダメージ。次の攻撃に備える。(MP-${chosen.mpCost})`, 'combat');
       return;
@@ -1282,6 +1337,15 @@
     let dmg = rawDmg;
     if(element){
       dmg = Math.max(1, Math.round(dmg * liverElementalMultiplier(liverId, element)));
+    }
+    const passive = liverDef(liverId).passive;
+    if(passive && passive.kind === 'lowHpMitigate' && ls.maxHp > 0 && (ls.hp/ls.maxHp) <= passive.threshold){
+      dmg = Math.max(1, Math.round(dmg * passive.mult));
+      if(!combatPassiveFlags[liverId]) combatPassiveFlags[liverId] = {};
+      if(!combatPassiveFlags[liverId].lowHpLogged){
+        combatPassiveFlags[liverId].lowHpLogged = true;
+        pushLog(`${liverDef(liverId).name}のパッシブ「${passive.name}」が発動！ 傷ついた体に力が漲り、ダメージが軽減された！`, 'system');
+      }
     }
     if(pendingDefBuffs[liverId]){
       dmg = Math.max(1, Math.round(dmg*pendingDefBuffs[liverId]));
@@ -1341,6 +1405,18 @@
   function checkLiverKO(liverId){
     if(liverState(liverId).hp <= 0){
       pushLog(`${liverDef(liverId).name}が倒れた……！`, 'danger');
+      state.party.forEach(otherId=>{
+        if(otherId === liverId) return;
+        const otherLs = liverState(otherId);
+        if(!otherLs || otherLs.hp <= 0) return;
+        const passive = liverDef(otherId).passive;
+        if(!passive || passive.kind !== 'allyDownRage') return;
+        if(!combatPassiveFlags[otherId]) combatPassiveFlags[otherId] = {};
+        if(!combatPassiveFlags[otherId].rageActive){
+          combatPassiveFlags[otherId].rageActive = true;
+          pushLog(`${liverDef(otherId).name}のパッシブ「${passive.name}」が発動！ 怒りに燃え、攻撃力が上昇した！`, 'system');
+        }
+      });
     }
   }
 
@@ -1843,6 +1919,7 @@
           <span class="create-liver-chip" style="background:${def.color};"></span>
           <span class="create-liver-name">${esc(def.name)}</span>
           <span class="create-liver-title">${esc(def.title)} ・ ${esc(JOB_DEFS[def.job].name)}</span>
+          <span class="create-liver-title" style="opacity:.8;">パッシブ:${esc(def.passive.name)}</span>
         </button>`;
     }).join('');
 
@@ -2243,6 +2320,15 @@
           </span>
         </div>`;
 
+      const passive = def.passive;
+      const passiveRow = passive ? `
+        <div class="inv-item" style="border-left-color:${def.color};">
+          <span class="inv-item-name">
+            ${esc(passive.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${passive.kind==='statMult'?'常時発動':'条件付き発動'})</span><br>
+            <span style="color:var(--text-muted);font-size:11px;">${esc(passive.desc)}</span>
+          </span>
+        </div>` : '';
+
       const skillRows = job.skills.map(s=>{
         const enabled = ls.loadout.enabled.includes(s.key);
         return `
@@ -2265,7 +2351,9 @@
       const detailHtml = expanded ? `
         <div style="margin:8px 0 14px 10px;">
           <p style="color:var(--text-muted);font-size:11px;margin:0 0 6px;">EXP ${ls.exp}/${expToNext(ls.level)} ・ ${esc(job.desc)}</p>
-          <p class="section-label" style="margin:6px 0 6px;">ジョブ</p>
+          <p class="section-label" style="margin:6px 0 6px;">パッシブスキル</p>
+          ${passiveRow}
+          <p class="section-label" style="margin:10px 0 6px;">ジョブ</p>
           <div class="actions" style="margin-top:0;margin-bottom:10px;">${jobSwitchHtml}</div>
           <p class="section-label" style="margin:6px 0 6px;">スキル</p>
           ${atkRow}
