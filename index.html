@@ -719,35 +719,34 @@
 
   /* ---------------------------------------------------------------
    * ライバー(パーティメンバー)定義
-   * 現時点では仮の名前・仮の担当ジョブのプレースホルダーです。
-   * 実際の題材(名前・カラー・スキル演出等)が決まり次第、この配列を
-   * 差し替えるだけで反映されるように設計しています。
-   * job: そのライバーの初期担当ジョブ(後からホーム画面で変更可能)
-   * startUnlocked: ゲーム開始時から編成可能かどうか(キャラ作成時に選んだ1人のみtrue)
+   * job: そのライバーの初期担当ジョブ(後からホーム画面で変更可能)。
+   *   現時点ではキャラクターの雰囲気に合わせた仮のジョブ割り当てで、
+   *   スキル演出等の詳細は別途詰める予定。
+   * color: にじさんじ非公式Wiki(wikiwiki.jp/nijisanji)記載のイメージ
+   *   カラーのHEXコードを使用。
+   * startUnlocked: ゲーム開始時から編成可能かどうか(キャラ作成時に選んだ
+   *   1人のみtrue。実際の値はnewCharacter()側で動的に設定される)。
    * 未解放のライバーは「運命のチケット」ガチャ、または「確約されし運命の
    * チケット」での指名によって仲間になる(交換所で入手・使用する)。
-   * passive: ライバー固有の常時能力。ジョブとは独立して個性を出すためのもの。
+   * passive: ライバー固有の常時能力。スキル詳細は未確定のため、
+   *   現時点では全員未設定(passiveフィールドなし)。設定時の形式は
+   *   下記の通り(ジョブとは独立して個性を出すためのもの):
    *   kind:'statMult'       常時ステータス補正(ログには出さない)
    *   kind:'lowHpMitigate'  自身のHPが割合threshold以下の間、被ダメージをmult倍(軽減)。発動時にログを出す
    *   kind:'lowEnemyHpBoost' 敵の残りHPが割合threshold以下の間、自分の与ダメージをmult倍。発動時にログを出す
    *   kind:'allyDownRage'   味方が戦闘不能になった瞬間、以後の自分の攻撃力をmult倍(1戦闘に1度)。発動時にログを出す
    * --------------------------------------------------------------- */
   const LIVER_DEFS = [
-    {id:'liver_1', name:'(仮)ライバーA', title:'盾役', color:'#ff9f5a', job:'tank', startUnlocked:false,
-      passive:{name:'鉄壁の心得', kind:'statMult', stat:'def', mult:1.15,
-        desc:'常時、防御力が15%上昇する。'}},
-    {id:'liver_2', name:'(仮)ライバーB', title:'アタッカー', color:'#5a9bf0', job:'dps', startUnlocked:false,
-      passive:{name:'トドメの一撃', kind:'lowEnemyHpBoost', threshold:0.3, mult:1.25,
-        desc:'敵の残りHPが30%以下のとき、与えるダメージが25%上昇する。'}},
-    {id:'liver_3', name:'(仮)ライバーC', title:'魔導師', color:'#ffd863', job:'mage', startUnlocked:false,
-      passive:{name:'魔力の泉', kind:'statMult', stat:'mp', mult:1.2,
-        desc:'常時、最大MPが20%上昇する。'}},
-    {id:'liver_4', name:'(仮)ライバーD', title:'アタッカー', color:'#8fe08f', job:'dps', startUnlocked:false,
-      passive:{name:'弔い合戦', kind:'allyDownRage', mult:1.2,
-        desc:'仲間が戦闘不能になると、闘志が燃え上がり以後の攻撃力が20%上昇する。(1戦闘に1度)'}},
-    {id:'liver_5', name:'(仮)ライバーE', title:'盾役', color:'#c77dff', job:'tank', startUnlocked:false,
-      passive:{name:'不屈の護り', kind:'lowHpMitigate', threshold:0.3, mult:0.8,
-        desc:'自身のHPが30%以下のとき、受けるダメージが20%軽減される。'}},
+    {id:'liver_1', name:'樋口楓', title:'アタッカー', color:'#FBAF71', job:'dps', startUnlocked:false},
+    {id:'liver_2', name:'ジョー・力一', title:'魔導師', color:'#D598DD', job:'mage', startUnlocked:false},
+    {id:'liver_3', name:'魔界ノりりむ', title:'魔導師', color:'#EF6F94', job:'mage', startUnlocked:false},
+    {id:'liver_4', name:'加賀美ハヤト', title:'盾役', color:'#B9ADB9', job:'tank', startUnlocked:false},
+    {id:'liver_5', name:'三枝明那', title:'アタッカー', color:'#F03C32', job:'dps', startUnlocked:false},
+    {id:'liver_6', name:'弦月藤士郎', title:'盾役', color:'#B43246', job:'tank', startUnlocked:false},
+    {id:'liver_7', name:'先斗寧', title:'魔導師', color:'#5A7DFF', job:'mage', startUnlocked:false},
+    {id:'liver_8', name:'石神のぞみ', title:'魔導師', color:'#E6325F', job:'mage', startUnlocked:false},
+    {id:'liver_9', name:'風楽奏斗', title:'アタッカー', color:'#FAD246', job:'dps', startUnlocked:false},
+    {id:'liver_10', name:'栞葉るり', title:'盾役', color:'#2887FF', job:'tank', startUnlocked:false},
   ];
   const PARTY_MAX = 4; // 編成上限は4のまま。ライバーが5人以上に増えても「誰を連れて行くか」の選択が生まれる設計にする
   function liverDef(id){ return LIVER_DEFS.find(d=>d.id===id); }
@@ -1965,7 +1964,7 @@
           <span class="create-liver-chip" style="background:${def.color};"></span>
           <span class="create-liver-name">${esc(def.name)}</span>
           <span class="create-liver-title">${esc(def.title)} ・ ${esc(JOB_DEFS[def.job].name)}</span>
-          <span class="create-liver-title" style="opacity:.8;">パッシブ:${esc(def.passive.name)}</span>
+          ${def.passive ? `<span class="create-liver-title" style="opacity:.8;">パッシブ:${esc(def.passive.name)}</span>` : ''}
         </button>`;
     }).join('');
 
