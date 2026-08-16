@@ -1,4 +1,4 @@
-# 灰燼記(仮)
+# 七彩の塔
 
 Supabase(認証・DB・Realtime)を使ったブラウザRPG。単一の `index.html` で完結する。
 
