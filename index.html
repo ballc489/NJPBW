@@ -73,9 +73,10 @@
   }
   .badge-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
   .badge-location{color:#eef3ff;font-size:11px;letter-spacing:0.03em;justify-content:flex-start;}
-  .badge-gold{color:var(--gold);font-size:15px;font-weight:700;justify-content:flex-start;}
   .badge-progress-track{flex:1 1 auto;height:6px;background:#0a1230;border:1px solid var(--win-border-inner);}
   .badge-progress-fill{display:block;height:100%;background:linear-gradient(90deg,#3a7a3a,var(--rare-uncommon));}
+  .badge-resources{display:flex;align-items:center;gap:12px;}
+  .badge-resource{color:var(--gold);font-size:14px;font-weight:700;white-space:nowrap;}
 
   .layout{display:grid;grid-template-columns:minmax(0,1fr) 300px 300px;gap:22px;align-items:start;}
   @media (max-width:1180px){.layout{grid-template-columns:minmax(0,1fr) 250px 250px;gap:16px;}}
@@ -132,14 +133,12 @@
     display:block;
   }
 
-  .scene-progress-badge{
-    position:absolute;
-    top:14px; right:16px;
-    display:flex;align-items:center;gap:8px;
-    font-family:var(--font-mono);font-size:11px;color:var(--text-muted);
+  .scene-heading-progress{
+    display:inline-flex;align-items:center;gap:8px;
+    flex:0 0 auto;
     white-space:nowrap;
   }
-  .scene-progress-badge .badge-progress-track{width:70px;flex:0 0 auto;}
+  .scene-heading-progress .badge-progress-track{width:70px;flex:0 0 auto;}
 
   .scene-text{
     font-size:16px;line-height:1.8;
@@ -207,10 +206,8 @@
     margin:0 0 14px;
     border-bottom:1px solid rgba(255,255,255,0.25);
     padding-bottom:8px;
+    display:flex;justify-content:space-between;align-items:center;gap:14px;
   }
-  /* メインウィンドウ右上の踏破率バッジと見出しが重ならないよう、
-   * バッジが存在する時だけ見出しの右側にスペースを確保する。 */
-  .scene:has(.scene-progress-badge) .scene-heading{padding-right:190px;}
   .history-panel{margin-top:16px;}
   .history-log{
     max-height:170px;
@@ -2910,28 +2907,23 @@
     return { pct: Math.min(100, ds.progress), label: `${ds.progress}%` };
   }
 
+  /* 画面右上のバッジ。ダンジョンの踏破率はメインウィンドウの見出し側に
+   * 移したため、ここは現在地+簡易リソース表示(所持金・運命のチケット・
+   * コロシアムメダル)に専念する。 */
   function renderHeaderBadge(){
-    let progressRow = '';
-    if(state.screen==='dungeon' && state.activeDungeonId){
-      const ds = currentDungeonState();
-      const { pct, label } = dungeonProgressLabelAndPct(ds);
-      progressRow = `
-        <div class="badge-row">
-          <span>踏破率</span>
-          <span class="badge-progress-track"><span class="badge-progress-fill" style="width:${pct}%;"></span></span>
-          <span>${label}</span>
-        </div>`;
-    }
     return `
       <div class="depth-badge">
         <div class="badge-row badge-location">${esc(locationLabel())}</div>
-        ${progressRow}
-        <div class="badge-row badge-gold">${state.gold} G</div>
+        <div class="badge-resources">
+          <span class="badge-resource" title="所持金">💰${state.gold}</span>
+          <span class="badge-resource" title="運命のチケット">🎫${state.destinyTickets}</span>
+          <span class="badge-resource" title="コロシアムメダル">🏅${state.colosseum.medals}</span>
+        </div>
       </div>`;
   }
 
-  function sceneHeadingHtml(text){
-    return `<p class="scene-heading">${esc(text)}</p>`;
+  function sceneHeadingHtml(text, trailingHtml){
+    return `<p class="scene-heading"><span>${esc(text)}</span>${trailingHtml||''}</p>`;
   }
 
   function toggleGroup(groupId){
@@ -2999,7 +2991,7 @@
         : `<div class="actions"><button disabled>戦闘中…</button></div>`;
       return `
         <div class="scene-text">
-          ${sceneHeadingHtml(dungeonDef.name)}
+          ${sceneHeadingHtml(dungeonDef.name, renderSceneProgressBadge())}
           ${actionsHtml}
           <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--text-muted);margin-top:16px;">
             Lv.${combatEnemy.level} ${esc(combatEnemy.name)} — HP ${Math.max(0,combatEnemyHp)}/${combatEnemy._maxHp} ・ 弱点属性: ${esc(weaknessLabel)}
@@ -3018,7 +3010,7 @@
       </div>`;
     return `
       <div class="scene-text">
-        ${sceneHeadingHtml(dungeonDef.name)}
+        ${sceneHeadingHtml(dungeonDef.name, renderSceneProgressBadge())}
         ${actionsHtml}
         <div style="margin-top:16px;">
           ${renderLog() || '<p class="log-entry system">静寂が続いている……</p>'}
@@ -3548,20 +3540,22 @@
     else if(state.screen === 'home') inner = renderHomeInner();
     else if(state.screen === 'dead') inner = renderDeadInner();
     else inner = renderTownInner();
-    const progressBadge = (state.screen === 'dungeon' && state.activeDungeonId) ? renderSceneProgressBadge() : '';
-    return `<div class="scene">${progressBadge}${inner}</div>`;
+    return `<div class="scene">${inner}</div>`;
   }
 
+  /* 見出し(sceneHeadingHtml)の右側に添えて使う、ダンジョン専用の踏破率
+   * ゲージ。見出しと同じ行(同じ<p>要素内)に収めることで、高さのズレを
+   * 気にせず自然に揃い、色も見出しからそのまま継承される。 */
   function renderSceneProgressBadge(){
     const ds = currentDungeonState();
     if(!ds) return '';
     const { pct, label } = dungeonProgressLabelAndPct(ds);
     return `
-      <div class="scene-progress-badge">
-        <span>踏破率</span>
+      <span class="scene-heading-progress">
+        踏破率
         <span class="badge-progress-track"><span class="badge-progress-fill" style="width:${pct}%;"></span></span>
-        <span>${label}</span>
-      </div>`;
+        ${label}
+      </span>`;
   }
 
   function renderPartyCompactRows(){
