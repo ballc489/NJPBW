@@ -344,6 +344,48 @@
           warnText:'{name}の輪郭が揺らぎ始めた……', executeText:'歪んだ空間から一撃が放たれた！'}]},
       {key:'archive',     name:'尖塔の書架霊',     hpMult:0.95, atkMult:1.00, defMult:0.85, weakness:'thunder'},
     ],
+    jungle: [
+      {key:'spider2',   name:'猛る大蜘蛛',       hpMult:0.85, atkMult:1.25, defMult:0.75, weakness:'fire',
+        skills:[{key:'venom', name:'毒牙の一撃', everyNTurns:4, kind:'telegraphed', mult:2.9,
+          warnText:'{name}が牙に毒を滲ませ始めた……', executeText:'毒を纏った牙が突き刺さった！'}]},
+      {key:'treant',    name:'苔纏いし巨木人',   hpMult:1.35, atkMult:0.85, defMult:1.30, weakness:'fire'},
+      {key:'moth',      name:'密林の毒蛾',       hpMult:0.80, atkMult:1.15, defMult:0.80, weakness:'ice',
+        skills:[{key:'scale', name:'鱗粉の乱舞', everyNTurns:3, kind:'trueDamage', mult:2.0}]},
+      {key:'vinewitch', name:'蔓を操る魔女蜘蛛', hpMult:1.00, atkMult:1.05, defMult:0.95, weakness:'thunder'},
+      {key:'hound',     name:'樹海の番犬',       hpMult:0.95, atkMult:1.20, defMult:0.90, weakness:'ice'},
+    ],
+    crypt: [
+      {key:'skeleton',  name:'徘徊する白骨兵',   hpMult:1.00, atkMult:1.00, defMult:1.10, weakness:'fire'},
+      {key:'banshee',   name:'嘆きのバンシー',   hpMult:0.80, atkMult:1.30, defMult:0.70, weakness:'thunder',
+        skills:[{key:'wail', name:'絶叫の呪詛', everyNTurns:4, kind:'telegraphed', mult:3.1,
+          warnText:'{name}が耳をつんざく叫びを上げ始めた……', executeText:'絶叫と共に呪詛が突き刺さった！'}]},
+      {key:'sarcophagus', name:'石棺の番人',     hpMult:1.40, atkMult:0.85, defMult:1.35, weakness:'thunder'},
+      {key:'mummy',     name:'彷徨えるミイラ',   hpMult:1.10, atkMult:1.00, defMult:1.05, weakness:'fire',
+        skills:[{key:'rot', name:'腐毒の掴み', everyNTurns:3, kind:'trueDamage', mult:2.1}]},
+      {key:'ghostknight', name:'墓所の亡霊騎士', hpMult:1.05, atkMult:1.15, defMult:1.00, weakness:'ice'},
+    ],
+    icepeak: [
+      {key:'icewolf',   name:'氷牙の狼',         hpMult:0.90, atkMult:1.20, defMult:0.85, weakness:'fire'},
+      {key:'icegiant',  name:'凍える山岳巨人',   hpMult:1.45, atkMult:0.90, defMult:1.35, weakness:'fire',
+        skills:[{key:'fist', name:'氷塊の拳', everyNTurns:4, kind:'telegraphed', mult:3.3,
+          warnText:'{name}が氷塊を振りかぶった……', executeText:'凍てつく拳が打ち下ろされた！'}]},
+      {key:'rimespirit', name:'霧氷の精霊',     hpMult:0.85, atkMult:1.10, defMult:0.85, weakness:'thunder'},
+      {key:'wyverneagle', name:'雪崩を呼ぶ竜鷲', hpMult:1.00, atkMult:1.25, defMult:0.95, weakness:'fire',
+        skills:[{key:'avalanche', name:'雪崩の急襲', everyNTurns:3, kind:'trueDamage', mult:2.2}]},
+      {key:'icemage',   name:'蒼氷の魔導士',     hpMult:0.95, atkMult:1.15, defMult:0.90, weakness:'thunder'},
+    ],
+    cathedral: [
+      {key:'fallenapostle', name:'堕天の使徒',   hpMult:1.10, atkMult:1.20, defMult:1.05, weakness:'ice',
+        skills:[{key:'spear', name:'裁きの光槍', everyNTurns:4, kind:'telegraphed', mult:3.5,
+          warnText:'{name}の手に光の槍が形作られていく……', executeText:'裁きの光槍が撃ち下ろされた！'}]},
+      {key:'guardianstatue', name:'大聖堂の守護像', hpMult:1.50, atkMult:0.95, defMult:1.45, weakness:'thunder'},
+      {key:'choir',     name:'詠唱する聖歌隊',   hpMult:0.90, atkMult:1.10, defMult:0.90, weakness:'fire',
+        skills:[{key:'hymn', name:'断罪の讃美歌', everyNTurns:3, kind:'trueDamage', mult:2.3}]},
+      {key:'cerberus',  name:'天穹の番犬ケルベロス', hpMult:1.15, atkMult:1.25, defMult:1.00, weakness:'ice'},
+      {key:'seraph',    name:'光輪纏いし熾天使', hpMult:1.05, atkMult:1.15, defMult:1.10, weakness:'thunder',
+        skills:[{key:'judgement', name:'神罰の降臨', everyNTurns:5, kind:'telegraphed', mult:3.6,
+          warnText:'{name}の光輪が眩く輝き始めた……', executeText:'神罰が降り注いだ！'}]},
+    ],
   };
   const ELEMENT_LABELS = {fire:'火', ice:'氷', thunder:'雷'};
 
@@ -604,6 +646,294 @@
             warnText:'{name}の頭上に無数の星が集い始めた……', executeText:'堕ちた星々が尖塔ごと打ち砕いた！'}
         ] },
       firstClearReward:{name:'星詠みの王冠', type:'weapon'}
+    },
+    {
+      id:'jungle_f1', name:'深緑の樹海 1F', pool:'jungle', requires:'spire_f5',
+      group:'jungle', groupName:'深緑の樹海', floorLabel:'1F',
+      level:7, rewardMult:2.2,
+      boss:{ name:'樹海を統べる女王蜘蛛', hpMult:2.7, atkMult:1.32, defMult:1.47, weakness:'fire',
+        skills:[
+          {key:'crit', name:'牙の連撃', everyNTurns:3, kind:'trueDamage', mult:2.5},
+          {key:'charge', name:'糸繭の圧殺', everyNTurns:6, kind:'telegraphed', mult:3.9, element:'fire',
+            warnText:'{name}が糸を吐き出し始めた……', executeText:'糸に絡め取られ圧殺の一撃を受けた！'}
+        ] },
+      firstClearReward:{name:'女王の絹糸外套', type:'armor'}
+    },
+    {
+      id:'jungle_f2', name:'深緑の樹海 2F', pool:'jungle', requires:'jungle_f1',
+      group:'jungle', groupName:'深緑の樹海', floorLabel:'2F',
+      level:8, rewardMult:2.4,
+      boss:{ name:'苔むした太古の巨木', hpMult:2.8, atkMult:1.34, defMult:1.49, weakness:'fire',
+        skills:[
+          {key:'crit', name:'根の締め上げ', everyNTurns:3, kind:'trueDamage', mult:2.5},
+          {key:'charge', name:'古木の怒り', everyNTurns:6, kind:'telegraphed', mult:4.0,
+            warnText:'{name}の幹が軋み始めた……', executeText:'倒れ込んだ巨木が押し潰した！'}
+        ] },
+      firstClearReward:{name:'巨木の根棍', type:'weapon'}
+    },
+    {
+      id:'jungle_f3', name:'深緑の樹海 3F', pool:'jungle', requires:'jungle_f2',
+      group:'jungle', groupName:'深緑の樹海', floorLabel:'3F',
+      level:9, rewardMult:2.6,
+      boss:{ name:'毒霧纏う古蛾', hpMult:2.9, atkMult:1.36, defMult:1.51, weakness:'ice',
+        skills:[
+          {key:'crit', name:'鱗粉の乱舞', everyNTurns:3, kind:'trueDamage', mult:2.6},
+          {key:'charge', name:'猛毒の霧', everyNTurns:6, kind:'telegraphed', mult:4.1, element:'ice',
+            warnText:'{name}が毒々しい霧を纏い始めた……', executeText:'猛毒の霧が押し寄せた！'}
+        ] },
+      firstClearReward:{name:'鱗粉のヴェール', type:'armor'}
+    },
+    {
+      id:'jungle_f4', name:'深緑の樹海 4F', pool:'jungle', requires:'jungle_f3',
+      group:'jungle', groupName:'深緑の樹海', floorLabel:'4F',
+      level:10, rewardMult:2.8,
+      boss:{ name:'蔓を操る森の魔女', hpMult:3.0, atkMult:1.38, defMult:1.53, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'蔓の鞭打ち', everyNTurns:3, kind:'trueDamage', mult:2.6},
+          {key:'charge', name:'絡みつく蔦', everyNTurns:6, kind:'telegraphed', mult:4.2, element:'thunder',
+            warnText:'{name}が周囲の蔓を操り始めた……', executeText:'無数の蔦が締め上げた！'}
+        ] },
+      firstClearReward:{name:'魔女の蔦杖', type:'weapon'}
+    },
+    {
+      id:'jungle_f5', name:'深緑の樹海 5F', pool:'jungle', requires:'jungle_f4',
+      group:'jungle', groupName:'深緑の樹海', floorLabel:'5F',
+      level:11, rewardMult:3.0,
+      boss:{ name:'樹海の番犬・双頭', hpMult:3.1, atkMult:1.40, defMult:1.55, weakness:'ice',
+        skills:[
+          {key:'crit', name:'双頭の咬撃', everyNTurns:3, kind:'trueDamage', mult:2.7},
+          {key:'charge', name:'遠吠えの号令', everyNTurns:6, kind:'telegraphed', mult:4.3,
+            warnText:'{name}が二つの顎を大きく開いた……', executeText:'双方向からの牙が突き刺さった！'}
+        ] },
+      firstClearReward:{name:'番犬の毛皮外套', type:'armor'}
+    },
+    {
+      id:'jungle_f6', name:'深緑の樹海 6F', pool:'jungle', requires:'jungle_f5',
+      group:'jungle', groupName:'深緑の樹海', floorLabel:'6F',
+      level:12, rewardMult:3.2,
+      boss:{ name:'深緑に眠りし古竜', hpMult:3.2, atkMult:1.42, defMult:1.57, weakness:'fire',
+        skills:[
+          {key:'crit', name:'古竜の爪撃', everyNTurns:3, kind:'trueDamage', mult:2.7},
+          {key:'charge', name:'森を薙ぐ尾撃', everyNTurns:6, kind:'telegraphed', mult:4.4,
+            warnText:'{name}が長い尾を振り上げた……', executeText:'尾の一撃が樹々ごと薙ぎ払った！'}
+        ] },
+      firstClearReward:{name:'古竜の牙剣', type:'weapon'}
+    },
+    {
+      id:'crypt_f1', name:'忘却の墓所 1F', pool:'crypt', requires:'jungle_f6',
+      group:'crypt', groupName:'忘却の墓所', floorLabel:'1F',
+      level:13, rewardMult:3.4,
+      boss:{ name:'白骨兵団の将', hpMult:3.3, atkMult:1.44, defMult:1.59, weakness:'fire',
+        skills:[
+          {key:'crit', name:'錆びた大剣の一閃', everyNTurns:3, kind:'trueDamage', mult:2.8},
+          {key:'charge', name:'兵団の号令', everyNTurns:6, kind:'telegraphed', mult:4.5,
+            warnText:'{name}が朽ちた角笛を吹き鳴らした……', executeText:'白骨兵団の一斉突撃が襲った！'}
+        ] },
+      firstClearReward:{name:'将の朽ちた甲冑', type:'armor'}
+    },
+    {
+      id:'crypt_f2', name:'忘却の墓所 2F', pool:'crypt', requires:'crypt_f1',
+      group:'crypt', groupName:'忘却の墓所', floorLabel:'2F',
+      level:14, rewardMult:3.6,
+      boss:{ name:'嘆きのバンシー・クイーン', hpMult:3.4, atkMult:1.46, defMult:1.61, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'絶望の叫び', everyNTurns:3, kind:'trueDamage', mult:2.8},
+          {key:'charge', name:'鎮魂の呪詛', everyNTurns:6, kind:'telegraphed', mult:4.6, element:'thunder',
+            warnText:'{name}が悲痛な旋律を紡ぎ始めた……', executeText:'呪詛の旋律が突き刺さった！'}
+        ] },
+      firstClearReward:{name:'嘆きの鎌', type:'weapon'}
+    },
+    {
+      id:'crypt_f3', name:'忘却の墓所 3F', pool:'crypt', requires:'crypt_f2',
+      group:'crypt', groupName:'忘却の墓所', floorLabel:'3F',
+      level:15, rewardMult:3.8,
+      boss:{ name:'石棺を守る番人', hpMult:3.5, atkMult:1.48, defMult:1.63, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'石拳の一撃', everyNTurns:3, kind:'trueDamage', mult:2.9},
+          {key:'charge', name:'封印の重圧', everyNTurns:6, kind:'telegraphed', mult:4.7,
+            warnText:'{name}の石棺が鈍く唸り始めた……', executeText:'石棺ごと押し潰す一撃が放たれた！'}
+        ] },
+      firstClearReward:{name:'石棺の護符', type:'armor'}
+    },
+    {
+      id:'crypt_f4', name:'忘却の墓所 4F', pool:'crypt', requires:'crypt_f3',
+      group:'crypt', groupName:'忘却の墓所', floorLabel:'4F',
+      level:16, rewardMult:4.0,
+      boss:{ name:'彷徨える王のミイラ', hpMult:3.6, atkMult:1.50, defMult:1.65, weakness:'fire',
+        skills:[
+          {key:'crit', name:'王笏の一撃', everyNTurns:3, kind:'trueDamage', mult:2.9},
+          {key:'charge', name:'腐毒の呪い', everyNTurns:6, kind:'telegraphed', mult:4.8, element:'fire',
+            warnText:'{name}が包帯の奥で目を光らせた……', executeText:'王の呪いが襲いかかった！'}
+        ] },
+      firstClearReward:{name:'王笏の杖', type:'weapon'}
+    },
+    {
+      id:'crypt_f5', name:'忘却の墓所 5F', pool:'crypt', requires:'crypt_f4',
+      group:'crypt', groupName:'忘却の墓所', floorLabel:'5F',
+      level:17, rewardMult:4.2,
+      boss:{ name:'墓所の亡霊騎士団長', hpMult:3.7, atkMult:1.52, defMult:1.67, weakness:'ice',
+        skills:[
+          {key:'crit', name:'亡霊の剣閃', everyNTurns:3, kind:'trueDamage', mult:3.0},
+          {key:'charge', name:'騎士団の突撃', everyNTurns:6, kind:'telegraphed', mult:4.9, element:'ice',
+            warnText:'{name}が朽ちた槍を構えた……', executeText:'亡霊騎士団の突撃が貫いた！'}
+        ] },
+      firstClearReward:{name:'騎士団長の外套', type:'armor'}
+    },
+    {
+      id:'crypt_f6', name:'忘却の墓所 6F', pool:'crypt', requires:'crypt_f5',
+      group:'crypt', groupName:'忘却の墓所', floorLabel:'6F',
+      level:18, rewardMult:4.4,
+      boss:{ name:'忘却を統べる死霊王', hpMult:3.8, atkMult:1.54, defMult:1.69, weakness:'ice',
+        skills:[
+          {key:'crit', name:'死霊王の大鎌', everyNTurns:3, kind:'trueDamage', mult:3.0},
+          {key:'charge', name:'忘却の呪縛', everyNTurns:6, kind:'telegraphed', mult:5.0, element:'ice',
+            warnText:'{name}の玉座が暗く輝き始めた……', executeText:'忘却の呪縛が全てを飲み込んだ！'}
+        ] },
+      firstClearReward:{name:'死霊王の大鎌', type:'weapon'}
+    },
+    {
+      id:'icepeak_f1', name:'蒼氷の霊峰 1F', pool:'icepeak', requires:'crypt_f6',
+      group:'icepeak', groupName:'蒼氷の霊峰', floorLabel:'1F',
+      level:19, rewardMult:4.6,
+      boss:{ name:'氷牙の狼王', hpMult:3.9, atkMult:1.56, defMult:1.71, weakness:'fire',
+        skills:[
+          {key:'crit', name:'氷牙の一噛み', everyNTurns:3, kind:'trueDamage', mult:3.1},
+          {key:'charge', name:'群狼の遠吠え', everyNTurns:6, kind:'telegraphed', mult:5.1, element:'fire',
+            warnText:'{name}が月に向かって遠吠えを上げた……', executeText:'群狼の一斉咬撃が襲った！'}
+        ] },
+      firstClearReward:{name:'狼王の毛皮', type:'armor'}
+    },
+    {
+      id:'icepeak_f2', name:'蒼氷の霊峰 2F', pool:'icepeak', requires:'icepeak_f1',
+      group:'icepeak', groupName:'蒼氷の霊峰', floorLabel:'2F',
+      level:20, rewardMult:4.8,
+      boss:{ name:'凍える山岳巨人', hpMult:4.0, atkMult:1.58, defMult:1.73, weakness:'fire',
+        skills:[
+          {key:'crit', name:'巨腕の振り下ろし', everyNTurns:3, kind:'trueDamage', mult:3.1},
+          {key:'charge', name:'氷塊の乱撃', everyNTurns:6, kind:'telegraphed', mult:5.2, element:'fire',
+            warnText:'{name}が氷塊を掲げた……', executeText:'降り注ぐ氷塊が押し潰した！'}
+        ] },
+      firstClearReward:{name:'巨人の氷斧', type:'weapon'}
+    },
+    {
+      id:'icepeak_f3', name:'蒼氷の霊峰 3F', pool:'icepeak', requires:'icepeak_f2',
+      group:'icepeak', groupName:'蒼氷の霊峰', floorLabel:'3F',
+      level:21, rewardMult:5.0,
+      boss:{ name:'霧氷の大精霊', hpMult:4.1, atkMult:1.60, defMult:1.75, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'霧氷の一閃', everyNTurns:3, kind:'trueDamage', mult:3.2},
+          {key:'charge', name:'極寒の吹雪', everyNTurns:6, kind:'telegraphed', mult:5.3, element:'thunder',
+            warnText:'{name}の周囲に冷気が渦巻き始めた……', executeText:'極寒の吹雪が全てを凍らせた！'}
+        ] },
+      firstClearReward:{name:'霧氷の外套', type:'armor'}
+    },
+    {
+      id:'icepeak_f4', name:'蒼氷の霊峰 4F', pool:'icepeak', requires:'icepeak_f3',
+      group:'icepeak', groupName:'蒼氷の霊峰', floorLabel:'4F',
+      level:22, rewardMult:5.2,
+      boss:{ name:'雪崩を呼ぶ竜鷲', hpMult:4.2, atkMult:1.62, defMult:1.77, weakness:'fire',
+        skills:[
+          {key:'crit', name:'急降下の鉤爪', everyNTurns:3, kind:'trueDamage', mult:3.2},
+          {key:'charge', name:'雪崩の咆哮', everyNTurns:6, kind:'telegraphed', mult:5.4,
+            warnText:'{name}が甲高い咆哮を上げた……', executeText:'呼び起こされた雪崩が飲み込んだ！'}
+        ] },
+      firstClearReward:{name:'竜鷲の鉤爪', type:'weapon'}
+    },
+    {
+      id:'icepeak_f5', name:'蒼氷の霊峰 5F', pool:'icepeak', requires:'icepeak_f4',
+      group:'icepeak', groupName:'蒼氷の霊峰', floorLabel:'5F',
+      level:23, rewardMult:5.4,
+      boss:{ name:'蒼氷の魔導王', hpMult:4.3, atkMult:1.64, defMult:1.79, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'氷結の魔弾', everyNTurns:3, kind:'trueDamage', mult:3.3, element:'thunder'},
+          {key:'charge', name:'絶対零度', everyNTurns:6, kind:'telegraphed', mult:5.5, element:'thunder',
+            warnText:'{name}が杖に氷の魔力を集束させた……', executeText:'絶対零度の一撃が突き刺さった！'}
+        ] },
+      firstClearReward:{name:'魔導王の氷冠', type:'armor'}
+    },
+    {
+      id:'icepeak_f6', name:'蒼氷の霊峰 6F', pool:'icepeak', requires:'icepeak_f5',
+      group:'icepeak', groupName:'蒼氷の霊峰', floorLabel:'6F',
+      level:24, rewardMult:5.6,
+      boss:{ name:'霊峰に君臨する氷竜', hpMult:4.4, atkMult:1.66, defMult:1.81, weakness:'fire',
+        skills:[
+          {key:'crit', name:'氷竜の牙撃', everyNTurns:3, kind:'trueDamage', mult:3.3},
+          {key:'charge', name:'氷竜のブレス', everyNTurns:6, kind:'telegraphed', mult:5.6, element:'fire',
+            warnText:'{name}が大きく息を吸い込んだ……', executeText:'凍てつくブレスが吹き荒れた！'}
+        ] },
+      firstClearReward:{name:'氷竜の牙槍', type:'weapon'}
+    },
+    {
+      id:'cathedral_f1', name:'天穹の大聖堂 1F', pool:'cathedral', requires:'icepeak_f6',
+      group:'cathedral', groupName:'天穹の大聖堂', floorLabel:'1F',
+      level:25, rewardMult:5.8,
+      boss:{ name:'堕天の使徒長', hpMult:4.5, atkMult:1.68, defMult:1.83, weakness:'ice',
+        skills:[
+          {key:'crit', name:'堕天の一閃', everyNTurns:3, kind:'trueDamage', mult:3.4},
+          {key:'charge', name:'裁きの光槍', everyNTurns:6, kind:'telegraphed', mult:5.7, element:'ice',
+            warnText:'{name}の翼が黒く染まっていく……', executeText:'裁きの光槍が撃ち下ろされた！'}
+        ] },
+      firstClearReward:{name:'使徒の法衣', type:'armor'}
+    },
+    {
+      id:'cathedral_f2', name:'天穹の大聖堂 2F', pool:'cathedral', requires:'cathedral_f1',
+      group:'cathedral', groupName:'天穹の大聖堂', floorLabel:'2F',
+      level:26, rewardMult:6.0,
+      boss:{ name:'大聖堂の守護石像', hpMult:4.6, atkMult:1.70, defMult:1.85, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'石槌の一撃', everyNTurns:3, kind:'trueDamage', mult:3.4},
+          {key:'charge', name:'守護の裁き', everyNTurns:6, kind:'telegraphed', mult:5.8, element:'thunder',
+            warnText:'{name}の目に光が灯り始めた……', executeText:'雷鳴と共に裁きが下った！'}
+        ] },
+      firstClearReward:{name:'守護像の戦槌', type:'weapon'}
+    },
+    {
+      id:'cathedral_f3', name:'天穹の大聖堂 3F', pool:'cathedral', requires:'cathedral_f2',
+      group:'cathedral', groupName:'天穹の大聖堂', floorLabel:'3F',
+      level:27, rewardMult:6.2,
+      boss:{ name:'断罪の聖歌隊長', hpMult:4.7, atkMult:1.72, defMult:1.87, weakness:'fire',
+        skills:[
+          {key:'crit', name:'断罪の一節', everyNTurns:3, kind:'trueDamage', mult:3.5},
+          {key:'charge', name:'焦熱の聖歌', everyNTurns:6, kind:'telegraphed', mult:5.9, element:'fire',
+            warnText:'{name}が高らかに聖歌を歌い始めた……', executeText:'焦熱の旋律が焼き尽くした！'}
+        ] },
+      firstClearReward:{name:'聖歌隊の祭服', type:'armor'}
+    },
+    {
+      id:'cathedral_f4', name:'天穹の大聖堂 4F', pool:'cathedral', requires:'cathedral_f3',
+      group:'cathedral', groupName:'天穹の大聖堂', floorLabel:'4F',
+      level:28, rewardMult:6.4,
+      boss:{ name:'天穹のケルベロス', hpMult:4.8, atkMult:1.74, defMult:1.89, weakness:'ice',
+        skills:[
+          {key:'crit', name:'三頭の咬撃', everyNTurns:3, kind:'trueDamage', mult:3.5},
+          {key:'charge', name:'業火の咆哮', everyNTurns:6, kind:'telegraphed', mult:6.0, element:'ice',
+            warnText:'{name}の三つの喉が唸り始めた……', executeText:'三重の咆哮が焼き払った！'}
+        ] },
+      firstClearReward:{name:'ケルベロスの牙剣', type:'weapon'}
+    },
+    {
+      id:'cathedral_f5', name:'天穹の大聖堂 5F', pool:'cathedral', requires:'cathedral_f4',
+      group:'cathedral', groupName:'天穹の大聖堂', floorLabel:'5F',
+      level:29, rewardMult:6.6,
+      boss:{ name:'光輪纏いし熾天使', hpMult:4.9, atkMult:1.76, defMult:1.91, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'光輪の一閃', everyNTurns:3, kind:'trueDamage', mult:3.6},
+          {key:'charge', name:'神罰の降臨', everyNTurns:6, kind:'telegraphed', mult:6.1, element:'thunder',
+            warnText:'{name}の光輪が眩く輝き始めた……', executeText:'神罰が天より降り注いだ！'}
+        ] },
+      firstClearReward:{name:'熾天使の光輪', type:'armor'}
+    },
+    {
+      id:'cathedral_f6', name:'天穹の大聖堂 6F', pool:'cathedral', requires:'cathedral_f5',
+      group:'cathedral', groupName:'天穹の大聖堂', floorLabel:'6F',
+      level:30, rewardMult:6.8,
+      boss:{ name:'大聖堂に君臨せし堕神', hpMult:5.0, atkMult:1.78, defMult:1.93, weakness:'fire',
+        skills:[
+          {key:'crit', name:'堕神の審判', everyNTurns:3, kind:'trueDamage', mult:3.6},
+          {key:'charge', name:'終焉の裁き', everyNTurns:6, kind:'telegraphed', mult:6.2, element:'fire',
+            warnText:'{name}が最後の審判を告げた……', executeText:'終焉の裁きが全てを飲み込んだ！'}
+        ] },
+      firstClearReward:{name:'堕神の審判剣', type:'weapon'}
     }
   ];
   const PROGRESS_PER_STEP = 9; // 1回の成功した行動あたりの踏破率上昇(%)
@@ -666,6 +996,25 @@
     if(!def.requires) return true;
     const req = state.dungeons[def.requires];
     return !!(req && req.cleared);
+  }
+  /* ダンジョン一覧に出す範囲。解放済みのものに加えて、次に解放される
+   * 1個先のダンジョンまでを含め、それより先はまだ見せない
+   * (DUNGEON_DEFSは一本道のrequiresチェーンなので、配列順に見ていって
+   * 最初の未解放エントリだけを含めれば良い)。 */
+  function visibleDungeonDefs(){
+    const visible = [];
+    let shownLocked = false;
+    for(const def of DUNGEON_DEFS){
+      if(isDungeonUnlocked(def.id)){
+        visible.push(def);
+      } else if(!shownLocked){
+        visible.push(def);
+        shownLocked = true;
+      } else {
+        break;
+      }
+    }
+    return visible;
   }
   function newDungeonProgress(){ return {progress:0, cleared:false, bossKillCount:0, depth:0}; }
   function currentDungeonState(){ return state.dungeons[state.activeDungeonId]; }
@@ -2344,7 +2693,7 @@
   function renderDungeonGroups(){
     const groups = [];
     const seen = {};
-    DUNGEON_DEFS.forEach(def=>{
+    visibleDungeonDefs().forEach(def=>{
       if(!seen[def.group]){
         seen[def.group] = {id:def.group, name:def.groupName, defs:[]};
         groups.push(seen[def.group]);
