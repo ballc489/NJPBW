@@ -2941,7 +2941,7 @@
         const status = !unlocked
           ? '🔒 未解放'
           : ds.cleared
-            ? `踏破済み ×${ds.bossKillCount} (踏破率 ${ds.progress}%)`
+            ? '踏破済み'
             : `踏破率 ${ds.progress}%`;
         const label = def.floorLabel ? `${def.floorLabel}` : def.name;
         return `
