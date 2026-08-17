@@ -959,7 +959,11 @@
   function riftRemainMs(){ return Math.max(0, riftEndTime() - Date.now()); }
   function riftReady(){ return !!state.rift && Date.now() >= riftEndTime(); }
 
-  function startRift(){
+  /* 突入・受け取りの直後は、必ずDBへの保存が完了してからロック画面/通常
+   * 画面へ切り替える(saveGameをawaitする)。先に画面だけ切り替えてしまうと、
+   * 保存が終わる前にページを更新された場合にサーバー側は未突入のままの
+   * 状態しか持っておらず、更新するだけでロックを回避できてしまうため。 */
+  async function startRift(){
     if(inCombat || state.rift) return;
     if(!state.party.length){
       pushLog('パーティが編成されていない。町で編成してから挑もう。', 'system');
@@ -968,10 +972,11 @@
     }
     state.rift = { startedAt: Date.now(), partyIds: state.party.slice() };
     pushLog('次元断層ポモ・ドーロへ突入した。25分後、探索の結果を持ち帰る。', 'system');
-    saveGame(); render();
+    await saveGame();
+    render();
   }
 
-  function claimRiftReward(){
+  async function claimRiftReward(){
     if(!state.rift || !riftReady()) return;
     const size = Math.max(1, state.rift.partyIds.length);
     const lv = partyLevel();
@@ -988,7 +993,8 @@
       }
     }
     state.rift = null;
-    saveGame(); render();
+    await saveGame();
+    render();
   }
 
   /* まだ誰も登録していないフロアで戦うダミーの門番。フロアが上がるほど
