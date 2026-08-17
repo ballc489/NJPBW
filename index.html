@@ -369,10 +369,12 @@
     return 0.4 + n*0.6; // 1人:1.0 / 2人:1.6 / 3人:2.2 / 4人:2.8
   }
 
+  const BOSS_LEVEL_PREMIUM = 4; // ボスは「そのダンジョンのレベル+この値」で固定(パーティの強さは見ない)
+
   function spawnEnemy(dungeonDef, depth, isBoss){
     if(isBoss){
       const b = dungeonDef.boss;
-      const level = Math.max(1, partyLevel() + 4 + (dungeonDef.bossLevelBonus||0));
+      const level = Math.max(1, dungeonDef.level + BOSS_LEVEL_PREMIUM);
       const base = statsForLevel(level);
       const hp  = Math.max(5, Math.round(base.hp  * b.hpMult * partySizeHpMult()));
       const atk = Math.max(1, Math.round(base.atk * b.atkMult));
@@ -382,7 +384,10 @@
     }
     const pool = ENEMY_POOLS[dungeonDef.pool] || ENEMY_POOLS.ashen;
     const type = pool[Math.floor(Math.random()*pool.length)];
-    const level = Math.max(1, partyLevel() + pickLevelOffset(depth));
+    /* 敵の強さはパーティの強さではなく、そのダンジョン固有のレベルを基準にする。
+     * こうすることで、育った仲間を連れて序盤のダンジョンへ新キャラを鍛えに
+     * 戻っても、敵の強さは変わらず安全に育成できる(意図的な設計)。 */
+    const level = Math.max(1, dungeonDef.level + pickLevelOffset(depth));
     const base = statsForLevel(level);
     const hp  = Math.max(5, Math.round(base.hp  * type.hpMult * partySizeHpMult()));
     const atk = Math.max(1, Math.round(base.atk * type.atkMult));
@@ -455,14 +460,19 @@
     return { name: tmpl.name, kind:'element', element: tmpl.element, mult: rarityKey==='epic' ? 1.5 : 1.3 };
   }
 
-  function makeItem(type, depth){
+  /* 装備の数値は「ダンジョンレベル+踏破深度」を土台にする(武器・防具共通)。
+   * levelはそのダンジュンの固定値(DUNGEON_DEFS[].level)、depthは踏破深度
+   * だが、advance()側でprogressが100%に達した時点でカウントを止めているため、
+   * 実質「そのダンジョンで出る装備の上限」として機能する。レアリティによる
+   * 上振れ(倍率)だけが、その上限の中でのブレ幅になる。 */
+  function makeItem(type, level, depth){
     const rarityKey = rollRarity();
     const rarity = RARITY[rarityKey];
     if(type === 'weapon'){
       const typeKeys = Object.keys(WEAPON_TYPES);
       const weaponType = typeKeys[Math.floor(Math.random()*typeKeys.length)];
       const affix = rollWeaponAffix(rarityKey);
-      let value = Math.round((3 + depth*0.6) * rarity.mult);
+      let value = Math.round((level + depth) * 0.6 * rarity.mult);
       if(affix && affix.kind==='atkBonus') value += affix.bonus;
       return {
         id: 'itm_'+Math.random().toString(36).slice(2,9),
@@ -475,7 +485,7 @@
       };
     }
     const base = ARMOR_BASES[Math.floor(Math.random()*ARMOR_BASES.length)];
-    const value = Math.round((2 + depth*0.6) * rarity.mult);
+    const value = Math.round((level + depth) * 0.6 * rarity.mult);
     const prefix = rarityKey==='common' ? '' : (rarityKey==='uncommon' ? '頑丈な' : rarityKey==='rare' ? '精霊の' : '深淵の');
     return {
       id: 'itm_'+Math.random().toString(36).slice(2,9),
@@ -537,7 +547,7 @@
     {
       id:'ashen_ruins', name:'灰燼の迷宮', pool:'ashen', requires:null,
       group:'ashen_ruins', groupName:'灰燼の迷宮', floorLabel:null,
-      bossLevelBonus:0, rewardMult:1.0,
+      level:1, rewardMult:1.0,
       boss:{ name:'古の守護者', hpMult:1.7, atkMult:1.15, defMult:1.3, weakness:'ice',
         skills:[{key:'crit', name:'渾身の一撃', everyNTurns:3, kind:'trueDamage', mult:2.2}] },
       firstClearReward:{name:'守護者の心臓', type:'armor'}
@@ -545,7 +555,7 @@
     {
       id:'spire_f1', name:'星詠みの尖塔 1F', pool:'spire', requires:'ashen_ruins',
       group:'spire', groupName:'星詠みの尖塔', floorLabel:'1F',
-      bossLevelBonus:0, rewardMult:1.1,
+      level:2, rewardMult:1.1,
       boss:{ name:'尖塔の門番', hpMult:1.6, atkMult:1.1, defMult:1.3, weakness:'fire',
         skills:[{key:'crit', name:'閃光の一閃', everyNTurns:3, kind:'trueDamage', mult:2.0, element:'fire'}] },
       firstClearReward:{name:'門番の鍵爪', type:'weapon'}
@@ -553,7 +563,7 @@
     {
       id:'spire_f2', name:'星詠みの尖塔 2F', pool:'spire', requires:'spire_f1',
       group:'spire', groupName:'星詠みの尖塔', floorLabel:'2F',
-      bossLevelBonus:1, rewardMult:1.25,
+      level:3, rewardMult:1.25,
       boss:{ name:'覚醒せし魔導兵', hpMult:1.8, atkMult:1.1, defMult:1.3, weakness:'thunder',
         skills:[{key:'charge', name:'収束する光弾', everyNTurns:4, kind:'telegraphed', mult:3.0, element:'thunder',
           warnText:'{name}が光を収束させ始めた……', executeText:'収束した光弾が直撃した！'}] },
@@ -562,7 +572,7 @@
     {
       id:'spire_f3', name:'星詠みの尖塔 3F', pool:'spire', requires:'spire_f2',
       group:'spire', groupName:'星詠みの尖塔', floorLabel:'3F',
-      bossLevelBonus:2, rewardMult:1.5,
+      level:4, rewardMult:1.5,
       boss:{ name:'堕ちし尖塔主', hpMult:2.1, atkMult:1.2, defMult:1.35, weakness:'thunder',
         skills:[
           {key:'crit', name:'尖塔の裁き', everyNTurns:3, kind:'trueDamage', mult:2.1},
@@ -574,7 +584,7 @@
     {
       id:'spire_f4', name:'星詠みの尖塔 4F', pool:'spire', requires:'spire_f3',
       group:'spire', groupName:'星詠みの尖塔', floorLabel:'4F',
-      bossLevelBonus:3, rewardMult:1.7,
+      level:5, rewardMult:1.7,
       boss:{ name:'星喰らいの影', hpMult:2.3, atkMult:1.25, defMult:1.4, weakness:'ice',
         skills:[
           {key:'crit', name:'虚空の爪', everyNTurns:3, kind:'trueDamage', mult:2.3},
@@ -586,7 +596,7 @@
     {
       id:'spire_f5', name:'星詠みの尖塔 5F', pool:'spire', requires:'spire_f4',
       group:'spire', groupName:'星詠みの尖塔', floorLabel:'5F',
-      bossLevelBonus:4, rewardMult:2.0,
+      level:6, rewardMult:2.0,
       boss:{ name:'尖塔を戴く星詠み', hpMult:2.6, atkMult:1.3, defMult:1.45, weakness:'fire',
         skills:[
           {key:'crit', name:'終焉の啓示', everyNTurns:3, kind:'trueDamage', mult:2.4, element:'fire'},
@@ -1493,9 +1503,10 @@
 
   function maybeDropItem(depth){
     const { dropMult, goldMult } = partyLootMult();
+    const dungeonLevel = currentDungeonDef().level;
     if(Math.random() < 0.42 * dropMult){
       const type = Math.random() < 0.5 ? 'weapon' : 'armor';
-      const item = makeItem(type, depth);
+      const item = makeItem(type, dungeonLevel, depth);
       if(addItemToInventory(item)){
         pushLog(`「${item.name}」を手に入れた。`, 'reward');
       }
@@ -1987,7 +1998,10 @@
     const ds = currentDungeonState();
     if(!dungeonDef || !ds) return;
     if(!alivePartyIds().length) return; // 全員戦闘不能では進めない
-    ds.depth += 1;
+    // 踏破率が100%に達したら深度のカウントは止める。これが装備・敵の強さの
+    // 上限になる(ボス撃破でprogressは0に戻るが、depthは戻さないので、
+    // 一度上限に達したダンジョンはそれ以降ずっと同じ上限のまま)。
+    if(ds.progress < 100) ds.depth += 1;
     const roll = Math.random();
 
     if(roll < 0.55){
@@ -2155,7 +2169,7 @@
     const arr = [];
     for(let i=0;i<4;i++){
       const type = i%2===0 ? 'weapon' : 'armor';
-      const item = makeItem(type, Math.max(1, partyLevel()*2));
+      const item = makeItem(type, Math.max(1, partyLevel()*2), 0);
       item.price = Math.max(10, Math.round(item.value*9));
       arr.push(item);
     }
@@ -2353,7 +2367,7 @@
         const label = def.floorLabel ? `${def.floorLabel}` : def.name;
         return `
           <div class="inv-item" style="${unlocked?'':'opacity:.55;'}">
-            <span class="inv-item-name">${esc(label)}<br><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${status}</span></span>
+            <span class="inv-item-name">${esc(label)} <span style="color:var(--gold);font-family:var(--font-mono);font-size:11px;">適正Lv.${def.level}</span><br><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${status}</span></span>
             <span class="inv-item-actions">${unlocked ? `<button data-enter-dungeon="${def.id}">入る</button>` : ''}</span>
           </div>`;
       }).join('');
@@ -2406,6 +2420,7 @@
     return `
       <div class="scene-text">
         ${sceneHeadingHtml(dungeonDef.name)}
+        <p style="color:var(--gold);font-family:var(--font-mono);font-size:12px;margin:0 0 10px;">適正Lv.${dungeonDef.level}</p>
         ${actionsHtml}
         <div style="margin-top:16px;">
           ${renderLog() || '<p class="log-entry system">静寂が続いている……</p>'}
