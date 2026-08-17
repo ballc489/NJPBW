@@ -1490,7 +1490,7 @@
       screen: 'town',
       activeDungeonId: null,
       home: { furniture: [] },
-      ui: { expandedGroups: [], bottomTab: 'log', equipViewLiver: null },
+      ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null },
       pendingDefeatGoldLoss: 0,
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
@@ -1955,7 +1955,7 @@
         log: [], history: [],
         screen: 'town', activeDungeonId: null,
         home: { furniture: playerRow.home_furniture || [] },
-        ui: { expandedGroups: [], bottomTab: 'log', equipViewLiver: null },
+        ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null },
         pendingDefeatGoldLoss: 0,
         dungeons,
         colosseum: {
@@ -2640,36 +2640,37 @@
     return allowedWeaponTypes(liverId).has(item.weaponType);
   }
 
-  /* 装備は共有の所持品プールから、「編成」画面で装備を見ている最中のライバー
-   * (state.ui.equipViewLiver)へ割り当てる。常に誰かを対象として保持し続ける
-   * のではなく、装備画面を開いている間だけ有効な一時的な選択とする。 */
-  function equipItem(id){
+  /* 装備変更は「編成」画面内の専用ピッカー(state.ui.equipPickerSlot =
+   * {liverId, slot})を通して行う。ピッカーはメインウィンドウ上に所持品
+   * 一覧を表示するので、モバイルでもサイドパネルまでスクロールせずに
+   * 装備を選べる。装備が完了したら自動的にピッカーを閉じ、詳細設定
+   * 画面に戻る。 */
+  function equipItemForLiver(liverId, itemId){
     if(!canManageEquipment()) return;
-    const targetId = state.ui.equipViewLiver;
-    if(!targetId || !liverState(targetId)) return;
-    const idx = state.inventory.findIndex(i=>i.id===id);
+    if(!liverState(liverId)) return;
+    const idx = state.inventory.findIndex(i=>i.id===itemId);
     if(idx<0) return;
     const item = state.inventory[idx];
-    if(!canEquipItem(targetId, item)){
-      pushLog(`${liverDef(targetId).name}は「${item.name}」(${WEAPON_TYPES[item.weaponType].name})を扱えない。`, 'system');
+    if(!canEquipItem(liverId, item)){
+      pushLog(`${liverDef(liverId).name}は「${item.name}」(${WEAPON_TYPES[item.weaponType].name})を扱えない。`, 'system');
       render();
       return;
     }
     const slot = item.type;
-    const ls = liverState(targetId);
+    const ls = liverState(liverId);
     const prev = ls.equipped[slot];
     state.inventory.splice(idx,1);
     if(prev) state.inventory.push(prev); // 元々装備していた物は所持品に戻す
     ls.equipped[slot] = item;
-    pushLog(`${liverDef(targetId).name}が「${item.name}」を装備した。`, 'system');
+    pushLog(`${liverDef(liverId).name}が「${item.name}」を装備した。`, 'system');
+    state.ui.equipPickerSlot = null;
     saveGame(); render();
   }
 
   function unequipSlot(slot, liverId){
     if(!canManageEquipment()) return;
-    const targetId = liverId || state.ui.equipViewLiver;
-    if(!targetId || !liverState(targetId)) return;
-    const ls = liverState(targetId);
+    if(!liverId || !liverState(liverId)) return;
+    const ls = liverState(liverId);
     const item = ls.equipped[slot];
     if(!item) return;
     if(state.inventory.length >= INVENTORY_MAX){
@@ -2678,15 +2679,19 @@
     }
     ls.equipped[slot] = null;
     state.inventory.push(item);
-    pushLog(`${liverDef(targetId).name}の${slot==='weapon' ? '武器':'防具'}を外した。`, 'system');
+    pushLog(`${liverDef(liverId).name}の${slot==='weapon' ? '武器':'防具'}を外した。`, 'system');
     saveGame(); render();
   }
 
-  /* 「装備を見る」ボタンで開閉する。同じ相手をもう一度押すと閉じ、
-   * 別の相手を押すとそちらに切り替わる(常に1人だけが開いた状態)。 */
-  function toggleEquipView(id){
-    if(!liverState(id)) return;
-    state.ui.equipViewLiver = (state.ui.equipViewLiver === id) ? null : id;
+  /* 詳細設定画面の装備欄にある「変更」ボタンで開く。メインウィンドウの
+   * 表示がピッカーに切り替わり、戻るボタンか装備完了で詳細設定画面に戻る。 */
+  function openEquipPicker(liverId, slot){
+    if(!canManageEquipment() || !liverState(liverId)) return;
+    state.ui.equipPickerSlot = {liverId, slot};
+    render();
+  }
+  function closeEquipPicker(){
+    state.ui.equipPickerSlot = null;
     render();
   }
 
@@ -3161,40 +3166,162 @@
     `;
   }
 
+  /* パーティ編成画面の1行。折りたたみ時は編成の出し入れだけ、展開時は
+   * そのライバーの装備・パッシブ・ジョブ・スキル・耐性をまとめて表示する
+   * (以前はマイホーム側にあったジョブ・スキル管理をこちらに統合)。 */
   function renderPartyMemberRow(def){
-    const ls = liverState(def.id);
-    const inParty = state.party.includes(def.id);
-    const expanded = state.ui.equipViewLiver === def.id;
+    const id = def.id;
+    const ls = liverState(id);
+    const jp = jobProgressFor(id);
+    const job = JOB_DEFS[ls.job];
+    const inParty = state.party.includes(id);
+    const expanded = !!(state.ui.expandedGroups.includes('liver:'+id));
     const weapon = ls.equipped.weapon;
     const armor = ls.equipped.armor;
 
     const summaryRow = `
       <div class="inv-item" style="${inParty?'border-left-color:var(--gold);':''}">
         <span style="width:10px;height:10px;background:${def.color};display:inline-block;margin-right:8px;"></span>
-        <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${jobProgressFor(def.id).level} ・ ${esc(JOB_DEFS[ls.job].name)}</span></span>
+        <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${jp.level} ・ ${esc(job.name)}</span></span>
         <span class="inv-item-actions">
-          <button data-toggle-party="${def.id}" ${(!inParty && state.party.length>=PARTY_MAX)?'disabled':''}>${inParty?'外す':'編成に入れる'}</button>
-          <button data-toggle-equip-view="${def.id}" class="${expanded?'primary':''}">${expanded?'装備を閉じる':'装備を見る'}</button>
+          <button data-toggle-party="${id}" ${(!inParty && state.party.length>=PARTY_MAX)?'disabled':''}>${inParty?'外す':'編成に入れる'}</button>
+          <button data-toggle-group="liver:${id}" class="${expanded?'primary':''}">${expanded?'閉じる':'詳細設定'}</button>
         </span>
       </div>`;
 
-    const equipHtml = expanded ? `
-      <div style="margin:6px 0 14px 10px;">
-        <div class="equip-row">
-          <span class="equip-slot">武器</span>
-          <span>${weapon ? `${esc(weapon.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(weapon))}</span>` : '未装備'}${weapon ? `<button data-unequip="weapon" data-unequip-for="${def.id}">外す</button>` : ''}</span>
-        </div>
-        <div class="equip-row">
-          <span class="equip-slot">防具</span>
-          <span>${armor ? `${esc(armor.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(armor))}</span>` : '未装備'}${armor ? `<button data-unequip="armor" data-unequip-for="${def.id}">外す</button>` : ''}</span>
-        </div>
-        <p style="color:var(--text-muted);font-size:11px;margin:8px 0 0;">右の「所持品」パネルに装備ボタンが表示される。他の武器・防具を選んで装備できる。</p>
+    if(!expanded) return summaryRow;
+
+    const { atkRate, actions } = computeActionRates(id);
+    const actualRateOf = key => {
+      const found = actions.find(a=>a.skill.key===key);
+      return found ? Math.round(found.rate) : 0;
+    };
+
+    const jobSwitchHtml = Object.keys(JOB_DEFS).map(jobId=>`
+      <button data-switch-liver-job="${id}:${jobId}" ${ls.job===jobId?'disabled':''} style="padding:3px 9px;font-size:11px;">${ls.job===jobId?'◆ ':''}${esc(JOB_DEFS[jobId].name)}</button>`).join('');
+
+    const atkRow = `
+      <div class="inv-item" style="border-left-color:var(--text-muted);opacity:.85;">
+        <span class="inv-item-name">通常攻撃 <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(常時習得済み・下限50%)</span></span>
+        <span class="inv-item-actions">
+          <span style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">${Math.round(atkRate)}%</span>
+        </span>
+      </div>`;
+
+    const passive = def.passive;
+    const passiveRow = passive ? `
+      <div class="inv-item" style="border-left-color:${def.color};">
+        <span class="inv-item-name">
+          ${esc(passive.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${passive.always?'常時発動':'条件付き発動'})</span><br>
+          <span style="color:var(--text-muted);font-size:11px;">${esc(passive.desc)}</span>
+        </span>
       </div>` : '';
 
-    return summaryRow + equipHtml;
+    const skillRows = job.skills.map(s=>{
+      const unlocked = jp.level >= (s.unlockLevel||1);
+      if(!unlocked){
+        return `
+          <div class="inv-item" style="opacity:.4;">
+            <span class="inv-item-name">
+              🔒 ${esc(s.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${s.unlockLevel}で習得</span><br>
+              <span style="color:var(--text-muted);font-size:11px;">${esc(s.desc)}</span>
+            </span>
+          </div>`;
+      }
+      const enabled = jp.loadout.enabled.includes(s.key);
+      return `
+        <div class="inv-item" style="${enabled?'':'opacity:.5;'}">
+          <span class="inv-item-name">
+            ${esc(s.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${s.element?`${ELEMENT_LABELS[s.element]}属性 ・ `:''}MP${s.mpCost} ・ 発動率${s.baseRate}%${enabled?` → 実質${actualRateOf(s.key)}%`:''})</span><br>
+            <span style="color:var(--text-muted);font-size:11px;">${esc(s.desc)}</span>
+          </span>
+          <span class="inv-item-actions">
+            <button data-toggle-skill="${id}:${s.key}">${enabled?'無効化':'有効化'}</button>
+          </span>
+        </div>`;
+    }).join('');
+
+    const equipHtml = `
+      <div class="equip-row">
+        <span class="equip-slot">武器</span>
+        <span>${weapon ? `${esc(weapon.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(weapon))}</span>` : '未装備'}
+          ${weapon ? `<button data-unequip="weapon" data-unequip-for="${id}">外す</button>` : ''}
+          <button data-open-equip-picker="${id}:weapon">変更</button>
+        </span>
+      </div>
+      <div class="equip-row">
+        <span class="equip-slot">防具</span>
+        <span>${armor ? `${esc(armor.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(armor))}</span>` : '未装備'}
+          ${armor ? `<button data-unequip="armor" data-unequip-for="${id}">外す</button>` : ''}
+          <button data-open-equip-picker="${id}:armor">変更</button>
+        </span>
+      </div>`;
+
+    const detailHtml = `
+      <div style="margin:6px 0 14px 10px;">
+        <p style="color:var(--text-muted);font-size:11px;margin:0 0 6px;">EXP ${jp.exp}/${expToNext(jp.level)} ・ ${esc(job.desc)}</p>
+        <p class="section-label" style="margin:6px 0 6px;">装備</p>
+        ${equipHtml}
+        <p class="section-label" style="margin:10px 0 6px;">パッシブスキル</p>
+        ${passiveRow}
+        <p class="section-label" style="margin:10px 0 6px;">ジョブ</p>
+        <div class="actions" style="margin-top:0;margin-bottom:10px;">${jobSwitchHtml}</div>
+        <p class="section-label" style="margin:6px 0 6px;">スキル</p>
+        ${atkRow}
+        ${skillRows}
+        <p style="color:var(--text-muted);font-size:11px;margin:4px 0 0;">有効スキルは最大${SKILL_LOADOUT_MAX}つまで。希望発動率の合計が50%を超える分は自動的に按分されます。</p>
+        <p class="section-label" style="margin:10px 0 6px;">属性耐性</p>
+        ${renderResistancePanel(id)}
+      </div>`;
+
+    return summaryRow + detailHtml;
+  }
+
+  /* 装備ピッカー: 「変更」ボタンから開く、メインウィンドウ上の所持品
+   * 選択画面。サイドパネルまでスクロールせずに装備を選べるようにする
+   * のが目的(特にモバイル)。 */
+  function renderEquipPickerInner(){
+    const { liverId, slot } = state.ui.equipPickerSlot;
+    if(!liverState(liverId)){
+      state.ui.equipPickerSlot = null;
+      return renderPartyInner();
+    }
+    const def = liverDef(liverId);
+    const ls = liverState(liverId);
+    const current = ls.equipped[slot];
+    const slotLabel = slot === 'weapon' ? '武器' : '防具';
+
+    const candidates = state.inventory.filter(i=>i.type===slot);
+    const itemsHtml = candidates.length ? candidates.map(i=>{
+      const equippable = canEquipItem(liverId, i);
+      return `
+        <div class="inv-item ${i.rarityLabel}" title="${esc(itemDetailText(i))}">
+          <span class="inv-item-name">${esc(i.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(i))}</span></span>
+          <span class="inv-item-actions">
+            <button data-equip-for="${liverId}:${i.id}" ${equippable?'':'disabled title="このライバーは装備できない武器種"'}>装備</button>
+            <button data-discard="${i.id}">破棄</button>
+          </span>
+        </div>`;
+    }).join('') : `<p class="inv-empty">${slotLabel}として装備できる所持品がない。</p>`;
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml(`${esc(def.name)}の${slotLabel}を選ぶ`)}
+        <p class="log-entry system">現在の${slotLabel}: ${current ? esc(current.name) : '未装備'}</p>
+      </div>
+      <div class="actions">
+        ${current ? `<button data-unequip="${slot}" data-unequip-for="${liverId}">外す</button>` : ''}
+        <button id="closeEquipPickerBtn">戻る</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">所持品から選ぶ</p>
+        ${itemsHtml}
+      </div>
+    `;
   }
 
   function renderPartyInner(){
+    if(state.ui.equipPickerSlot) return renderEquipPickerInner();
     const unlockedDefs = LIVER_DEFS.filter(d=>liverState(d.id).unlocked);
     const inPartyDefs = unlockedDefs.filter(d=>state.party.includes(d.id));
     const benchedDefs = unlockedDefs.filter(d=>!state.party.includes(d.id));
@@ -3334,85 +3461,6 @@
         </span>
       </div>`).join('');
 
-    const rosterHtml = LIVER_DEFS.filter(def=>liverState(def.id).unlocked).map(def=>{
-      const id = def.id;
-      const ls = liverState(id);
-      const jp = jobProgressFor(id);
-      const job = JOB_DEFS[ls.job];
-      const expanded = !!(state.ui.expandedGroups.includes('liver:'+id));
-      const { atkRate, actions } = computeActionRates(id);
-      const actualRateOf = key => {
-        const found = actions.find(a=>a.skill.key===key);
-        return found ? Math.round(found.rate) : 0;
-      };
-
-      const jobSwitchHtml = Object.keys(JOB_DEFS).map(jobId=>`
-        <button data-switch-liver-job="${id}:${jobId}" ${ls.job===jobId?'disabled':''} style="padding:3px 9px;font-size:11px;">${ls.job===jobId?'◆ ':''}${esc(JOB_DEFS[jobId].name)}</button>`).join('');
-
-      const atkRow = `
-        <div class="inv-item" style="border-left-color:var(--text-muted);opacity:.85;">
-          <span class="inv-item-name">通常攻撃 <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(常時習得済み・下限50%)</span></span>
-          <span class="inv-item-actions">
-            <span style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">${Math.round(atkRate)}%</span>
-          </span>
-        </div>`;
-
-      const passive = def.passive;
-      const passiveRow = passive ? `
-        <div class="inv-item" style="border-left-color:${def.color};">
-          <span class="inv-item-name">
-            ${esc(passive.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${passive.always?'常時発動':'条件付き発動'})</span><br>
-            <span style="color:var(--text-muted);font-size:11px;">${esc(passive.desc)}</span>
-          </span>
-        </div>` : '';
-
-      const skillRows = job.skills.map(s=>{
-        const unlocked = jp.level >= (s.unlockLevel||1);
-        if(!unlocked){
-          return `
-            <div class="inv-item" style="opacity:.4;">
-              <span class="inv-item-name">
-                🔒 ${esc(s.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${s.unlockLevel}で習得</span><br>
-                <span style="color:var(--text-muted);font-size:11px;">${esc(s.desc)}</span>
-              </span>
-            </div>`;
-        }
-        const enabled = jp.loadout.enabled.includes(s.key);
-        return `
-          <div class="inv-item" style="${enabled?'':'opacity:.5;'}">
-            <span class="inv-item-name">
-              ${esc(s.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${s.element?`${ELEMENT_LABELS[s.element]}属性 ・ `:''}MP${s.mpCost} ・ 発動率${s.baseRate}%${enabled?` → 実質${actualRateOf(s.key)}%`:''})</span><br>
-              <span style="color:var(--text-muted);font-size:11px;">${esc(s.desc)}</span>
-            </span>
-            <span class="inv-item-actions">
-              <button data-toggle-skill="${id}:${s.key}">${enabled?'無効化':'有効化'}</button>
-            </span>
-          </div>`;
-      }).join('');
-
-      const summaryRow = `
-        <button data-toggle-group="liver:${id}" style="width:100%;display:flex;justify-content:space-between;align-items:center;text-align:left;">
-          <span><span style="width:9px;height:9px;background:${def.color};display:inline-block;margin-right:6px;"></span>${expanded?'▼':'▶'} ${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${jp.level} ・ ${esc(job.name)}${state.party.includes(id)?' ・ 編成中':''}</span></span>
-        </button>`;
-
-      const detailHtml = expanded ? `
-        <div style="margin:8px 0 14px 10px;">
-          <p style="color:var(--text-muted);font-size:11px;margin:0 0 6px;">EXP ${jp.exp}/${expToNext(jp.level)} ・ ${esc(job.desc)}</p>
-          <p class="section-label" style="margin:6px 0 6px;">パッシブスキル</p>
-          ${passiveRow}
-          <p class="section-label" style="margin:10px 0 6px;">ジョブ</p>
-          <div class="actions" style="margin-top:0;margin-bottom:10px;">${jobSwitchHtml}</div>
-          <p class="section-label" style="margin:6px 0 6px;">スキル</p>
-          ${atkRow}
-          ${skillRows}
-          <p style="color:var(--text-muted);font-size:11px;margin:4px 0 0;">有効スキルは最大${SKILL_LOADOUT_MAX}つまで。希望発動率の合計が50%を超える分は自動的に按分されます。</p>
-          <p class="section-label" style="margin:10px 0 6px;">属性耐性</p>
-          ${renderResistancePanel(id)}
-        </div>` : '';
-
-      return `<div style="margin-bottom:6px;">${summaryRow}${detailHtml}</div>`;
-    }).join('');
-
     return `
       <div class="scene-text">
         ${sceneHeadingHtml('マイホーム')}
@@ -3423,10 +3471,6 @@
       <div class="actions">
         <button id="renameBtn">名前を変更</button>
         <button id="backTownBtn">町に戻る</button>
-      </div>
-      <div class="section-block">
-        <p class="section-label">仲間の管理(ジョブ・スキル・耐性)</p>
-        ${rosterHtml}
       </div>
       <div class="section-block">
         <p class="section-label">設置済みの家具</p>
@@ -3577,42 +3621,27 @@
       <div class="panel">
         <h2>パーティ</h2>
         ${renderPartyCompactRows()}
-        <p style="color:var(--text-muted);font-size:11px;margin:10px 0 0;">詳細(レベル・EXP・ジョブ・スキル・装備)は町の「マイホーム」「編成」から確認・変更できる。</p>
+        <p style="color:var(--text-muted);font-size:11px;margin:10px 0 0;">詳細(レベル・EXP・ジョブ・スキル・装備)は町の「編成」から確認・変更できる。</p>
       </div>
     `;
   }
 
+  /* 装備の変更は「編成」画面の詳細設定から行うため、このサイドパネルは
+   * 所持品の一覧確認と破棄だけを担う。 */
   function renderInventoryLane(){
-    const manageOk = canManageEquipment();
-    const viewingId = state.ui.equipViewLiver;
-    const targetName = manageOk && viewingId && liverState(viewingId) ? liverDef(viewingId).name : null;
     const inv = state.inventory.length
-      ? state.inventory.map(i=>{
-          const equippable = !targetName || canEquipItem(viewingId, i);
-          const equipBtn = targetName
-            ? `<button data-equip="${i.id}" ${equippable?'':'disabled title="このライバーは装備できない武器種"'}>装備</button>`
-            : '';
-          return `
+      ? state.inventory.map(i=>`
           <div class="inv-item ${i.rarityLabel}" title="${esc(itemDetailText(i))}">
             <span class="inv-item-name">${esc(i.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(i))}</span></span>
             <span class="inv-item-actions">
-              ${equipBtn}
               <button data-discard="${i.id}">破棄</button>
             </span>
-          </div>`;
-        }).join('')
+          </div>`).join('')
       : `<p class="inv-empty">所持品はまだない。</p>`;
-
-    const noteHtml = !manageOk
-      ? `<p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">※装備の変更は町にいる間だけ行える。</p>`
-      : (targetName
-          ? `<p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">装備対象: <strong style="color:var(--gold);">${esc(targetName)}</strong></p>`
-          : '');
 
     return `
       <div class="panel">
         <h2>所持品</h2>
-        ${noteHtml}
         <p class="inventory-count">${state.inventory.length} / ${INVENTORY_MAX}</p>
         <div class="scrollbox inventory-scroll">${inv}</div>
       </div>
@@ -3636,6 +3665,7 @@
     on('rerollGachaBtn', rerollDestinyGacha);
     on('exchangeGuaranteedBtn', exchangeForGuaranteedTicket);
     on('gotoPartyBtn', ()=>gotoScreen('party'));
+    on('closeEquipPickerBtn', closeEquipPicker);
     on('gotoColosseumBtn', gotoColosseum);
     on('gotoRiftBtn', ()=>gotoScreen('rift'));
     on('riftEnterBtn', startRift);
@@ -3669,8 +3699,17 @@
     document.querySelectorAll('[data-enter-dungeon]').forEach(b=>{
       b.addEventListener('click', ()=>enterDungeon(b.getAttribute('data-enter-dungeon')));
     });
-    document.querySelectorAll('[data-equip]').forEach(b=>{
-      b.addEventListener('click', ()=>equipItem(b.getAttribute('data-equip')));
+    document.querySelectorAll('[data-equip-for]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const [liverId, itemId] = b.getAttribute('data-equip-for').split(':');
+        equipItemForLiver(liverId, itemId);
+      });
+    });
+    document.querySelectorAll('[data-open-equip-picker]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const [liverId, slot] = b.getAttribute('data-open-equip-picker').split(':');
+        openEquipPicker(liverId, slot);
+      });
     });
     document.querySelectorAll('[data-discard]').forEach(b=>{
       b.addEventListener('click', ()=>discardItem(b.getAttribute('data-discard')));
@@ -3707,9 +3746,6 @@
     });
     document.querySelectorAll('[data-toggle-party]').forEach(b=>{
       b.addEventListener('click', ()=>togglePartyMember(b.getAttribute('data-toggle-party')));
-    });
-    document.querySelectorAll('[data-toggle-equip-view]').forEach(b=>{
-      b.addEventListener('click', ()=>toggleEquipView(b.getAttribute('data-toggle-equip-view')));
     });
   }
 
@@ -3907,7 +3943,7 @@
       state = loaded;
       // 念のための軽い安全確認(想定外のDB状態に対する保険)
       state.party = (state.party||[]).filter(id=>state.roster[id] && state.roster[id].unlocked).slice(0, PARTY_MAX);
-      if(state.ui.equipViewLiver && !state.roster[state.ui.equipViewLiver]) state.ui.equipViewLiver = null;
+      if(state.ui.equipPickerSlot && !state.roster[state.ui.equipPickerSlot.liverId]) state.ui.equipPickerSlot = null;
     }
     render();
     startChatPolling();
