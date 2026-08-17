@@ -1163,9 +1163,11 @@
   /* ---------------------------------------------------------------
    * ジョブ定義
    * hpMult/atkMult/defMult/mpMultは、同レベルの基礎値に掛ける成長倍率。
-   * skillsはそのジョブが習得できるスキル一覧。baseRateはそのスキル固有の
-   * 固定発動率(%)で、プレイヤーが変更することはできない。プレイヤーが
-   * 選べるのは「そのスキルを戦闘に持ち込むか(有効/無効)」だけ。
+   * skillsはそのジョブが習得できるスキル一覧(各ジョブ10個)。baseRateは
+   * そのスキル固有の固定発動率(%)で、プレイヤーが変更することはできない。
+   * unlockLevelに到達すると習得済みになり、そこから初めて「戦闘に持ち
+   * 込むか(有効/無効)」をプレイヤーが選べるようになる(5レベルごとに
+   * 1つずつ、Lv5〜Lv50で全10個を習得する成長カーブ)。
    * --------------------------------------------------------------- */
   const JOB_DEFS = {
     tank: {
@@ -1173,10 +1175,26 @@
       desc:'高いHP・防御力で安定して戦える。格上の敵にも挑みやすい。',
       weaponTypes:['sword','greatsword','axe'],
       skills:[
-        {key:'guard_stance', name:'鉄壁の構え', mpCost:8, baseRate:20, kind:'defBuff', reduceMult:0.6,
+        {key:'guard_stance', name:'鉄壁の構え', unlockLevel:5, mpCost:8, baseRate:20, kind:'defBuff', reduceMult:0.6,
           desc:'MPを消費し、次に受ける攻撃のダメージを大きく軽減する。'},
-        {key:'first_aid', name:'応急手当', mpCost:7, baseRate:15, kind:'heal', healMult:0.18,
-          desc:'MPを消費し、自身のHPを少し回復する。'}
+        {key:'first_aid', name:'応急手当', unlockLevel:10, mpCost:7, baseRate:15, kind:'heal', healMult:0.18,
+          desc:'MPを消費し、自身のHPを少し回復する。'},
+        {key:'shield_bash', name:'盾撃', unlockLevel:15, mpCost:6, baseRate:18, kind:'bonusAttack',
+          desc:'MPを消費し、盾で打ち据えてから追撃する。'},
+        {key:'guard_stance_2', name:'守りの型', unlockLevel:20, mpCost:10, baseRate:15, kind:'defBuff', reduceMult:0.45,
+          desc:'MPを消費し、次に受ける攻撃のダメージをさらに大きく軽減する。'},
+        {key:'spirited_blow', name:'気迫の一撃', unlockLevel:25, mpCost:12, baseRate:15, kind:'trueDamageSpell', mult:1.8,
+          desc:'MPを消費し、防御力を無視した気迫の一撃を放つ。'},
+        {key:'medicine', name:'傷薬', unlockLevel:30, mpCost:10, baseRate:15, kind:'heal', healMult:0.3,
+          desc:'MPを消費し、自身のHPをしっかり回復する。'},
+        {key:'shield_bash_2', name:'連続盾撃', unlockLevel:35, mpCost:10, baseRate:14, kind:'bonusAttack',
+          desc:'MPを消費し、盾での連続打撃を繰り出す。'},
+        {key:'unmovable_stance', name:'不動の構え', unlockLevel:40, mpCost:13, baseRate:12, kind:'defBuff', reduceMult:0.35,
+          desc:'MPを消費し、次に受ける攻撃のダメージを大幅に軽減する。'},
+        {key:'great_heal', name:'大治癒', unlockLevel:45, mpCost:14, baseRate:12, kind:'heal', healMult:0.4,
+          desc:'MPを消費し、自身のHPを大きく回復する。'},
+        {key:'guardian_judgement', name:'守護者の裁き', unlockLevel:50, mpCost:16, baseRate:10, kind:'trueDamageSpell', mult:2.3,
+          desc:'MPを消費し、防御力を無視した渾身の一撃を放つ。'}
       ]
     },
     dps: {
@@ -1184,10 +1202,26 @@
       desc:'高い攻撃力で短期決戦が得意。レベリングや周回向き。',
       weaponTypes:['sword','spear','dagger','bow'],
       skills:[
-        {key:'double_strike', name:'連撃', mpCost:6, baseRate:25, kind:'bonusAttack',
+        {key:'double_strike', name:'連撃', unlockLevel:5, mpCost:6, baseRate:25, kind:'bonusAttack',
           desc:'MPを消費し、追加の一撃を繰り出す。'},
-        {key:'finishing_blow', name:'会心の一撃', mpCost:11, baseRate:20, kind:'trueDamageSpell', mult:2.3,
-          desc:'MPを消費し、防御力を無視した強打を放つ。'}
+        {key:'finishing_blow', name:'会心の一撃', unlockLevel:10, mpCost:11, baseRate:20, kind:'trueDamageSpell', mult:2.3,
+          desc:'MPを消費し、防御力を無視した強打を放つ。'},
+        {key:'triple_strike', name:'三連撃', unlockLevel:15, mpCost:9, baseRate:18, kind:'bonusAttack',
+          desc:'MPを消費し、素早い連続攻撃を繰り出す。'},
+        {key:'reckless_blow', name:'捨て身の一撃', unlockLevel:20, mpCost:13, baseRate:15, kind:'trueDamageSpell', mult:2.6,
+          desc:'MPを消費し、防御を捨てて強打を放つ。'},
+        {key:'evasive_stance', name:'疾風の構え', unlockLevel:25, mpCost:8, baseRate:15, kind:'defBuff', reduceMult:0.55,
+          desc:'MPを消費し、身をかわしながら次の被弾を軽減する。'},
+        {key:'field_dressing', name:'応急処置', unlockLevel:30, mpCost:9, baseRate:14, kind:'heal', healMult:0.2,
+          desc:'MPを消費し、自身のHPを少し回復する。'},
+        {key:'flurry', name:'乱れ撃ち', unlockLevel:35, mpCost:11, baseRate:14, kind:'bonusAttack',
+          desc:'MPを消費し、畳み掛けるような連続攻撃を放つ。'},
+        {key:'lethal_strike', name:'必殺剣', unlockLevel:40, mpCost:15, baseRate:12, kind:'trueDamageSpell', mult:2.9,
+          desc:'MPを消費し、防御力を無視した必殺の一撃を放つ。'},
+        {key:'iron_stance', name:'金剛の構え', unlockLevel:45, mpCost:11, baseRate:12, kind:'defBuff', reduceMult:0.4,
+          desc:'MPを消費し、次に受ける攻撃のダメージを大きく軽減する。'},
+        {key:'ultimate_blow', name:'終焉の一撃', unlockLevel:50, mpCost:18, baseRate:10, kind:'trueDamageSpell', mult:3.3,
+          desc:'MPを消費し、防御力を無視した渾身の一撃を放つ。'}
       ]
     },
     mage: {
@@ -1195,16 +1229,26 @@
       desc:'豊富なMPと属性魔法で弱点を突く。決まれば通常攻撃を上回るが、外すと通常より非力。MP切れにも弱い。',
       weaponTypes:['staff','grimoire'],
       skills:[
-        {key:'fire_bolt', name:'火炎弾', mpCost:9, baseRate:20, kind:'element', element:'fire', weaknessMult:1.6, offMult:0.8,
+        {key:'fire_bolt', name:'火炎弾', unlockLevel:5, mpCost:9, baseRate:20, kind:'element', element:'fire', weaknessMult:1.6, offMult:0.8,
           desc:'MPを消費し、火属性の魔法攻撃を放つ。弱点なら通常攻撃を超える威力、そうでなければ通常より劣る。'},
-        {key:'ice_blade', name:'氷結の刃', mpCost:9, baseRate:15, kind:'element', element:'ice', weaknessMult:1.6, offMult:0.8,
+        {key:'ice_blade', name:'氷結の刃', unlockLevel:10, mpCost:9, baseRate:15, kind:'element', element:'ice', weaknessMult:1.6, offMult:0.8,
           desc:'MPを消費し、氷属性の魔法攻撃を放つ。弱点なら通常攻撃を超える威力、そうでなければ通常より劣る。'},
-        {key:'thunder_strike', name:'雷撃', mpCost:9, baseRate:15, kind:'element', element:'thunder', weaknessMult:1.6, offMult:0.8,
+        {key:'thunder_strike', name:'雷撃', unlockLevel:15, mpCost:9, baseRate:15, kind:'element', element:'thunder', weaknessMult:1.6, offMult:0.8,
           desc:'MPを消費し、雷属性の魔法攻撃を放つ。弱点なら通常攻撃を超える威力、そうでなければ通常より劣る。'},
-        {key:'heal_light', name:'治癒の光', mpCost:12, baseRate:15, kind:'heal', healMult:0.28,
+        {key:'heal_light', name:'治癒の光', unlockLevel:20, mpCost:12, baseRate:15, kind:'heal', healMult:0.28,
           desc:'MPを消費し、自身のHPを回復する。'},
-        {key:'mana_barrier', name:'魔力障壁', mpCost:9, baseRate:15, kind:'defBuff', reduceMult:0.55,
-          desc:'MPを消費し、次に受ける攻撃のダメージを軽減する魔法障壁を張る。'}
+        {key:'mana_barrier', name:'魔力障壁', unlockLevel:25, mpCost:9, baseRate:15, kind:'defBuff', reduceMult:0.55,
+          desc:'MPを消費し、次に受ける攻撃のダメージを軽減する魔法障壁を張る。'},
+        {key:'explosive_flame', name:'爆炎球', unlockLevel:30, mpCost:13, baseRate:14, kind:'element', element:'fire', weaknessMult:1.8, offMult:0.75,
+          desc:'MPを消費し、より強力な火属性の魔法攻撃を放つ。弱点なら通常攻撃を大きく超える威力、そうでなければ通常よりかなり劣る。'},
+        {key:'ice_lance', name:'氷結の槍', unlockLevel:35, mpCost:13, baseRate:14, kind:'element', element:'ice', weaknessMult:1.8, offMult:0.75,
+          desc:'MPを消費し、より強力な氷属性の魔法攻撃を放つ。弱点なら通常攻撃を大きく超える威力、そうでなければ通常よりかなり劣る。'},
+        {key:'thunder_judgement', name:'雷帝の裁き', unlockLevel:40, mpCost:13, baseRate:14, kind:'element', element:'thunder', weaknessMult:1.8, offMult:0.75,
+          desc:'MPを消費し、より強力な雷属性の魔法攻撃を放つ。弱点なら通常攻撃を大きく超える威力、そうでなければ通常よりかなり劣る。'},
+        {key:'heal_great', name:'大治癒の光', unlockLevel:45, mpCost:16, baseRate:12, kind:'heal', healMult:0.4,
+          desc:'MPを消費し、自身のHPを大きく回復する。'},
+        {key:'absolute_barrier', name:'絶対障壁', unlockLevel:50, mpCost:14, baseRate:10, kind:'defBuff', reduceMult:0.4,
+          desc:'MPを消費し、次に受ける攻撃のダメージを大幅に軽減する魔法障壁を張る。'}
       ]
     }
   };
@@ -1300,8 +1344,12 @@
     return 1;
   }
 
-  function defaultLoadout(jobId){
-    const enabled = JOB_DEFS[jobId].skills.slice(0, SKILL_LOADOUT_MAX).map(s=>s.key);
+  function unlockedSkillsFor(jobId, level){
+    return JOB_DEFS[jobId].skills.filter(s=>level >= (s.unlockLevel||1));
+  }
+
+  function defaultLoadout(jobId, level){
+    const enabled = unlockedSkillsFor(jobId, level||1).slice(0, SKILL_LOADOUT_MAX).map(s=>s.key);
     return { enabled };
   }
 
@@ -1315,7 +1363,7 @@
     const ls = liverState(liverId);
     const job = JOB_DEFS[ls.job];
     const loadout = ls.loadout;
-    const enabledSkills = job.skills.filter(s=>loadout.enabled.includes(s.key));
+    const enabledSkills = job.skills.filter(s=>loadout.enabled.includes(s.key) && ls.level >= (s.unlockLevel||1));
     const rawSum = enabledSkills.reduce((sum,s)=>sum + (s.baseRate||0), 0);
     let atkRate, scale;
     if(rawSum <= (100-ATK_MIN_RATE)){
@@ -1330,11 +1378,18 @@
   }
 
   function toggleSkillEnabled(liverId, skillKey){
-    const loadout = liverState(liverId).loadout;
+    const ls = liverState(liverId);
+    const loadout = ls.loadout;
     const idx = loadout.enabled.indexOf(skillKey);
     if(idx >= 0){
       loadout.enabled.splice(idx,1);
     } else {
+      const skillDef = JOB_DEFS[ls.job].skills.find(s=>s.key===skillKey);
+      if(!skillDef || ls.level < (skillDef.unlockLevel||1)){
+        pushLog('まだ習得していないスキルです。', 'system');
+        render();
+        return;
+      }
       if(loadout.enabled.length >= SKILL_LOADOUT_MAX){
         pushLog(`有効にできるスキルは最大${SKILL_LOADOUT_MAX}つまで。`, 'system');
         render();
@@ -1368,7 +1423,7 @@
       job, level:1, exp:0,
       hp:maxHp, maxHp, mp:maxMp, maxMp,
       equipped: {weapon:null, armor:null},
-      loadout: defaultLoadout(job),
+      loadout: defaultLoadout(job, 1),
       unlocked: !!liverDefObj.startUnlocked
     };
   }
@@ -1587,7 +1642,7 @@
     const ls = liverState(id);
     if(!JOB_DEFS[jobId] || ls.job === jobId) return;
     ls.job = jobId;
-    ls.loadout = defaultLoadout(jobId);
+    ls.loadout = defaultLoadout(jobId, ls.level);
     recomputeLiverMaxStats(id, true);
     pushLog(`${liverDef(id).name}のジョブを「${JOB_DEFS[jobId].name}」に切り替えた。`, 'system');
     saveGame(); render();
@@ -1920,6 +1975,10 @@
         ls.level += 1;
         recomputeLiverMaxStats(id, true);
         pushLog(`${liverDef(id).name}のレベルが ${ls.level} に上がった。傷が癒えていく。`, 'reward');
+        const newSkill = JOB_DEFS[ls.job].skills.find(s=>s.unlockLevel === ls.level);
+        if(newSkill){
+          pushLog(`${liverDef(id).name}は新しいスキル「${newSkill.name}」を習得した!`, 'reward');
+        }
       }
     });
     pushLog(`パーティは経験値を ${amount} 獲得した。`, 'reward');
@@ -3230,6 +3289,16 @@
         </div>` : '';
 
       const skillRows = job.skills.map(s=>{
+        const unlocked = ls.level >= (s.unlockLevel||1);
+        if(!unlocked){
+          return `
+            <div class="inv-item" style="opacity:.4;">
+              <span class="inv-item-name">
+                🔒 ${esc(s.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${s.unlockLevel}で習得</span><br>
+                <span style="color:var(--text-muted);font-size:11px;">${esc(s.desc)}</span>
+              </span>
+            </div>`;
+        }
         const enabled = ls.loadout.enabled.includes(s.key);
         return `
           <div class="inv-item" style="${enabled?'':'opacity:.5;'}">
