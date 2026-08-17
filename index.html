@@ -3260,6 +3260,7 @@
 
     const detailHtml = `
       <div style="margin:6px 0 14px 10px;border:1px solid ${def.color}66;border-left:3px solid ${def.color};background:rgba(255,255,255,0.04);padding:12px 14px;">
+        <p style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;color:${def.color};text-transform:uppercase;margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.2);">${esc(def.name)}の詳細設定</p>
         <p style="color:var(--text-muted);font-size:11px;margin:0 0 6px;">EXP ${jp.exp}/${expToNext(jp.level)} ・ ${esc(job.desc)}</p>
         <p class="section-label" style="margin:6px 0 6px;">装備</p>
         ${equipHtml}
