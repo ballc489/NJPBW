@@ -2367,7 +2367,7 @@
         const label = def.floorLabel ? `${def.floorLabel}` : def.name;
         return `
           <div class="inv-item" style="${unlocked?'':'opacity:.55;'}">
-            <span class="inv-item-name">${esc(label)} <span style="color:var(--gold);font-family:var(--font-mono);font-size:11px;">適正Lv.${def.level}</span><br><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${status}</span></span>
+            <span class="inv-item-name">${esc(label)} <span style="color:var(--gold);font-family:var(--font-mono);font-size:11px;">Lv.${def.level}</span><br><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${status}</span></span>
             <span class="inv-item-actions">${unlocked ? `<button data-enter-dungeon="${def.id}">入る</button>` : ''}</span>
           </div>`;
       }).join('');
@@ -2420,7 +2420,6 @@
     return `
       <div class="scene-text">
         ${sceneHeadingHtml(dungeonDef.name)}
-        <p style="color:var(--gold);font-family:var(--font-mono);font-size:12px;margin:0 0 10px;">適正Lv.${dungeonDef.level}</p>
         ${actionsHtml}
         <div style="margin-top:16px;">
           ${renderLog() || '<p class="log-entry system">静寂が続いている……</p>'}
