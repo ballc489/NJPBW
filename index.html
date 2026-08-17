@@ -948,6 +948,49 @@
   const COLOSSEUM_FLOORS = 10;
   const COLOSSEUM_COOLDOWN_MS = 500 * 1000;
 
+  /* ---------------------------------------------------------------
+   * 次元断層ポモ・ドーロ: ダンジョン・コロシアムとは別枠の放置系コンテンツ。
+   * 突入すると25分間ゲーム全体がロックされ(render()側で強制的に専用画面
+   * だけを表示する)、経過後に結果を受け取れる。ポモドーロ限定アイテムは
+   * 設けず、通常のドロップ抽選(makeItem)を使い回す。
+   * --------------------------------------------------------------- */
+  const RIFT_DURATION_MS = 25 * 60 * 1000;
+  function riftEndTime(){ return state.rift ? state.rift.startedAt + RIFT_DURATION_MS : 0; }
+  function riftRemainMs(){ return Math.max(0, riftEndTime() - Date.now()); }
+  function riftReady(){ return !!state.rift && Date.now() >= riftEndTime(); }
+
+  function startRift(){
+    if(inCombat || state.rift) return;
+    if(!state.party.length){
+      pushLog('パーティが編成されていない。町で編成してから挑もう。', 'system');
+      render();
+      return;
+    }
+    state.rift = { startedAt: Date.now(), partyIds: state.party.slice() };
+    pushLog('次元断層ポモ・ドーロへ突入した。25分後、探索の結果を持ち帰る。', 'system');
+    saveGame(); render();
+  }
+
+  function claimRiftReward(){
+    if(!state.rift || !riftReady()) return;
+    const size = Math.max(1, state.rift.partyIds.length);
+    const lv = partyLevel();
+    const gold = Math.round((30 + lv*10) * size);
+    const exp = Math.round((10 + lv*5) * size);
+    state.gold += gold;
+    pushLog(`次元断層ポモ・ドーロから帰還した。ゴールド ${gold} を手に入れた。`, 'reward');
+    grantExpToParty(exp);
+    if(Math.random() < 0.35 && state.inventory.length < INVENTORY_MAX){
+      const type = Math.random() < 0.5 ? 'weapon' : 'armor';
+      const item = makeItem(type, lv, 0);
+      if(addItemToInventory(item)){
+        pushLog(`探索の途中で「${item.name}」を見つけた。`, 'reward');
+      }
+    }
+    state.rift = null;
+    saveGame(); render();
+  }
+
   /* まだ誰も登録していないフロアで戦うダミーの門番。フロアが上がるほど
    * 強くなる。倒しても永続記録は作られず、初めて実プレイヤーがここで
    * 勝った時にそのプレイヤーが初代の門番として登録される。 */
@@ -1311,7 +1354,8 @@
       pendingDefeatGoldLoss: 0,
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
-      destinyTickets: 0, guaranteedTickets: 0
+      destinyTickets: 0, guaranteedTickets: 0,
+      rift: null // { startedAt, partyIds } / 非アクティブならnull
     };
   }
 
@@ -1673,7 +1717,8 @@
         p_inventory: inventoryRows,
         p_dungeons: dungeonRows,
         p_destiny_tickets: state.destinyTickets,
-        p_guaranteed_tickets: state.guaranteedTickets
+        p_guaranteed_tickets: state.guaranteedTickets,
+        p_rift_state: state.rift ? { startedAt: state.rift.startedAt, partyIds: state.rift.partyIds } : null
       });
       if(error) console.error('save_full_state failed', error);
     }catch(e){ console.error('save failed', e); }
@@ -1758,7 +1803,10 @@
           lastChallengeAt: playerRow.colosseum_last_challenge_at ? new Date(playerRow.colosseum_last_challenge_at).getTime() : 0
         },
         destinyTickets: playerRow.destiny_tickets || 0,
-        guaranteedTickets: playerRow.guaranteed_tickets || 0
+        guaranteedTickets: playerRow.guaranteed_tickets || 0,
+        rift: (playerRow.rift_state && playerRow.rift_state.startedAt)
+          ? { startedAt: playerRow.rift_state.startedAt, partyIds: playerRow.rift_state.partyIds || [] }
+          : null
       };
     }catch(e){
       console.error('load failed', e);
@@ -2790,10 +2838,30 @@
         <button class="primary" id="gotoExchangeBtn">交換所</button>
         <button class="primary" id="gotoHomeBtn">家へ帰る</button>
         <button class="danger" id="gotoColosseumBtn">コロシアムタワー</button>
+        <button class="danger" id="gotoRiftBtn">次元断層ポモ・ドーロ</button>
       </div>
       <div class="section-block">
         <p class="section-label">ダンジョン</p>
         ${renderDungeonGroups()}
+      </div>
+    `;
+  }
+
+  function renderRiftInner(){
+    const partyRowsHtml = renderPartyCompactRows();
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('次元断層ポモ・ドーロ')}
+        <p class="log-entry system">ダンジョンともコロシアムとも違う、時空の裂け目。一度突入すると25分間、他の行動は一切取れなくなる。25分が経てば、探索の成果を持ち帰ることができる。</p>
+        <p class="log-entry system" style="margin-top:8px;">忙しい時でも、突入だけしてその場を離れられるよう作られている。ポモドーロ限定の特別な報酬は無く、あくまで「少しの間留守にしても稼げる」ための場所。</p>
+      </div>
+      <div class="actions">
+        <button id="backTownBtn">町に戻る</button>
+        <button class="danger" id="riftEnterBtn" ${!state.party.length?'disabled':''}>突入する(25分)</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">挑むパーティ</p>
+        ${partyRowsHtml || '<p class="inv-empty">パーティが編成されていない。</p>'}
       </div>
     `;
   }
@@ -3214,6 +3282,7 @@
     else if(state.screen === 'shop') inner = renderShopInner();
     else if(state.screen === 'summon') inner = renderSummonInner();
     else if(state.screen === 'exchange') inner = renderExchangeInner();
+    else if(state.screen === 'rift') inner = renderRiftInner();
     else if(state.screen === 'home') inner = renderHomeInner();
     else if(state.screen === 'dead') inner = renderDeadInner();
     else inner = renderTownInner();
@@ -3385,6 +3454,9 @@
     on('exchangeGuaranteedBtn', exchangeForGuaranteedTicket);
     on('gotoPartyBtn', ()=>gotoScreen('party'));
     on('gotoColosseumBtn', gotoColosseum);
+    on('gotoRiftBtn', ()=>gotoScreen('rift'));
+    on('riftEnterBtn', startRift);
+    on('riftClaimBtn', claimRiftReward);
     on('colosseumChallengeBtn', challengeColosseum);
     on('stayBtn', stayAtInn);
     on('renameBtn', renameCharacter);
@@ -3552,8 +3624,46 @@
     return `<div class="panel history-panel">${tabsHtml}${body}</div>`;
   }
 
+  /* 次元断層ポモ・ドーロが進行中/受け取り待ちの間は、state.screenが何で
+   * あろうと関係なく、この専用画面だけを強制表示する。画面遷移・チャット
+   * 閲覧も含め、通常のヘッダーやレイアウトを一切描画しないことで
+   * 「ロック」を実現している。 */
+  function renderRiftLockScreen(){
+    const ready = riftReady();
+    const remainMs = riftRemainMs();
+    const mins = Math.floor(remainMs/60000);
+    const secs = Math.floor((remainMs%60000)/1000);
+    const participantsHtml = state.rift.partyIds.map(id=>liverDef(id)).filter(Boolean).map(def=>`
+        <div class="inv-item" style="border-left-color:${def.color};">
+          <span style="width:10px;height:10px;background:${def.color};display:inline-block;margin-right:8px;"></span>
+          <span class="inv-item-name">${esc(def.name)}</span>
+        </div>`).join('');
+
+    return `
+      <div class="create-box" style="text-align:center;">
+        <h1>${GAME_TITLE_HTML}</h1>
+        <p class="subtitle">${GAME_SUBTITLE}</p>
+        <h2 style="margin-top:24px;">次元断層ポモ・ドーロ</h2>
+        ${ready
+          ? `<p class="log-entry reward" style="font-size:16px;">探索が完了した。仲間たちが戻ってくる……</p>
+             <div class="actions" style="justify-content:center;"><button class="primary" id="riftClaimBtn">結果を受け取る</button></div>`
+          : `<p class="log-entry system" style="font-size:16px;">次元の狭間に挑んでいる……</p>
+             <p style="font-family:var(--font-mono);font-size:28px;color:var(--gold);margin:16px 0;">${mins}:${String(secs).padStart(2,'0')}</p>
+             <p style="color:var(--text-muted);font-size:12px;">この間、画面遷移やチャットを含め他の操作は一切行えません。</p>`
+        }
+        <p class="section-label" style="margin-top:20px;">挑んでいる仲間</p>
+        <div style="max-width:360px;margin:0 auto;">${participantsHtml}</div>
+      </div>
+    `;
+  }
+
   function render(){
     if(!state){ renderCreate(); return; }
+    if(state.rift){
+      app.innerHTML = renderRiftLockScreen();
+      bindEvents();
+      return;
+    }
     app.innerHTML = `
       <header>
         <div>
@@ -3592,6 +3702,9 @@
       if(state && state.screen === 'colosseum' && !inCombat){
         const remain = COLOSSEUM_COOLDOWN_MS - (Date.now() - (state.colosseum.lastChallengeAt||0));
         if(remain > 0) render();
+      }
+      if(state && state.rift){
+        render();
       }
     }, 5000);
   })();
