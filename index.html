@@ -82,6 +82,14 @@
   @media (max-width:1180px){.layout{grid-template-columns:minmax(0,1fr) 250px 250px;gap:16px;}}
   @media (max-width:900px){.layout{grid-template-columns:1fr;}}
 
+  /* モバイルでは冒険の記録が画面下部に固定されないため、バトルログを
+   * 含む詳細ログをメインウィンドウ内にも出す(PCでは逆に隠す)。 */
+  .log-mobile-only{display:none;}
+  @media (max-width:900px){
+    .log-desktop-only{display:none;}
+    .log-mobile-only{display:block;}
+  }
+
   /* --- PC(901px以上)でプレイ中の画面のみ: 冒険の記録/チャット欄を画面
    * 最下部に固定し、メイン画面・パーティ・所持品はその上の残り高さに
    * 収める。戦闘中にログの行数が変わってもウィンドウ全体の高さや
@@ -2880,8 +2888,23 @@
     });
   }
 
-  function renderLog(){
-    return state.log.map(l=>`<p class="log-entry ${l.cls}">${esc(l.text)}</p>`).join('');
+  /* PC(901px以上)ではstate.log(バトルログ抜き・最大6件)をそのまま
+   * メインウィンドウに出す。モバイル(900px以下)は冒険の記録・チャット欄が
+   * 画面下部に固定されず、スクロールしないと見えないため、バトルログを
+   * 含む直近の詳細(state.history、常に全件保持)をメインウィンドウ内にも
+   * 表示する。どちらか一方をCSSの@mediaで出し分けるだけなので、表示側で
+   * 画面幅を見て切り替わり、プッシュ時点の画面幅には依存しない。 */
+  function renderLog(emptyText){
+    const emptyHtml = emptyText ? `<p class="log-entry system">${esc(emptyText)}</p>` : '';
+    const desktopEntries = state.log;
+    const mobileEntries = (state.history||[]).slice(-8);
+    const desktopHtml = desktopEntries.length
+      ? desktopEntries.map(l=>`<p class="log-entry ${l.cls}">${esc(l.text)}</p>`).join('')
+      : emptyHtml;
+    const mobileHtml = mobileEntries.length
+      ? mobileEntries.map(l=>`<p class="log-entry ${l.cls}">${esc(l.text)}</p>`).join('')
+      : emptyHtml;
+    return `<div class="log-desktop-only">${desktopHtml}</div><div class="log-mobile-only">${mobileHtml}</div>`;
   }
 
   function locationLabel(){
@@ -3013,7 +3036,7 @@
         ${sceneHeadingHtml(dungeonDef.name, renderSceneProgressBadge())}
         ${actionsHtml}
         <div style="margin-top:16px;">
-          ${renderLog() || '<p class="log-entry system">静寂が続いている……</p>'}
+          ${renderLog('静寂が続いている……')}
         </div>
       </div>`;
   }
