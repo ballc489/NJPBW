@@ -950,19 +950,20 @@
 
   /* ---------------------------------------------------------------
    * 次元断層ポモ・ドーロ: ダンジョン・コロシアムとは別枠の放置系コンテンツ。
-   * 突入すると25分間ゲーム全体がロックされ(render()側で強制的に専用画面
-   * だけを表示する)、経過後に結果を受け取れる。ポモドーロ限定アイテムは
+   * 突入すると規定時間ゲーム全体がロックされ(render()側で強制的に専用
+   * 画面だけを表示する)、経過後に結果を受け取れる。ポモドーロ限定アイテムは
    * 設けず、通常のドロップ抽選(makeItem)を使い回す。
    * --------------------------------------------------------------- */
-  const RIFT_DURATION_MS = 25 * 60 * 1000;
+  const RIFT_DURATION_MS = 1 * 60 * 1000; // ← 動作確認用に1分。確認が終わったら 25 * 60 * 1000 に戻すこと
   function riftEndTime(){ return state.rift ? state.rift.startedAt + RIFT_DURATION_MS : 0; }
   function riftRemainMs(){ return Math.max(0, riftEndTime() - Date.now()); }
   function riftReady(){ return !!state.rift && Date.now() >= riftEndTime(); }
 
-  /* 突入・受け取りの直後は、必ずDBへの保存が完了してからロック画面/通常
-   * 画面へ切り替える(saveGameをawaitする)。先に画面だけ切り替えてしまうと、
-   * 保存が終わる前にページを更新された場合にサーバー側は未突入のままの
-   * 状態しか持っておらず、更新するだけでロックを回避できてしまうため。 */
+  /* 突入・受け取り・撤退・結果を閉じる、いずれの直後も必ずDBへの保存が
+   * 完了してからロック画面/通常画面へ切り替える(saveGameをawaitする)。
+   * 先に画面だけ切り替えてしまうと、保存が終わる前にページを更新された
+   * 場合にサーバー側は古い状態しか持っておらず、更新するだけで状態を
+   * 巻き戻せてしまうため。 */
   async function startRift(){
     if(inCombat || state.rift) return;
     if(!state.party.length){
@@ -970,28 +971,59 @@
       render();
       return;
     }
-    state.rift = { startedAt: Date.now(), partyIds: state.party.slice() };
-    pushLog('次元断層ポモ・ドーロへ突入した。25分後、探索の結果を持ち帰る。', 'system');
+    state.rift = { startedAt: Date.now(), partyIds: state.party.slice(), result: null };
+    pushLog('次元断層ポモ・ドーロへ突入した。探索を終えるまで、他の行動は取れない。', 'system');
     await saveGame();
     render();
   }
 
+  /* 探索を中断して町へ戻る。報酬は一切得られない。 */
+  async function retreatFromRift(){
+    if(!state.rift || state.rift.result) return;
+    const ok = confirm('探索を中断して撤退します。この場合、報酬は一切手に入りません。よろしいですか？');
+    if(!ok) return;
+    state.rift = null;
+    pushLog('次元断層ポモ・ドーロから撤退した。', 'system');
+    await saveGame();
+    render();
+  }
+
+  /* 結果を確定させる(まだ画面は閉じない。手に入ったものを表示したまま
+   * 「閉じる」が押されるまで、この結果画面自体もロック状態を継続する)。 */
   async function claimRiftReward(){
-    if(!state.rift || !riftReady()) return;
+    if(!state.rift || !riftReady() || state.rift.result) return;
     const size = Math.max(1, state.rift.partyIds.length);
     const lv = partyLevel();
     const gold = Math.round((30 + lv*10) * size);
     const exp = Math.round((10 + lv*5) * size);
     state.gold += gold;
     pushLog(`次元断層ポモ・ドーロから帰還した。ゴールド ${gold} を手に入れた。`, 'reward');
+
+    const levelsBefore = {};
+    state.party.forEach(id=>{ levelsBefore[id] = liverState(id).level; });
     grantExpToParty(exp);
+    const levelUps = state.party
+      .filter(id=>liverState(id).level > levelsBefore[id])
+      .map(id=>({ name: liverDef(id).name, level: liverState(id).level }));
+
+    let itemName = null;
     if(Math.random() < 0.35 && state.inventory.length < INVENTORY_MAX){
       const type = Math.random() < 0.5 ? 'weapon' : 'armor';
       const item = makeItem(type, lv, 0);
       if(addItemToInventory(item)){
+        itemName = item.name;
         pushLog(`探索の途中で「${item.name}」を見つけた。`, 'reward');
       }
     }
+
+    state.rift.result = { gold, exp, levelUps, itemName };
+    await saveGame();
+    render();
+  }
+
+  /* 結果表示を閉じて、ここで初めて町へ戻る。 */
+  async function closeRiftResult(){
+    if(!state.rift || !state.rift.result) return;
     state.rift = null;
     await saveGame();
     render();
@@ -1724,7 +1756,7 @@
         p_dungeons: dungeonRows,
         p_destiny_tickets: state.destinyTickets,
         p_guaranteed_tickets: state.guaranteedTickets,
-        p_rift_state: state.rift ? { startedAt: state.rift.startedAt, partyIds: state.rift.partyIds } : null
+        p_rift_state: state.rift ? { startedAt: state.rift.startedAt, partyIds: state.rift.partyIds, result: state.rift.result || null } : null
       });
       if(error) console.error('save_full_state failed', error);
     }catch(e){ console.error('save failed', e); }
@@ -1811,7 +1843,7 @@
         destinyTickets: playerRow.destiny_tickets || 0,
         guaranteedTickets: playerRow.guaranteed_tickets || 0,
         rift: (playerRow.rift_state && playerRow.rift_state.startedAt)
-          ? { startedAt: playerRow.rift_state.startedAt, partyIds: playerRow.rift_state.partyIds || [] }
+          ? { startedAt: playerRow.rift_state.startedAt, partyIds: playerRow.rift_state.partyIds || [], result: playerRow.rift_state.result || null }
           : null
       };
     }catch(e){
@@ -3463,6 +3495,8 @@
     on('gotoRiftBtn', ()=>gotoScreen('rift'));
     on('riftEnterBtn', startRift);
     on('riftClaimBtn', claimRiftReward);
+    on('riftRetreatBtn', retreatFromRift);
+    on('riftCloseResultBtn', closeRiftResult);
     on('colosseumChallengeBtn', challengeColosseum);
     on('stayBtn', stayAtInn);
     on('renameBtn', renameCharacter);
@@ -3635,15 +3669,40 @@
    * 閲覧も含め、通常のヘッダーやレイアウトを一切描画しないことで
    * 「ロック」を実現している。 */
   function renderRiftLockScreen(){
-    const ready = riftReady();
-    const remainMs = riftRemainMs();
-    const mins = Math.floor(remainMs/60000);
-    const secs = Math.floor((remainMs%60000)/1000);
     const participantsHtml = state.rift.partyIds.map(id=>liverDef(id)).filter(Boolean).map(def=>`
         <div class="inv-item" style="border-left-color:${def.color};">
           <span style="width:10px;height:10px;background:${def.color};display:inline-block;margin-right:8px;"></span>
           <span class="inv-item-name">${esc(def.name)}</span>
         </div>`).join('');
+
+    if(state.rift.result){
+      const r = state.rift.result;
+      const levelUpHtml = r.levelUps.length
+        ? r.levelUps.map(lu=>`<p class="log-entry reward" style="margin:2px 0;">${esc(lu.name)}のレベルが ${lu.level} に上がった！</p>`).join('')
+        : '';
+      return `
+        <div class="create-box" style="text-align:center;">
+          <h1>${GAME_TITLE_HTML}</h1>
+          <p class="subtitle">${GAME_SUBTITLE}</p>
+          <h2 style="margin-top:24px;">次元断層ポモ・ドーロ ― 探索結果</h2>
+          <p class="log-entry system" style="font-size:15px;">パーティが無事に帰還した。</p>
+          <div class="section-block" style="text-align:left;max-width:360px;margin:16px auto;">
+            <div class="inv-item"><span class="inv-item-name">ゴールド</span><span class="inv-item-actions" style="color:var(--gold);">+${r.gold}G</span></div>
+            <div class="inv-item"><span class="inv-item-name">経験値</span><span class="inv-item-actions">+${r.exp}</span></div>
+            ${r.itemName ? `<div class="inv-item"><span class="inv-item-name">獲得アイテム</span><span class="inv-item-actions">${esc(r.itemName)}</span></div>` : ''}
+          </div>
+          ${levelUpHtml}
+          <div class="actions" style="justify-content:center;margin-top:16px;"><button class="primary" id="riftCloseResultBtn">閉じる</button></div>
+          <p class="section-label" style="margin-top:20px;">挑んでいた仲間</p>
+          <div style="max-width:360px;margin:0 auto;">${participantsHtml}</div>
+        </div>
+      `;
+    }
+
+    const ready = riftReady();
+    const remainMs = riftRemainMs();
+    const mins = Math.floor(remainMs/60000);
+    const secs = Math.floor((remainMs%60000)/1000);
 
     return `
       <div class="create-box" style="text-align:center;">
@@ -3655,7 +3714,8 @@
              <div class="actions" style="justify-content:center;"><button class="primary" id="riftClaimBtn">結果を受け取る</button></div>`
           : `<p class="log-entry system" style="font-size:16px;">次元の狭間に挑んでいる……</p>
              <p style="font-family:var(--font-mono);font-size:28px;color:var(--gold);margin:16px 0;">${mins}:${String(secs).padStart(2,'0')}</p>
-             <p style="color:var(--text-muted);font-size:12px;">この間、画面遷移やチャットを含め他の操作は一切行えません。</p>`
+             <p style="color:var(--text-muted);font-size:12px;">この間、画面遷移やチャットを含め他の操作は一切行えません。</p>
+             <div class="actions" style="justify-content:center;margin-top:12px;"><button class="danger" id="riftRetreatBtn">撤退する</button></div>`
         }
         <p class="section-label" style="margin-top:20px;">挑んでいる仲間</p>
         <div style="max-width:360px;margin:0 auto;">${participantsHtml}</div>
