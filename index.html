@@ -1530,7 +1530,7 @@
       const active = ratio <= p.threshold;
       if(active && !flags.lowEnemyLogged){
         flags.lowEnemyLogged = true;
-        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ ${combatEnemy.name}の弱った隙を突き、火力が上がった！`, 'system');
+        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ ${combatEnemy.name}の弱った隙を突き、火力が上がった！`, 'system', true);
       }
       if(!active) flags.lowEnemyLogged = false;
       return active ? p.mult : 1;
@@ -1541,7 +1541,7 @@
       const active = ratio <= p.threshold;
       if(active && !flags.lowHpAtkLogged){
         flags.lowHpAtkLogged = true;
-        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ 火事場の力で攻撃力が上昇した！`, 'system');
+        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ 火事場の力で攻撃力が上昇した！`, 'system', true);
       }
       if(!active) flags.lowHpAtkLogged = false;
       return active ? p.mult : 1;
@@ -1629,7 +1629,7 @@
     ls.hp = Math.min(ls.maxHp, ls.hp + Math.round(ls.maxHp * (p.healRatio||0)));
     const healed = ls.hp - before;
     if(healed <= 0) return;
-    pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}のHPが${healed}回復した！`, 'system');
+    pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}のHPが${healed}回復した！`, 'system', true);
   }
 
   /* 仲間が行動するたびに攻撃力が蓄積していくパッシブの通知用(風楽奏斗)。
@@ -1662,7 +1662,7 @@
     if(!coverId) return targetId;
     const p = liverDef(coverId).passive;
     if((targetLs.hp/targetLs.maxHp) > (p.threshold||0)) return targetId;
-    pushLog(`${liverDef(coverId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}をかばった！`, 'system');
+    pushLog(`${liverDef(coverId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}をかばった！`, 'system', true);
     return coverId;
   }
 
@@ -2106,7 +2106,7 @@
     state.party.forEach(id=>{
       const p = liverDef(id).passive;
       if(p && p.kind==='battleStartPartyBuff'){
-        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ パーティ全体の士気が高まった！`, 'system');
+        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ パーティ全体の士気が高まった！`, 'system', true);
       }
     });
     render();
@@ -2221,7 +2221,7 @@
       if(!combatPassiveFlags[liverId]) combatPassiveFlags[liverId] = {};
       if(!combatPassiveFlags[liverId].lowHpLogged){
         combatPassiveFlags[liverId].lowHpLogged = true;
-        pushLog(`${liverDef(liverId).name}のパッシブ「${passive.name}」が発動！ 傷ついた体に力が漲り、ダメージが軽減された！`, 'system');
+        pushLog(`${liverDef(liverId).name}のパッシブ「${passive.name}」が発動！ 傷ついた体に力が漲り、ダメージが軽減された！`, 'system', true);
       }
     }
     if(pendingDefBuffs[liverId]){
@@ -2292,7 +2292,7 @@
         if(!combatPassiveFlags[otherId]) combatPassiveFlags[otherId] = {};
         if(!combatPassiveFlags[otherId].rageActive){
           combatPassiveFlags[otherId].rageActive = true;
-          pushLog(`${liverDef(otherId).name}のパッシブ「${passive.name}」が発動！ 怒りに燃え、攻撃力が上昇した！`, 'system');
+          pushLog(`${liverDef(otherId).name}のパッシブ「${passive.name}」が発動！ 怒りに燃え、攻撃力が上昇した！`, 'system', true);
         }
       });
     }
