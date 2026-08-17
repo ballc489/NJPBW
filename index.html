@@ -1000,11 +1000,11 @@
     pushLog(`次元断層ポモ・ドーロから帰還した。ゴールド ${gold} を手に入れた。`, 'reward');
 
     const levelsBefore = {};
-    state.party.forEach(id=>{ levelsBefore[id] = liverState(id).level; });
+    state.party.forEach(id=>{ levelsBefore[id] = jobProgressFor(id).level; });
     grantExpToParty(exp);
     const levelUps = state.party
-      .filter(id=>liverState(id).level > levelsBefore[id])
-      .map(id=>({ name: liverDef(id).name, level: liverState(id).level }));
+      .filter(id=>jobProgressFor(id).level > levelsBefore[id])
+      .map(id=>({ name: liverDef(id).name, level: jobProgressFor(id).level }));
 
     let itemName = null;
     if(Math.random() < 0.35 && state.inventory.length < INVENTORY_MAX){
@@ -1067,7 +1067,7 @@
     return state.party.map(id=>{
       const ls = liverState(id);
       const def = liverDef(id);
-      return { name: def.name, color: def.color, job: ls.job, level: ls.level, maxHp: ls.maxHp, atk: liverAtk(id), def: liverDefStat(id) };
+      return { name: def.name, color: def.color, job: ls.job, level: jobProgressFor(id).level, maxHp: ls.maxHp, atk: liverAtk(id), def: liverDefStat(id) };
     });
   }
 
@@ -1325,6 +1325,8 @@
   function liverDef(id){ return LIVER_DEFS.find(d=>d.id===id); }
   function liverState(id){ return state.roster[id]; }
   function liverJobDef(id){ return JOB_DEFS[liverState(id).job]; }
+  /* 現在就いているジョブでのレベル・EXP・スキル編成(ジョブごとに個別管理)。 */
+  function jobProgressFor(id){ const ls = liverState(id); return ls.jobProgress[ls.job]; }
 
   function jobMaxHp(jobId, level){ return Math.round(maxHpFor(level) * JOB_DEFS[jobId].hpMult); }
   function jobBaseAtk(jobId, level){ return Math.round(baseAtkFor(level) * JOB_DEFS[jobId].atkMult); }
@@ -1362,8 +1364,9 @@
   function computeActionRates(liverId){
     const ls = liverState(liverId);
     const job = JOB_DEFS[ls.job];
-    const loadout = ls.loadout;
-    const enabledSkills = job.skills.filter(s=>loadout.enabled.includes(s.key) && ls.level >= (s.unlockLevel||1));
+    const jp = jobProgressFor(liverId);
+    const loadout = jp.loadout;
+    const enabledSkills = job.skills.filter(s=>loadout.enabled.includes(s.key) && jp.level >= (s.unlockLevel||1));
     const rawSum = enabledSkills.reduce((sum,s)=>sum + (s.baseRate||0), 0);
     let atkRate, scale;
     if(rawSum <= (100-ATK_MIN_RATE)){
@@ -1379,13 +1382,14 @@
 
   function toggleSkillEnabled(liverId, skillKey){
     const ls = liverState(liverId);
-    const loadout = ls.loadout;
+    const jp = jobProgressFor(liverId);
+    const loadout = jp.loadout;
     const idx = loadout.enabled.indexOf(skillKey);
     if(idx >= 0){
       loadout.enabled.splice(idx,1);
     } else {
       const skillDef = JOB_DEFS[ls.job].skills.find(s=>s.key===skillKey);
-      if(!skillDef || ls.level < (skillDef.unlockLevel||1)){
+      if(!skillDef || jp.level < (skillDef.unlockLevel||1)){
         pushLog('まだ習得していないスキルです。', 'system');
         render();
         return;
@@ -1402,8 +1406,9 @@
 
   function recomputeLiverMaxStats(id, fullRestore){
     const ls = liverState(id);
-    const newMaxHp = Math.round(jobMaxHp(ls.job, ls.level) * passiveStatMult(id, 'hp'));
-    const newMaxMp = Math.round(jobMaxMp(ls.job, ls.level) * passiveStatMult(id, 'mp'));
+    const jp = jobProgressFor(id);
+    const newMaxHp = Math.round(jobMaxHp(ls.job, jp.level) * passiveStatMult(id, 'hp'));
+    const newMaxMp = Math.round(jobMaxMp(ls.job, jp.level) * passiveStatMult(id, 'mp'));
     ls.maxHp = newMaxHp;
     ls.maxMp = newMaxMp;
     if(fullRestore){
@@ -1415,15 +1420,22 @@
     }
   }
 
+  /* ジョブごとにレベル・EXP・スキル編成を個別管理する(ジョブを切り替えても
+   * 他のジョブの成長は失われず、戻ってくればそのまま続きから)。 */
+  function newJobProgress(jobId){
+    return { level:1, exp:0, loadout: defaultLoadout(jobId, 1) };
+  }
+
   function newLiverProgress(liverDefObj){
     const job = liverDefObj.job;
     const maxHp = Math.round(jobMaxHp(job, 1) * passiveStatMult(liverDefObj.id, 'hp'));
     const maxMp = Math.round(jobMaxMp(job, 1) * passiveStatMult(liverDefObj.id, 'mp'));
+    const jobProgress = {};
+    Object.keys(JOB_DEFS).forEach(jobId=>{ jobProgress[jobId] = newJobProgress(jobId); });
     return {
-      job, level:1, exp:0,
+      job, jobProgress,
       hp:maxHp, maxHp, mp:maxMp, maxMp,
       equipped: {weapon:null, armor:null},
-      loadout: defaultLoadout(job, 1),
       unlocked: !!liverDefObj.startUnlocked
     };
   }
@@ -1455,13 +1467,13 @@
   function liverAtk(id){
     const ls = liverState(id);
     const w = ls.equipped.weapon;
-    const atk = jobBaseAtk(ls.job, ls.level) + (w ? w.value : 0);
+    const atk = jobBaseAtk(ls.job, jobProgressFor(id).level) + (w ? w.value : 0);
     return Math.round(atk * passiveStatMult(id, 'atk'));
   }
   function liverDefStat(id){
     const ls = liverState(id);
     const a = ls.equipped.armor;
-    const def = jobBaseDef(ls.job, ls.level) + (a ? a.value : 0);
+    const def = jobBaseDef(ls.job, jobProgressFor(id).level) + (a ? a.value : 0);
     return Math.round(def * passiveStatMult(id, 'def'));
   }
 
@@ -1638,11 +1650,14 @@
     return Math.max(0.1, 1 - value*0.03);
   }
 
+  /* ジョブごとにレベル・EXP・スキル編成を個別管理しているため、切り替えは
+   * 現在のジョブを差し替えるだけでよい(以前そのジョブで積んだ成長は
+   * jobProgressにそのまま残っており、戻ってくれば続きから)。 */
   function switchLiverJob(id, jobId){
     const ls = liverState(id);
     if(!JOB_DEFS[jobId] || ls.job === jobId) return;
+    if(!ls.jobProgress[jobId]) ls.jobProgress[jobId] = newJobProgress(jobId);
     ls.job = jobId;
-    ls.loadout = defaultLoadout(jobId, ls.level);
     recomputeLiverMaxStats(id, true);
     pushLog(`${liverDef(id).name}のジョブを「${JOB_DEFS[jobId].name}」に切り替えた。`, 'system');
     saveGame(); render();
@@ -1652,7 +1667,7 @@
   function partyLevel(){
     const members = state.party.filter(id=>liverState(id));
     if(!members.length) return 1;
-    const sum = members.reduce((s,id)=>s+liverState(id).level, 0);
+    const sum = members.reduce((s,id)=>s+jobProgressFor(id).level, 0);
     return Math.max(1, Math.round(sum/members.length));
   }
 
@@ -1766,12 +1781,14 @@
     try{
       const rosterRows = LIVER_DEFS.map(def=>{
         const r = state.roster[def.id];
+        const jp = r.jobProgress[r.job];
         return {
-          liver_id: def.id, job: r.job, level: r.level, exp: r.exp,
+          liver_id: def.id, job: r.job, level: jp.level, exp: jp.exp,
           hp: r.hp, max_hp: r.maxHp, mp: r.mp, max_mp: r.maxMp,
           equipped_weapon_id: r.equipped.weapon ? r.equipped.weapon.id : null,
           equipped_armor_id: r.equipped.armor ? r.equipped.armor.id : null,
-          loadout: r.loadout.enabled, unlocked: !!r.unlocked
+          loadout: jp.loadout.enabled, unlocked: !!r.unlocked,
+          job_progress: r.jobProgress
         };
       });
 
@@ -1850,14 +1867,30 @@
       const roster = {};
       LIVER_DEFS.forEach(def=>{ roster[def.id] = newLiverProgress(def); });
       rosterRows.forEach(r=>{
+        // job_progressが無い旧データ(ジョブ別レベル制導入前)は、各ジョブを
+        // Lv.1から作った上で、当時就いていたジョブの分だけ既存の
+        // level/exp/loadout列から復元する(データを失わないための互換処理)。
+        let jobProgress;
+        if(r.job_progress && typeof r.job_progress === 'object'){
+          jobProgress = {};
+          Object.keys(JOB_DEFS).forEach(jobId=>{
+            const saved = r.job_progress[jobId];
+            jobProgress[jobId] = saved
+              ? { level: saved.level, exp: saved.exp, loadout: { enabled: Array.isArray(saved.loadout && saved.loadout.enabled) ? saved.loadout.enabled : [] } }
+              : newJobProgress(jobId);
+          });
+        } else {
+          jobProgress = {};
+          Object.keys(JOB_DEFS).forEach(jobId=>{ jobProgress[jobId] = newJobProgress(jobId); });
+          jobProgress[r.job] = { level: r.level, exp: r.exp, loadout: { enabled: Array.isArray(r.loadout) ? r.loadout : [] } };
+        }
         roster[r.liver_id] = {
-          job: r.job, level: r.level, exp: r.exp,
+          job: r.job, jobProgress,
           hp: r.hp, maxHp: r.max_hp, mp: r.mp, maxMp: r.max_mp,
           equipped: {
             weapon: r.equipped_weapon_id ? (itemById[r.equipped_weapon_id]||null) : null,
             armor: r.equipped_armor_id ? (itemById[r.equipped_armor_id]||null) : null
           },
-          loadout: { enabled: Array.isArray(r.loadout) ? r.loadout : [] },
           unlocked: r.unlocked
         };
       });
@@ -1965,17 +1998,20 @@
   }
 
   /* ---------------- Core actions ---------------- */
+  /* 経験値は「現在就いているジョブ」のレベルにのみ加算される
+   * (ジョブごとに個別成長するため)。 */
   function grantExpToParty(amount){
     state.party.forEach(id=>{
       const ls = liverState(id);
       if(ls.hp <= 0) return; // 戦闘不能中のメンバーは経験値を得ない
-      ls.exp += amount;
-      while(ls.exp >= expToNext(ls.level)){
-        ls.exp -= expToNext(ls.level);
-        ls.level += 1;
+      const jp = jobProgressFor(id);
+      jp.exp += amount;
+      while(jp.exp >= expToNext(jp.level)){
+        jp.exp -= expToNext(jp.level);
+        jp.level += 1;
         recomputeLiverMaxStats(id, true);
-        pushLog(`${liverDef(id).name}のレベルが ${ls.level} に上がった。傷が癒えていく。`, 'reward');
-        const newSkill = JOB_DEFS[ls.job].skills.find(s=>s.unlockLevel === ls.level);
+        pushLog(`${liverDef(id).name}のレベルが ${jp.level} に上がった。傷が癒えていく。`, 'reward');
+        const newSkill = JOB_DEFS[ls.job].skills.find(s=>s.unlockLevel === jp.level);
         if(newSkill){
           pushLog(`${liverDef(id).name}は新しいスキル「${newSkill.name}」を習得した!`, 'reward');
         }
@@ -3094,7 +3130,7 @@
     const summaryRow = `
       <div class="inv-item" style="${inParty?'border-left-color:var(--gold);':''}">
         <span style="width:10px;height:10px;background:${def.color};display:inline-block;margin-right:8px;"></span>
-        <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${ls.level} ・ ${esc(JOB_DEFS[ls.job].name)}</span></span>
+        <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${jobProgressFor(def.id).level} ・ ${esc(JOB_DEFS[ls.job].name)}</span></span>
         <span class="inv-item-actions">
           <button data-toggle-party="${def.id}" ${(!inParty && state.party.length>=PARTY_MAX)?'disabled':''}>${inParty?'外す':'編成に入れる'}</button>
           <button data-toggle-equip-view="${def.id}" class="${expanded?'primary':''}">${expanded?'装備を閉じる':'装備を見る'}</button>
@@ -3260,6 +3296,7 @@
     const rosterHtml = LIVER_DEFS.filter(def=>liverState(def.id).unlocked).map(def=>{
       const id = def.id;
       const ls = liverState(id);
+      const jp = jobProgressFor(id);
       const job = JOB_DEFS[ls.job];
       const expanded = !!(state.ui.expandedGroups.includes('liver:'+id));
       const { atkRate, actions } = computeActionRates(id);
@@ -3289,7 +3326,7 @@
         </div>` : '';
 
       const skillRows = job.skills.map(s=>{
-        const unlocked = ls.level >= (s.unlockLevel||1);
+        const unlocked = jp.level >= (s.unlockLevel||1);
         if(!unlocked){
           return `
             <div class="inv-item" style="opacity:.4;">
@@ -3299,7 +3336,7 @@
               </span>
             </div>`;
         }
-        const enabled = ls.loadout.enabled.includes(s.key);
+        const enabled = jp.loadout.enabled.includes(s.key);
         return `
           <div class="inv-item" style="${enabled?'':'opacity:.5;'}">
             <span class="inv-item-name">
@@ -3314,12 +3351,12 @@
 
       const summaryRow = `
         <button data-toggle-group="liver:${id}" style="width:100%;display:flex;justify-content:space-between;align-items:center;text-align:left;">
-          <span><span style="width:9px;height:9px;background:${def.color};display:inline-block;margin-right:6px;"></span>${expanded?'▼':'▶'} ${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${ls.level} ・ ${esc(job.name)}${state.party.includes(id)?' ・ 編成中':''}</span></span>
+          <span><span style="width:9px;height:9px;background:${def.color};display:inline-block;margin-right:6px;"></span>${expanded?'▼':'▶'} ${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${jp.level} ・ ${esc(job.name)}${state.party.includes(id)?' ・ 編成中':''}</span></span>
         </button>`;
 
       const detailHtml = expanded ? `
         <div style="margin:8px 0 14px 10px;">
-          <p style="color:var(--text-muted);font-size:11px;margin:0 0 6px;">EXP ${ls.exp}/${expToNext(ls.level)} ・ ${esc(job.desc)}</p>
+          <p style="color:var(--text-muted);font-size:11px;margin:0 0 6px;">EXP ${jp.exp}/${expToNext(jp.level)} ・ ${esc(job.desc)}</p>
           <p class="section-label" style="margin:6px 0 6px;">パッシブスキル</p>
           ${passiveRow}
           <p class="section-label" style="margin:10px 0 6px;">ジョブ</p>
@@ -3405,7 +3442,7 @@
       return `
         <div class="party-compact-row${ls.hp<=0?' ko':''}">
           <span class="party-compact-chip" style="background:${def.color};"></span>
-          <span class="party-compact-name">${esc(def.name)}<span class="party-compact-lv">Lv.${ls.level}</span></span>
+          <span class="party-compact-name">${esc(def.name)}<span class="party-compact-lv">Lv.${jobProgressFor(id).level}</span></span>
           <span class="party-compact-bars">
             <span class="mini-bar-track"><span class="mini-bar-fill hp" style="width:${hpPct}%;"></span></span>
             <span class="mini-bar-track"><span class="mini-bar-fill mp" style="width:${mpPct}%;"></span></span>
