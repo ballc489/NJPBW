@@ -1145,7 +1145,7 @@
    *   ライバーは今のところ全員おらず、今後キャラの個性に合わせて設定する
    *   予定(例: ['axe']を持たせると、ジョブがウィザードでも斧を装備できる)。
    * 未解放のライバーは「運命のチケット」ガチャ、または「確約されし運命の
-   * チケット」での指名によって仲間になる(交換所で入手・使用する)。
+   * チケット」での指名によって仲間になる(召喚で入手・使用する)。
    * passive: ライバー固有の常時能力。本人の実際の言動・設定を根拠に選定
    *   (ジョブは後からユーザーが自由に付け替えられるものなので、キャラ
    *   付けの根拠には使っていない)。alwaysがtrueの間は常時発動系なので
@@ -1544,7 +1544,7 @@
     if(state.party.length < PARTY_MAX) state.party.push(id);
   }
 
-  /* ---------------- 交換所: 運命のチケット・ガチャ ----------------
+  /* ---------------- 召喚: 運命のチケット・ガチャ ----------------
    * 未解放ライバーの中からランダムに1名を選ぶ「運命のチケット」ガチャと、
    * 5枚のチケットと交換できる「確約されし運命のチケット」(指名して確実に
    * 仲間にできる)の2本立て。
@@ -2786,6 +2786,7 @@
         <button class="primary" id="gotoPartyBtn">編成</button>
         <button class="primary" id="gotoInnBtn">宿屋</button>
         <button class="primary" id="gotoShopBtn">商店</button>
+        <button class="primary" id="gotoSummonBtn">召喚</button>
         <button class="primary" id="gotoExchangeBtn">交換所</button>
         <button class="primary" id="gotoHomeBtn">家へ帰る</button>
         <button class="danger" id="gotoColosseumBtn">コロシアムタワー</button>
@@ -2797,14 +2798,14 @@
     `;
   }
 
-  function renderExchangeInner(){
+  function renderSummonInner(){
     if(pendingGacha){
       const candidateDef = liverDef(pendingGacha.candidateId);
       const rerollsLeft = DESTINY_MAX_REROLLS - pendingGacha.rerollsUsed;
       const canReroll = !pendingGacha.rolling && rerollsLeft > 0 && unclaimedLiverDefs().length > 1;
       return `
         <div class="scene-text">
-          ${sceneHeadingHtml('交換所 ― 運命のガチャ')}
+          ${sceneHeadingHtml('召喚 ― 運命の顕現')}
           <p class="log-entry system">運命の糸が、ひとりのライバーを示している……</p>
           <div class="inv-item" style="border-left-color:${candidateDef.color};">
             <span style="width:10px;height:10px;background:${candidateDef.color};display:inline-block;margin-right:8px;"></span>
@@ -2834,8 +2835,8 @@
 
     return `
       <div class="scene-text">
-        ${sceneHeadingHtml('交換所')}
-        <p class="log-entry system">運命の糸を手繰り寄せる場所。ダンジョンの初回踏破で手に入る「運命のチケット」で、まだ出会っていないライバーの誰かと巡り会える。</p>
+        ${sceneHeadingHtml('召喚')}
+        <p class="log-entry system">運命の糸を手繰り寄せ、ライバーを顕現させる場所。ダンジョンの初回踏破で手に入る「運命のチケット」で、まだ出会っていないライバーの誰かと巡り会える。</p>
         <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--gold);">運命のチケット: ${state.destinyTickets}枚 ・ 確約されし運命のチケット: ${state.guaranteedTickets}枚</p>
       </div>
       <div class="actions">
@@ -2846,6 +2847,74 @@
       <div class="section-block">
         <p class="section-label">確約されし運命のチケットで指名する</p>
         ${guaranteedRows}
+      </div>
+    `;
+  }
+
+  /* ---------------- 交換所: コロシアムメダルとの交換(アイテム限定) ----------------
+   * ここは仮のラインナップ。今後アイテム構成やコスト感を調整していく想定。 */
+  const MEDAL_EXCHANGE_CATALOG = [
+    { id:'medal_sword', name:'闘士の剣', cost:15, desc:'剣 (+25)',
+      make: () => ({ id:'itm_'+Math.random().toString(36).slice(2,9), type:'weapon', weaponType:'sword',
+        rarity:'rare', rarityLabel:'rare', name:'闘士の剣', value:25, affix:null, resist:null }) },
+    { id:'medal_armor', name:'闘士の鎧', cost:15, desc:'防具 (+20)',
+      make: () => ({ id:'itm_'+Math.random().toString(36).slice(2,9), type:'armor',
+        rarity:'rare', rarityLabel:'rare', name:'闘士の鎧', value:20, resist:null }) },
+    { id:'medal_charm', name:'闘技場の護符', cost:25, desc:'防具 (+15) 火耐性+2',
+      make: () => ({ id:'itm_'+Math.random().toString(36).slice(2,9), type:'armor',
+        rarity:'epic', rarityLabel:'epic', name:'闘技場の護符', value:15, resist:{element:'fire', value:2} }) },
+    { id:'medal_gold_small', name:'勝者の金袋(小)', cost:10, desc:'+100G', gold:100 },
+    { id:'medal_gold_large', name:'勝者の金袋(大)', cost:40, desc:'+500G', gold:500 },
+  ];
+
+  function exchangeMedalsForItem(catalogId){
+    if(inCombat) return;
+    const entry = MEDAL_EXCHANGE_CATALOG.find(e=>e.id===catalogId);
+    if(!entry) return;
+    if(state.colosseum.medals < entry.cost) return;
+    if(entry.gold){
+      state.colosseum.medals -= entry.cost;
+      state.gold += entry.gold;
+      pushLog(`メダル${entry.cost}枚を「${entry.name}」(${entry.gold}G)と交換した。`, 'reward');
+      saveGame(); render();
+      return;
+    }
+    if(state.inventory.length >= INVENTORY_MAX){
+      pushLog('所持品がいっぱいで交換できない。', 'system');
+      render();
+      return;
+    }
+    const item = entry.make();
+    state.colosseum.medals -= entry.cost;
+    addItemToInventory(item);
+    pushLog(`メダル${entry.cost}枚を「${item.name}」と交換した。`, 'reward');
+    saveGame(); render();
+  }
+
+  function renderExchangeInner(){
+    const rows = MEDAL_EXCHANGE_CATALOG.map(entry=>{
+      const affordable = state.colosseum.medals >= entry.cost;
+      return `
+        <div class="inv-item">
+          <span class="inv-item-name">${esc(entry.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(entry.desc)}</span></span>
+          <span class="inv-item-actions">
+            <button data-exchange-medal="${entry.id}" ${affordable?'':'disabled'}>${entry.cost}メダルで交換</button>
+          </span>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('交換所')}
+        <p class="log-entry system">コロシアムタワーで得た「メダル」を、装備や資金と交換できる場所。</p>
+        <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--gold);">所持メダル: ${state.colosseum.medals}枚</p>
+      </div>
+      <div class="actions">
+        <button id="backTownBtn">町に戻る</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">交換ラインナップ(仮)</p>
+        ${rows}
       </div>
     `;
   }
@@ -2898,7 +2967,7 @@
       : `<p class="inv-empty">${unlockedDefs.length ? '仲間は全員編成済み。' : 'まだ仲間がいない。'}</p>`;
 
     const lockedRows = lockedDefs.map(def=>{
-      const hint = '「交換所」で運命のチケットを使うと仲間になる';
+      const hint = '「召喚」で運命のチケットを使うと仲間になる';
       return `
         <div class="inv-item" style="opacity:.5;">
           <span class="inv-item-name">🔒 ${esc(def.name)}<br><span style="color:var(--text-muted);font-size:11px;">${esc(hint)}</span></span>
@@ -3143,6 +3212,7 @@
     else if(state.screen === 'colosseum') inner = renderColosseumInner();
     else if(state.screen === 'inn') inner = renderInnInner();
     else if(state.screen === 'shop') inner = renderShopInner();
+    else if(state.screen === 'summon') inner = renderSummonInner();
     else if(state.screen === 'exchange') inner = renderExchangeInner();
     else if(state.screen === 'home') inner = renderHomeInner();
     else if(state.screen === 'dead') inner = renderDeadInner();
@@ -3306,6 +3376,7 @@
     on('backTownBtn', backToTown);
     on('gotoInnBtn', ()=>gotoScreen('inn'));
     on('gotoShopBtn', ()=>gotoScreen('shop'));
+    on('gotoSummonBtn', ()=>gotoScreen('summon'));
     on('gotoExchangeBtn', ()=>gotoScreen('exchange'));
     on('gotoHomeBtn', ()=>gotoScreen('home'));
     on('pullGachaBtn', pullDestinyTicket);
@@ -3355,6 +3426,9 @@
     });
     document.querySelectorAll('[data-use-guaranteed]').forEach(b=>{
       b.addEventListener('click', ()=>useGuaranteedTicket(b.getAttribute('data-use-guaranteed')));
+    });
+    document.querySelectorAll('[data-exchange-medal]').forEach(b=>{
+      b.addEventListener('click', ()=>exchangeMedalsForItem(b.getAttribute('data-exchange-medal')));
     });
     document.querySelectorAll('[data-sell]').forEach(b=>{
       b.addEventListener('click', ()=>sellItem(b.getAttribute('data-sell')));
