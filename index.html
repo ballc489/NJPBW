@@ -81,6 +81,40 @@
   @media (max-width:1180px){.layout{grid-template-columns:minmax(0,1fr) 250px 250px;gap:16px;}}
   @media (max-width:900px){.layout{grid-template-columns:1fr;}}
 
+  /* --- PC(901px以上)でプレイ中の画面のみ: 冒険の記録/チャット欄を画面
+   * 最下部に固定し、メイン画面・パーティ・所持品はその上の残り高さに
+   * 収める。戦闘中にログの行数が変わってもウィンドウ全体の高さや
+   * スクロール位置が動かないようにするための構成(body.playingは
+   * render()内でのみ付与される。キャラ作成・次元断層ロック画面は対象外)。 */
+  @media (min-width:901px){
+    body.playing{
+      height:100vh;
+      overflow-y:auto;
+      padding:16px clamp(16px,3vw,56px) 16px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+    }
+    body.playing .wrap{
+      width:100%;
+      flex:1 1 auto;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+    body.playing header{flex:0 0 auto;}
+    body.playing .layout{flex:1 1 auto;min-height:0;align-items:stretch;}
+    body.playing .layout > div{display:flex;flex-direction:column;min-height:0;}
+    body.playing .layout > div > .scene{flex:1 1 auto;min-height:0;overflow-y:auto;}
+    body.playing .layout > div > .panel{
+      flex:1 1 auto;min-height:0;margin-bottom:0;
+      display:flex;flex-direction:column;overflow:hidden;
+    }
+    body.playing .layout > div > .panel .inventory-scroll{flex:1 1 auto;min-height:0;max-height:none;}
+    body.playing .history-panel{flex:0 0 auto;margin-top:16px;}
+  }
+
   /* --- 共通スクロールボックス --- */
   .scrollbox{overflow-y:auto;padding-right:6px;}
   .scrollbox::-webkit-scrollbar{width:6px;}
@@ -3831,12 +3865,14 @@
   }
 
   function render(){
-    if(!state){ renderCreate(); return; }
+    if(!state){ document.body.classList.remove('playing'); renderCreate(); return; }
     if(state.rift){
+      document.body.classList.remove('playing');
       app.innerHTML = renderRiftLockScreen();
       bindEvents();
       return;
     }
+    document.body.classList.add('playing');
     app.innerHTML = `
       <header>
         <div>
