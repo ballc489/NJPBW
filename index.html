@@ -132,6 +132,15 @@
     display:block;
   }
 
+  .scene-progress-badge{
+    position:absolute;
+    top:14px; right:16px;
+    display:flex;align-items:center;gap:8px;
+    font-family:var(--font-mono);font-size:11px;color:var(--text-muted);
+    white-space:nowrap;
+  }
+  .scene-progress-badge .badge-progress-track{width:70px;flex:0 0 auto;}
+
   .scene-text{
     font-size:16px;line-height:1.8;
     min-height:32px;
@@ -199,6 +208,9 @@
     border-bottom:1px solid rgba(255,255,255,0.25);
     padding-bottom:8px;
   }
+  /* メインウィンドウ右上の踏破率バッジと見出しが重ならないよう、
+   * バッジが存在する時だけ見出しの右側にスペースを確保する。 */
+  .scene:has(.scene-progress-badge) .scene-heading{padding-right:190px;}
   .history-panel{margin-top:16px;}
   .history-log{
     max-height:170px;
@@ -2889,15 +2901,25 @@
     return '再興の町';
   }
 
+  /* 踏破済みのダンジョンはボス撃破のたびに内部の再挑戦用進捗が0%に
+   * リセットされるため、表示上はそれを見せず「踏破済み」で固定する
+   * (未クリアの間だけ実際の進捗%を出す)。ヘッダーのバッジとメイン
+   * ウィンドウ右上のバッジ、両方で共通して使う。 */
+  function dungeonProgressLabelAndPct(ds){
+    if(ds.cleared) return { pct: 100, label: '踏破済み' };
+    return { pct: Math.min(100, ds.progress), label: `${ds.progress}%` };
+  }
+
   function renderHeaderBadge(){
     let progressRow = '';
     if(state.screen==='dungeon' && state.activeDungeonId){
       const ds = currentDungeonState();
+      const { pct, label } = dungeonProgressLabelAndPct(ds);
       progressRow = `
         <div class="badge-row">
           <span>踏破率</span>
-          <span class="badge-progress-track"><span class="badge-progress-fill" style="width:${Math.min(100,ds.progress)}%;"></span></span>
-          <span>${ds.progress}%</span>
+          <span class="badge-progress-track"><span class="badge-progress-fill" style="width:${pct}%;"></span></span>
+          <span>${label}</span>
         </div>`;
     }
     return `
@@ -3526,7 +3548,20 @@
     else if(state.screen === 'home') inner = renderHomeInner();
     else if(state.screen === 'dead') inner = renderDeadInner();
     else inner = renderTownInner();
-    return `<div class="scene">${inner}</div>`;
+    const progressBadge = (state.screen === 'dungeon' && state.activeDungeonId) ? renderSceneProgressBadge() : '';
+    return `<div class="scene">${progressBadge}${inner}</div>`;
+  }
+
+  function renderSceneProgressBadge(){
+    const ds = currentDungeonState();
+    if(!ds) return '';
+    const { pct, label } = dungeonProgressLabelAndPct(ds);
+    return `
+      <div class="scene-progress-badge">
+        <span>踏破率</span>
+        <span class="badge-progress-track"><span class="badge-progress-fill" style="width:${pct}%;"></span></span>
+        <span>${label}</span>
+      </div>`;
   }
 
   function renderPartyCompactRows(){
