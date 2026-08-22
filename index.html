@@ -1242,6 +1242,12 @@
   let playerStatusEffects = {}; // { liverId: { [effectType]: {amount, turnsLeft, freshlyGranted} } } 戦闘中のみ・保存しない
   let shopStock = []; // セーブしない一時データ。商店に入るたび再生成
 
+  /* 通常攻撃(スキルを使わなかった場合の攻撃)時、低確率で防御力を無視した
+   * 大ダメージが発生する。プレイヤー側は「会心の一撃」、敵側は「痛恨の一撃」
+   * と呼び分ける。スキルによる攻撃には影響しない(通常攻撃専用の演出)。 */
+  const CRIT_CHANCE = 0.03;
+  const CRIT_MULT = 2.0;
+
   const STATUS_EFFECT_LABELS = {
     atkBuff:'攻撃力上昇', defBuff:'防御力上昇', atkDebuff:'攻撃力低下', defDebuff:'防御力低下',
     poison:'毒', regen:'再生', stun:'行動不能', silence:'沈黙'
@@ -1507,9 +1513,9 @@
         {key:'double_strike', name:'連撃', unlockLevel:5, mpCost:6, baseRate:25,
           effects:[{type:'damage', target:'enemyRandom', amount:1.0}, {type:'damage', target:'enemyRandom', amount:0.5}],
           desc:'MPを消費し、追加の一撃を繰り出す。'},
-        {key:'finishing_blow', name:'会心の一撃', unlockLevel:10, mpCost:11, baseRate:20,
-          effects:[{type:'damage', target:'enemyRandom', amount:2.3, ignoreDef:true}],
-          desc:'MPを消費し、防御力を無視した強打を放つ。'},
+        {key:'finishing_blow', name:'強撃', unlockLevel:10, mpCost:11, baseRate:20,
+          effects:[{type:'damage', target:'enemyRandom', amount:1.6}],
+          desc:'MPを消費し、通常より大きな一撃を繰り出す(防御力の影響は通常通り受ける)。'},
         {key:'triple_strike', name:'三連撃', unlockLevel:15, mpCost:9, baseRate:18,
           effects:[{type:'damage', target:'enemyRandom', amount:0.7}, {type:'damage', target:'enemyRandom', amount:0.55}, {type:'damage', target:'enemyRandom', amount:0.4}],
           desc:'MPを消費し、素早い三連続攻撃を繰り出す。'},
@@ -2450,6 +2456,12 @@
     const affixMult = weaponAffixDamageMult(liverId);
 
     if(!chosen){
+      if(Math.random() < CRIT_CHANCE){
+        const dmg = Math.max(1, Math.round(combatAtk(liverId) * CRIT_MULT * affixMult) + rnd(-1,3));
+        combatEnemyHp -= dmg;
+        pushLog(`${name}の攻撃が会心の一撃となった！ ${combatEnemy.name}に防御を貫く ${dmg} の大ダメージ！${drainSuffix(dmg)}`, 'reward', true);
+        return;
+      }
       const dmg = Math.max(1, Math.round((combatAtk(liverId) - effectiveEnemyDef()) * affixMult) + rnd(-1,2));
       combatEnemyHp -= dmg;
       pushLog(`${name}の攻撃！ ${combatEnemy.name}に ${dmg} のダメージ。${drainSuffix(dmg)}`, 'combat', true);
@@ -2603,7 +2615,15 @@
       }
       const raw = Math.max(1, Math.round(effectiveEnemyAtk() * triggered.mult) + rnd(-1,2));
       const dmg = applyDamageToLiver(target, raw, triggered.element);
-      pushLog(`${combatEnemy.name}の「${triggered.name}」！ ${targetName}が防御を貫く ${dmg} の会心の一撃を受けた！`, 'danger', true);
+      pushLog(`${combatEnemy.name}の「${triggered.name}」！ ${targetName}が防御を貫く ${dmg} の痛恨の一撃を受けた！`, 'danger', true);
+      checkLiverKO(target);
+      return;
+    }
+
+    if(Math.random() < CRIT_CHANCE){
+      const raw = Math.max(1, Math.round(effectiveEnemyAtk() * CRIT_MULT) + rnd(-1,2));
+      const dmg = applyDamageToLiver(target, raw);
+      pushLog(`${combatEnemy.name}の痛恨の一撃！ ${targetName}が防御を貫く ${dmg} の大ダメージを受けた！`, 'danger', true);
       checkLiverKO(target);
       return;
     }
