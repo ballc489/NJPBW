@@ -1328,13 +1328,17 @@
   /* effect.target を発動者から見た相対関係で解決する。戻り値は対象のliverId
    * の配列、または敵自身を表す'enemy'を含む配列。今は敵が常に1体のため
    * ally系は発動者自身になる(複数体対応は将来の拡張点)。 */
-  function resolveEffectTargets(effect, casterIsEnemy){
+  function resolveEffectTargets(effect, casterIsEnemy, casterId){
     switch(effect.target){
       case 'self':
-        return casterIsEnemy ? ['enemy'] : [];
-      case 'allyRandom':
+        return casterIsEnemy ? ['enemy'] : (casterId ? [casterId] : []);
+      case 'allyRandom': {
+        if(casterIsEnemy) return ['enemy'];
+        const alive = alivePartyIds();
+        return alive.length ? [alive[Math.floor(Math.random()*alive.length)]] : [];
+      }
       case 'allyAll':
-        return casterIsEnemy ? ['enemy'] : [];
+        return casterIsEnemy ? ['enemy'] : alivePartyIds();
       case 'enemyRandom': {
         if(casterIsEnemy){
           const t = applyCoverRedirect(pickRandomAliveTarget());
@@ -1357,9 +1361,10 @@
 
   /* 効果1つを、解決済みの対象1体に適用する。ダメージ・回復は即時、
    * バフ/デバフ・状態異常はplayerStatusEffects/combatEnemy.statusEffectsに
-   * 登録するだけで、実際の反映はtickStatusEffectsや実効ATK/DEF計算側で行う。 */
-  function applyEffectToTarget(effect, target, casterIsEnemy){
-    const isSelfGrant = (target === 'enemy' && casterIsEnemy);
+   * 登録するだけで、実際の反映はtickStatusEffectsや実効ATK/DEF計算側で行う。
+   * casterId: プレイヤー側スキルの発動者liverId(敵の場合はnull)。 */
+  function applyEffectToTarget(effect, target, casterIsEnemy, casterId){
+    const isSelfGrant = casterIsEnemy ? (target === 'enemy') : (target === casterId);
     const targetName = target === 'enemy' ? combatEnemy.name : liverDef(target).name;
 
     if(effect.type === 'damage'){
@@ -1380,10 +1385,37 @@
         }
         checkLiverKO(target);
       } else {
-        // プレイヤー側スキルからの利用を見据えた分岐(現時点では未使用)
-        raw = Math.max(1, Math.round(combatAtk(target) * effect.amount) + rnd(-1,2));
+        // プレイヤー(casterId)から敵への攻撃効果。仲間への攻撃効果は現状想定していない。
+        const casterName = liverDef(casterId).name;
+        const atk = combatAtk(casterId);
+        const affixMult = weaponAffixDamageMult(casterId);
+        let mult = effect.amount;
+        let isWeak = null;
+        if(effect.weaknessMult != null){
+          isWeak = (combatEnemy.weakness === effect.element);
+          mult = isWeak ? effect.weaknessMult : effect.offMult;
+        }
+        if(effect.ignoreDef){
+          raw = Math.max(1, Math.round(atk * mult * affixMult) + rnd(-1,3));
+        } else {
+          const def = effectiveEnemyDef() * (effect.defMult != null ? effect.defMult : 1);
+          raw = Math.max(1, Math.round((atk - def) * mult * affixMult) + rnd(-1,2));
+        }
         combatEnemyHp -= raw;
-        pushLog(`${combatEnemy.name}に ${raw} のダメージ。`, 'combat', true);
+        const drained = applyOnHitMpDrain(casterId, raw);
+        const drainSuffix = drained > 0 ? ` (MP+${drained})` : '';
+        let line;
+        if(isWeak === true){
+          const elLabel = ELEMENT_LABELS[effect.element] || '';
+          line = `${casterName}の攻撃！ 弱点(${elLabel})を突き、${raw} のダメージ！`;
+        } else if(isWeak === false){
+          line = `${casterName}の攻撃！ ${raw} のダメージ(弱点不一致)。`;
+        } else if(effect.ignoreDef){
+          line = `${casterName}の攻撃！ 防御を貫く ${raw} のダメージ。`;
+        } else {
+          line = `${casterName}の攻撃！ ${combatEnemy.name}に ${raw} のダメージ。`;
+        }
+        pushLog(line + drainSuffix, isWeak ? 'reward' : 'combat', true);
       }
       return;
     }
@@ -1410,8 +1442,8 @@
     }
   }
 
-  function resolveEffect(effect, casterIsEnemy){
-    resolveEffectTargets(effect, casterIsEnemy).forEach(t=>applyEffectToTarget(effect, t, casterIsEnemy));
+  function resolveEffect(effect, casterIsEnemy, casterId){
+    resolveEffectTargets(effect, casterIsEnemy, casterId).forEach(t=>applyEffectToTarget(effect, t, casterIsEnemy, casterId));
   }
 
   function expToNext(level){ return Math.floor(20 * Math.pow(level, 1.5)); }
@@ -1435,25 +1467,35 @@
       desc:'高いHP・防御力で安定して戦える。格上の敵にも挑みやすい。',
       weaponTypes:['sword','greatsword','axe'],
       skills:[
-        {key:'guard_stance', name:'鉄壁の構え', unlockLevel:5, mpCost:8, baseRate:20, kind:'defBuff', reduceMult:0.6,
-          desc:'MPを消費し、次に受ける攻撃のダメージを大きく軽減する。'},
-        {key:'first_aid', name:'応急手当', unlockLevel:10, mpCost:7, baseRate:15, kind:'heal', healMult:0.18,
+        {key:'guard_stance', name:'鉄壁の構え', unlockLevel:5, mpCost:8, baseRate:20,
+          effects:[{type:'defBuff', target:'self', amount:0.7, duration:2}],
+          desc:'MPを消費し、しばらくの間、自身の防御力を大きく上昇させる。'},
+        {key:'first_aid', name:'応急手当', unlockLevel:10, mpCost:7, baseRate:15,
+          effects:[{type:'heal', target:'self', amount:0.18}],
           desc:'MPを消費し、自身のHPを少し回復する。'},
-        {key:'shield_bash', name:'盾撃', unlockLevel:15, mpCost:6, baseRate:18, kind:'bonusAttack',
+        {key:'shield_bash', name:'盾撃', unlockLevel:15, mpCost:6, baseRate:18,
+          effects:[{type:'damage', target:'enemyRandom', amount:1.0}, {type:'damage', target:'enemyRandom', amount:0.5}],
           desc:'MPを消費し、盾で打ち据えてから追撃する。'},
-        {key:'guard_stance_2', name:'守りの型', unlockLevel:20, mpCost:10, baseRate:15, kind:'defBuff', reduceMult:0.45,
-          desc:'MPを消費し、次に受ける攻撃のダメージをさらに大きく軽減する。'},
-        {key:'spirited_blow', name:'気迫の一撃', unlockLevel:25, mpCost:12, baseRate:15, kind:'trueDamageSpell', mult:1.8,
+        {key:'guard_stance_2', name:'守りの型', unlockLevel:20, mpCost:10, baseRate:15,
+          effects:[{type:'defBuff', target:'self', amount:1.0, duration:2}],
+          desc:'MPを消費し、しばらくの間、自身の防御力をさらに大きく上昇させる。'},
+        {key:'spirited_blow', name:'気迫の一撃', unlockLevel:25, mpCost:12, baseRate:15,
+          effects:[{type:'damage', target:'enemyRandom', amount:1.8, ignoreDef:true}],
           desc:'MPを消費し、防御力を無視した気迫の一撃を放つ。'},
-        {key:'medicine', name:'傷薬', unlockLevel:30, mpCost:10, baseRate:15, kind:'heal', healMult:0.3,
+        {key:'medicine', name:'傷薬', unlockLevel:30, mpCost:10, baseRate:15,
+          effects:[{type:'heal', target:'self', amount:0.3}],
           desc:'MPを消費し、自身のHPをしっかり回復する。'},
-        {key:'shield_bash_2', name:'連続盾撃', unlockLevel:35, mpCost:10, baseRate:14, kind:'bonusAttack',
+        {key:'shield_bash_2', name:'連続盾撃', unlockLevel:35, mpCost:10, baseRate:14,
+          effects:[{type:'damage', target:'enemyRandom', amount:0.7}, {type:'damage', target:'enemyRandom', amount:0.55}, {type:'damage', target:'enemyRandom', amount:0.45}],
           desc:'MPを消費し、盾での連続打撃を繰り出す。'},
-        {key:'unmovable_stance', name:'不動の構え', unlockLevel:40, mpCost:13, baseRate:12, kind:'defBuff', reduceMult:0.35,
-          desc:'MPを消費し、次に受ける攻撃のダメージを大幅に軽減する。'},
-        {key:'great_heal', name:'大治癒', unlockLevel:45, mpCost:14, baseRate:12, kind:'heal', healMult:0.4,
+        {key:'unmovable_stance', name:'不動の構え', unlockLevel:40, mpCost:13, baseRate:12,
+          effects:[{type:'defBuff', target:'self', amount:1.4, duration:3}],
+          desc:'MPを消費し、しばらくの間、自身の防御力を大幅に上昇させる。'},
+        {key:'great_heal', name:'大治癒', unlockLevel:45, mpCost:14, baseRate:12,
+          effects:[{type:'heal', target:'self', amount:0.4}],
           desc:'MPを消費し、自身のHPを大きく回復する。'},
-        {key:'guardian_judgement', name:'守護者の裁き', unlockLevel:50, mpCost:16, baseRate:10, kind:'trueDamageSpell', mult:2.3,
+        {key:'guardian_judgement', name:'守護者の裁き', unlockLevel:50, mpCost:16, baseRate:10,
+          effects:[{type:'damage', target:'enemyRandom', amount:2.3, ignoreDef:true}],
           desc:'MPを消費し、防御力を無視した渾身の一撃を放つ。'}
       ]
     },
@@ -1462,25 +1504,35 @@
       desc:'高い攻撃力で短期決戦が得意。レベリングや周回向き。',
       weaponTypes:['sword','spear','dagger','bow'],
       skills:[
-        {key:'double_strike', name:'連撃', unlockLevel:5, mpCost:6, baseRate:25, kind:'bonusAttack',
+        {key:'double_strike', name:'連撃', unlockLevel:5, mpCost:6, baseRate:25,
+          effects:[{type:'damage', target:'enemyRandom', amount:1.0}, {type:'damage', target:'enemyRandom', amount:0.5}],
           desc:'MPを消費し、追加の一撃を繰り出す。'},
-        {key:'finishing_blow', name:'会心の一撃', unlockLevel:10, mpCost:11, baseRate:20, kind:'trueDamageSpell', mult:2.3,
+        {key:'finishing_blow', name:'会心の一撃', unlockLevel:10, mpCost:11, baseRate:20,
+          effects:[{type:'damage', target:'enemyRandom', amount:2.3, ignoreDef:true}],
           desc:'MPを消費し、防御力を無視した強打を放つ。'},
-        {key:'triple_strike', name:'三連撃', unlockLevel:15, mpCost:9, baseRate:18, kind:'bonusAttack',
-          desc:'MPを消費し、素早い連続攻撃を繰り出す。'},
-        {key:'reckless_blow', name:'捨て身の一撃', unlockLevel:20, mpCost:13, baseRate:15, kind:'trueDamageSpell', mult:2.6,
+        {key:'triple_strike', name:'三連撃', unlockLevel:15, mpCost:9, baseRate:18,
+          effects:[{type:'damage', target:'enemyRandom', amount:0.7}, {type:'damage', target:'enemyRandom', amount:0.55}, {type:'damage', target:'enemyRandom', amount:0.4}],
+          desc:'MPを消費し、素早い三連続攻撃を繰り出す。'},
+        {key:'reckless_blow', name:'捨て身の一撃', unlockLevel:20, mpCost:13, baseRate:15,
+          effects:[{type:'damage', target:'enemyRandom', amount:2.6, ignoreDef:true}],
           desc:'MPを消費し、防御を捨てて強打を放つ。'},
-        {key:'evasive_stance', name:'疾風の構え', unlockLevel:25, mpCost:8, baseRate:15, kind:'defBuff', reduceMult:0.55,
-          desc:'MPを消費し、身をかわしながら次の被弾を軽減する。'},
-        {key:'field_dressing', name:'応急処置', unlockLevel:30, mpCost:9, baseRate:14, kind:'heal', healMult:0.2,
+        {key:'evasive_stance', name:'疾風の構え', unlockLevel:25, mpCost:8, baseRate:15,
+          effects:[{type:'defBuff', target:'self', amount:0.6, duration:2}],
+          desc:'MPを消費し、しばらくの間、身をかわしながら被弾を軽減する。'},
+        {key:'field_dressing', name:'応急処置', unlockLevel:30, mpCost:9, baseRate:14,
+          effects:[{type:'heal', target:'self', amount:0.2}],
           desc:'MPを消費し、自身のHPを少し回復する。'},
-        {key:'flurry', name:'乱れ撃ち', unlockLevel:35, mpCost:11, baseRate:14, kind:'bonusAttack',
-          desc:'MPを消費し、畳み掛けるような連続攻撃を放つ。'},
-        {key:'lethal_strike', name:'必殺剣', unlockLevel:40, mpCost:15, baseRate:12, kind:'trueDamageSpell', mult:2.9,
+        {key:'flurry', name:'乱れ撃ち', unlockLevel:35, mpCost:11, baseRate:14,
+          effects:[{type:'damage', target:'enemyRandom', amount:0.55}, {type:'damage', target:'enemyRandom', amount:0.5}, {type:'damage', target:'enemyRandom', amount:0.45}, {type:'damage', target:'enemyRandom', amount:0.4}],
+          desc:'MPを消費し、畳み掛けるような四連続攻撃を放つ。'},
+        {key:'lethal_strike', name:'必殺剣', unlockLevel:40, mpCost:15, baseRate:12,
+          effects:[{type:'damage', target:'enemyRandom', amount:2.9, ignoreDef:true}],
           desc:'MPを消費し、防御力を無視した必殺の一撃を放つ。'},
-        {key:'iron_stance', name:'金剛の構え', unlockLevel:45, mpCost:11, baseRate:12, kind:'defBuff', reduceMult:0.4,
-          desc:'MPを消費し、次に受ける攻撃のダメージを大きく軽減する。'},
-        {key:'ultimate_blow', name:'終焉の一撃', unlockLevel:50, mpCost:18, baseRate:10, kind:'trueDamageSpell', mult:3.3,
+        {key:'iron_stance', name:'金剛の構え', unlockLevel:45, mpCost:11, baseRate:12,
+          effects:[{type:'defBuff', target:'self', amount:1.1, duration:2}],
+          desc:'MPを消費し、しばらくの間、自身の防御力を大きく上昇させる。'},
+        {key:'ultimate_blow', name:'終焉の一撃', unlockLevel:50, mpCost:18, baseRate:10,
+          effects:[{type:'damage', target:'enemyRandom', amount:3.3, ignoreDef:true}],
           desc:'MPを消費し、防御力を無視した渾身の一撃を放つ。'}
       ]
     },
@@ -1489,26 +1541,36 @@
       desc:'豊富なMPと属性魔法で弱点を突く。決まれば通常攻撃を上回るが、外すと通常より非力。MP切れにも弱い。',
       weaponTypes:['staff','grimoire'],
       skills:[
-        {key:'fire_bolt', name:'火炎弾', unlockLevel:5, mpCost:9, baseRate:20, kind:'element', element:'fire', weaknessMult:1.6, offMult:0.8,
+        {key:'fire_bolt', name:'火炎弾', unlockLevel:5, mpCost:9, baseRate:20, element:'fire',
+          effects:[{type:'damage', target:'enemyRandom', element:'fire', weaknessMult:1.6, offMult:0.8}],
           desc:'MPを消費し、火属性の魔法攻撃を放つ。弱点なら通常攻撃を超える威力、そうでなければ通常より劣る。'},
-        {key:'ice_blade', name:'氷結の刃', unlockLevel:10, mpCost:9, baseRate:15, kind:'element', element:'ice', weaknessMult:1.6, offMult:0.8,
+        {key:'ice_blade', name:'氷結の刃', unlockLevel:10, mpCost:9, baseRate:15, element:'ice',
+          effects:[{type:'damage', target:'enemyRandom', element:'ice', weaknessMult:1.6, offMult:0.8}],
           desc:'MPを消費し、氷属性の魔法攻撃を放つ。弱点なら通常攻撃を超える威力、そうでなければ通常より劣る。'},
-        {key:'thunder_strike', name:'雷撃', unlockLevel:15, mpCost:9, baseRate:15, kind:'element', element:'thunder', weaknessMult:1.6, offMult:0.8,
+        {key:'thunder_strike', name:'雷撃', unlockLevel:15, mpCost:9, baseRate:15, element:'thunder',
+          effects:[{type:'damage', target:'enemyRandom', element:'thunder', weaknessMult:1.6, offMult:0.8}],
           desc:'MPを消費し、雷属性の魔法攻撃を放つ。弱点なら通常攻撃を超える威力、そうでなければ通常より劣る。'},
-        {key:'heal_light', name:'治癒の光', unlockLevel:20, mpCost:12, baseRate:15, kind:'heal', healMult:0.28,
+        {key:'heal_light', name:'治癒の光', unlockLevel:20, mpCost:12, baseRate:15,
+          effects:[{type:'heal', target:'self', amount:0.28}],
           desc:'MPを消費し、自身のHPを回復する。'},
-        {key:'mana_barrier', name:'魔力障壁', unlockLevel:25, mpCost:9, baseRate:15, kind:'defBuff', reduceMult:0.55,
-          desc:'MPを消費し、次に受ける攻撃のダメージを軽減する魔法障壁を張る。'},
-        {key:'explosive_flame', name:'爆炎球', unlockLevel:30, mpCost:13, baseRate:14, kind:'element', element:'fire', weaknessMult:1.8, offMult:0.75,
+        {key:'mana_barrier', name:'魔力障壁', unlockLevel:25, mpCost:9, baseRate:15,
+          effects:[{type:'defBuff', target:'self', amount:0.6, duration:2}],
+          desc:'MPを消費し、しばらくの間、被ダメージを軽減する魔法障壁を張る。'},
+        {key:'explosive_flame', name:'爆炎球', unlockLevel:30, mpCost:13, baseRate:14, element:'fire',
+          effects:[{type:'damage', target:'enemyRandom', element:'fire', weaknessMult:1.8, offMult:0.75}],
           desc:'MPを消費し、より強力な火属性の魔法攻撃を放つ。弱点なら通常攻撃を大きく超える威力、そうでなければ通常よりかなり劣る。'},
-        {key:'ice_lance', name:'氷結の槍', unlockLevel:35, mpCost:13, baseRate:14, kind:'element', element:'ice', weaknessMult:1.8, offMult:0.75,
+        {key:'ice_lance', name:'氷結の槍', unlockLevel:35, mpCost:13, baseRate:14, element:'ice',
+          effects:[{type:'damage', target:'enemyRandom', element:'ice', weaknessMult:1.8, offMult:0.75}],
           desc:'MPを消費し、より強力な氷属性の魔法攻撃を放つ。弱点なら通常攻撃を大きく超える威力、そうでなければ通常よりかなり劣る。'},
-        {key:'thunder_judgement', name:'雷帝の裁き', unlockLevel:40, mpCost:13, baseRate:14, kind:'element', element:'thunder', weaknessMult:1.8, offMult:0.75,
+        {key:'thunder_judgement', name:'雷帝の裁き', unlockLevel:40, mpCost:13, baseRate:14, element:'thunder',
+          effects:[{type:'damage', target:'enemyRandom', element:'thunder', weaknessMult:1.8, offMult:0.75}],
           desc:'MPを消費し、より強力な雷属性の魔法攻撃を放つ。弱点なら通常攻撃を大きく超える威力、そうでなければ通常よりかなり劣る。'},
-        {key:'heal_great', name:'大治癒の光', unlockLevel:45, mpCost:16, baseRate:12, kind:'heal', healMult:0.4,
+        {key:'heal_great', name:'大治癒の光', unlockLevel:45, mpCost:16, baseRate:12,
+          effects:[{type:'heal', target:'self', amount:0.4}],
           desc:'MPを消費し、自身のHPを大きく回復する。'},
-        {key:'absolute_barrier', name:'絶対障壁', unlockLevel:50, mpCost:14, baseRate:10, kind:'defBuff', reduceMult:0.4,
-          desc:'MPを消費し、次に受ける攻撃のダメージを大幅に軽減する魔法障壁を張る。'}
+        {key:'absolute_barrier', name:'絶対障壁', unlockLevel:50, mpCost:14, baseRate:10,
+          effects:[{type:'defBuff', target:'self', amount:1.3, duration:3}],
+          desc:'MPを消費し、しばらくの間、被ダメージを大幅に軽減する魔法障壁を張る。'}
       ]
     }
   };
@@ -2396,6 +2458,13 @@
 
     const mpCost = Math.max(0, Math.round(chosen.mpCost * passiveStatMult(liverId,'mpCost') * partyMpCostMult()));
     ls.mp -= mpCost;
+
+    if(chosen.effects){
+      // 新方式: 複合効果スキル。効果を順に解決する(旧kind形式との判定は排他)。
+      pushLog(`${name}の「${chosen.name}」！(MP-${mpCost})`, 'combat', true);
+      chosen.effects.forEach(effect => resolveEffect(effect, false, liverId));
+      return;
+    }
 
     if(chosen.kind === 'trueDamageSpell'){
       const dmg = Math.max(1, Math.round(combatAtk(liverId)*chosen.mult*affixMult) + rnd(-1,3));
