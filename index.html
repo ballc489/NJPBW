@@ -644,7 +644,17 @@
       group:'ashen_ruins', groupName:'灰燼の迷宮', floorLabel:null,
       level:1, rewardMult:1.0,
       boss:{ name:'古の守護者', hpMult:1.7, atkMult:1.15, defMult:1.3, weakness:'ice',
-        skills:[{key:'crit', name:'渾身の一撃', everyNTurns:3, kind:'trueDamage', mult:2.2}] },
+        skills:[
+          { key:'guard', name:'守護の唸り', everyNTurns:4,
+            announceText:'{name}が唸り声を上げ、体表が石のように硬くなった！',
+            effects:[ {type:'defBuff', target:'self', amount:0.6, duration:3} ] },
+          { key:'corrode', name:'腐食の爪', everyNTurns:3,
+            announceText:'{name}の「腐食の爪」！',
+            effects:[
+              {type:'damage', target:'enemyRandom', amount:1.3},
+              {type:'poison', target:'enemyRandom', amount:0.08, duration:3}
+            ] }
+        ] },
       firstClearReward:{name:'守護者の心臓', type:'armor'}
     },
     {
@@ -1205,7 +1215,180 @@
   let combatEnemyHp = 0;
   let pendingDefBuffs = {}; // { liverId: reduceMult } その本人の次の被弾にのみ適用
   let combatPassiveFlags = {}; // { liverId: {...} } 条件付きパッシブの発動状態・ログ済みフラグ。戦闘開始時にリセット
+  let playerStatusEffects = {}; // { liverId: { [effectType]: {amount, turnsLeft, freshlyGranted} } } 戦闘中のみ・保存しない
   let shopStock = []; // セーブしない一時データ。商店に入るたび再生成
+
+  const STATUS_EFFECT_LABELS = {
+    atkBuff:'攻撃力上昇', defBuff:'防御力上昇', atkDebuff:'攻撃力低下', defDebuff:'防御力低下',
+    poison:'毒', regen:'再生', stun:'行動不能', silence:'沈黙'
+  };
+  function statusEffectLabel(type){ return STATUS_EFFECT_LABELS[type] || type; }
+
+  /* ---------------------------------------------------------------
+   * 敵スキル: 汎用効果システム
+   * スキルは effects:[{type, target, amount, duration, ignoreDef, element,
+   * drainRatio}, ...] という「効果の配列」として定義できる(従来の
+   * kind:'trueDamage'/'telegraphed' 形式も引き続きサポートし、共存する)。
+   * 将来的にプレイヤー側スキルにも同じ仕組みを使う想定のため、
+   * targetは発動者からの相対関係で指定する:
+   *   self / allyRandom / allyAll / enemyRandom / enemyAll
+   * 今は敵が常に1体という前提のため、ally系は発動者自身を指す。
+   *
+   * 同じ効果タイプが同一対象に重ねてかかった場合:
+   *   ・効果量が大きい方だけが有効(丸ごと上書き)
+   *   ・効果量が同じなら、継続ターン数が延長される場合のみ残りターンを上書き
+   *   ・効果量が小さい方は無視される(既存の効果がそのまま継続)
+   * 重複を許したい場合は、別の効果タイプ名(例: atkBuff2)として
+   * 新設すれば独立して共存できる。
+   *
+   * 継続効果は「行動後」にtickする。ただし発動者が自分自身にかけた効果は、
+   * 付与された直後の巡だけtickをスキップする(付与ターンではなく、次の
+   * 自分の行動から確実に効くようにするため)。他者にかけた効果は、その
+   * 対象の次の行動から自然に通常通りtickされる(巡が異なるため特別扱い不要)。
+   * --------------------------------------------------------------- */
+  function applyStatusEffect(effectsMap, type, amount, duration, isSelfGrant){
+    const current = effectsMap[type];
+    if(!current){
+      effectsMap[type] = {amount, turnsLeft:duration, freshlyGranted: !!isSelfGrant};
+      return true;
+    }
+    if(amount > current.amount){
+      effectsMap[type] = {amount, turnsLeft:duration, freshlyGranted: !!isSelfGrant};
+      return true;
+    }
+    if(amount === current.amount && duration > current.turnsLeft){
+      current.turnsLeft = duration;
+      if(isSelfGrant) current.freshlyGranted = true;
+      return true;
+    }
+    return false;
+  }
+
+  /* onTick(type, eff): 継続ダメージ/継続回復など、tickのたびに起こる処理。
+   * onExpire(type): 残りターンが0になり消滅した時の処理(ログ出しなど)。 */
+  function tickStatusEffects(effectsMap, onTick, onExpire){
+    if(!effectsMap) return;
+    Object.keys(effectsMap).forEach(type=>{
+      const eff = effectsMap[type];
+      if(eff.freshlyGranted){
+        eff.freshlyGranted = false;
+        return;
+      }
+      if(onTick) onTick(type, eff);
+      eff.turnsLeft -= 1;
+      if(eff.turnsLeft <= 0){
+        delete effectsMap[type];
+        if(onExpire) onExpire(type);
+      }
+    });
+  }
+
+  function statusStatMult(effectsMap, buffType, debuffType){
+    let mult = 1;
+    if(effectsMap && effectsMap[buffType]) mult *= (1 + effectsMap[buffType].amount);
+    if(effectsMap && effectsMap[debuffType]) mult *= (1 - effectsMap[debuffType].amount);
+    return mult;
+  }
+
+  /* 継続効果を反映した敵の実効ATK/DEF。最終的な実数値は1を下回らない
+   * (倍率自体には下限を設けない)。 */
+  function effectiveEnemyAtk(){
+    const mult = statusStatMult(combatEnemy.statusEffects, 'atkBuff', 'atkDebuff');
+    return Math.max(1, Math.round(combatEnemy._atk * mult));
+  }
+  function effectiveEnemyDef(){
+    const mult = statusStatMult(combatEnemy.statusEffects, 'defBuff', 'defDebuff');
+    return Math.max(1, Math.round(combatEnemy._def * mult));
+  }
+
+  /* effect.target を発動者から見た相対関係で解決する。戻り値は対象のliverId
+   * の配列、または敵自身を表す'enemy'を含む配列。今は敵が常に1体のため
+   * ally系は発動者自身になる(複数体対応は将来の拡張点)。 */
+  function resolveEffectTargets(effect, casterIsEnemy){
+    switch(effect.target){
+      case 'self':
+        return casterIsEnemy ? ['enemy'] : [];
+      case 'allyRandom':
+      case 'allyAll':
+        return casterIsEnemy ? ['enemy'] : [];
+      case 'enemyRandom': {
+        if(casterIsEnemy){
+          const t = applyCoverRedirect(pickRandomAliveTarget());
+          return t ? [t] : [];
+        }
+        return ['enemy'];
+      }
+      case 'enemyAll':
+        return casterIsEnemy ? alivePartyIds() : ['enemy'];
+      default:
+        return [];
+    }
+  }
+
+  function statusEffectsMapFor(target){
+    if(target === 'enemy') return combatEnemy.statusEffects || (combatEnemy.statusEffects={});
+    if(!playerStatusEffects[target]) playerStatusEffects[target] = {};
+    return playerStatusEffects[target];
+  }
+
+  /* 効果1つを、解決済みの対象1体に適用する。ダメージ・回復は即時、
+   * バフ/デバフ・状態異常はplayerStatusEffects/combatEnemy.statusEffectsに
+   * 登録するだけで、実際の反映はtickStatusEffectsや実効ATK/DEF計算側で行う。 */
+  function applyEffectToTarget(effect, target, casterIsEnemy){
+    const isSelfGrant = (target === 'enemy' && casterIsEnemy);
+    const targetName = target === 'enemy' ? combatEnemy.name : liverDef(target).name;
+
+    if(effect.type === 'damage'){
+      let raw;
+      if(casterIsEnemy){
+        const atk = effectiveEnemyAtk();
+        raw = effect.ignoreDef
+          ? Math.max(1, Math.round(atk * effect.amount) + rnd(-1,2))
+          : Math.max(1, Math.round(atk * effect.amount) - liverDefStat(target) + rnd(-1,1));
+        const dmg = applyDamageToLiver(target, raw, effect.element);
+        pushLog(`${combatEnemy.name}の攻撃！ ${targetName}が ${dmg} のダメージを受けた。`, 'danger', true);
+        if(effect.drainRatio){
+          const healed = Math.max(0, Math.round(dmg * effect.drainRatio));
+          if(healed > 0){
+            combatEnemyHp = Math.min(combatEnemy._maxHp, combatEnemyHp + healed);
+            pushLog(`${combatEnemy.name}はダメージの一部を吸収して回復した。(+${healed})`, 'system', true);
+          }
+        }
+        checkLiverKO(target);
+      } else {
+        // プレイヤー側スキルからの利用を見据えた分岐(現時点では未使用)
+        raw = Math.max(1, Math.round(combatAtk(target) * effect.amount) + rnd(-1,2));
+        combatEnemyHp -= raw;
+        pushLog(`${combatEnemy.name}に ${raw} のダメージ。`, 'combat', true);
+      }
+      return;
+    }
+
+    if(effect.type === 'heal'){
+      if(target === 'enemy'){
+        const heal = Math.max(1, Math.round(combatEnemy._maxHp * effect.amount));
+        combatEnemyHp = Math.min(combatEnemy._maxHp, combatEnemyHp + heal);
+        pushLog(`${combatEnemy.name}はHPを ${heal} 回復した。`, 'system', true);
+      } else {
+        const ls = liverState(target);
+        const heal = Math.max(1, Math.round(ls.maxHp * effect.amount));
+        ls.hp = Math.min(ls.maxHp, ls.hp + heal);
+        pushLog(`${targetName}のHPが ${heal} 回復した。`, 'reward', true);
+      }
+      return;
+    }
+
+    // バフ/デバフ・状態異常はここでまとめて登録するだけ
+    const effectsMap = statusEffectsMapFor(target);
+    const applied = applyStatusEffect(effectsMap, effect.type, effect.amount, effect.duration, isSelfGrant);
+    if(applied){
+      pushLog(`${targetName}に「${statusEffectLabel(effect.type)}」の効果が付与された。`, 'system', true);
+    }
+  }
+
+  function resolveEffect(effect, casterIsEnemy){
+    resolveEffectTargets(effect, casterIsEnemy).forEach(t=>applyEffectToTarget(effect, t, casterIsEnemy));
+  }
 
   function expToNext(level){ return Math.floor(20 * Math.pow(level, 1.5)); }
   function maxHpFor(level){ return 30 + level*8; }
@@ -1527,7 +1710,8 @@
     const ls = liverState(id);
     const a = ls.equipped.armor;
     const def = jobBaseDef(ls.job, jobProgressFor(id).level) + (a ? a.value : 0);
-    return Math.round(def * passiveStatMult(id, 'def'));
+    const statusMult = statusStatMult(playerStatusEffects[id], 'defBuff', 'defDebuff');
+    return Math.max(1, Math.round(def * passiveStatMult(id, 'def') * statusMult));
   }
 
   /* 条件付きパッシブによる「戦闘中のみ」の与ダメージ倍率。
@@ -1571,7 +1755,8 @@
     return 1;
   }
   function combatAtk(id){
-    return Math.round(liverAtk(id) * activeCombatAtkMult(id) * partyBuffAtkMult());
+    const statusMult = statusStatMult(playerStatusEffects[id], 'atkBuff', 'atkDebuff');
+    return Math.max(1, Math.round(liverAtk(id) * activeCombatAtkMult(id) * partyBuffAtkMult() * statusMult));
   }
 
   /* 戦闘開始直後のNターンだけパーティ全体にかかる攻撃力バフ倍率(樋口楓)。 */
@@ -2004,7 +2189,7 @@
       await sb.from('players').delete().eq('id', uid);
     }catch(e){ console.error('reset failed', e); }
     state = null;
-    inCombat = false; combatPhase = null; combatEnemy = null; combatEnemyHp = 0; pendingDefBuffs = {};
+    inCombat = false; combatPhase = null; combatEnemy = null; combatEnemyHp = 0; pendingDefBuffs = {}; playerStatusEffects = {};
     pendingGacha = null;
     createSelectedLiver = null; createNameDraft = '';
     colosseumView = { loading: true, floor: 1, record: null, isDummy: true };
@@ -2118,7 +2303,9 @@
     combatEnemy._def = enemy.def;
     combatEnemy.turnCount = 0;
     combatEnemy.charging = null;
+    combatEnemy.statusEffects = {};
     pendingDefBuffs = {};
+    playerStatusEffects = {};
     combatPassiveFlags = {};
     pushLog(`Lv.${enemy.level} ${enemy.name}${enemy.boss?'が行く手を阻んだ！':'が現れた。'}`, 'danger');
     state.party.forEach(id=>{
@@ -2156,14 +2343,16 @@
    * kind: 'trueDamageSpell'(防御無視の攻撃) / 'bonusAttack'(追加攻撃)
    *       'defBuff'(次の被弾を軽減) / 'heal'(自己回復)
    */
-  function playerTurnAction(liverId){
+  function playerTurnActionInner(liverId, silenced){
     const ls = liverState(liverId);
     const name = liverDef(liverId).name;
     const { atkRate, actions } = computeActionRates(liverId);
     const pool = [{action:null, weight: atkRate}];
-    actions.forEach(a=>{
-      if(a.rate > 0 && ls.mp >= a.skill.mpCost) pool.push({action:a.skill, weight:a.rate});
-    });
+    if(!silenced){
+      actions.forEach(a=>{
+        if(a.rate > 0 && ls.mp >= a.skill.mpCost) pool.push({action:a.skill, weight:a.rate});
+      });
+    }
     const chosen = weightedPick(pool);
 
     /* 攻撃命中時、りりむの「ばあっ！」等によるMP吸収をログ末尾に追記するための小ヘルパー */
@@ -2175,7 +2364,7 @@
     const affixMult = weaponAffixDamageMult(liverId);
 
     if(!chosen){
-      const dmg = Math.max(1, Math.round((combatAtk(liverId) - combatEnemy._def) * affixMult) + rnd(-1,2));
+      const dmg = Math.max(1, Math.round((combatAtk(liverId) - effectiveEnemyDef()) * affixMult) + rnd(-1,2));
       combatEnemyHp -= dmg;
       pushLog(`${name}の攻撃！ ${combatEnemy.name}に ${dmg} のダメージ。${drainSuffix(dmg)}`, 'combat', true);
       return;
@@ -2193,7 +2382,7 @@
     if(chosen.kind === 'element'){
       const isWeak = combatEnemy.weakness === chosen.element;
       const mult = isWeak ? chosen.weaknessMult : chosen.offMult;
-      const dmg = Math.max(1, Math.round((combatAtk(liverId) - combatEnemy._def) * mult) + rnd(-1,2));
+      const dmg = Math.max(1, Math.round((combatAtk(liverId) - effectiveEnemyDef()) * mult) + rnd(-1,2));
       combatEnemyHp -= dmg;
       const elLabel = ELEMENT_LABELS[chosen.element] || '';
       pushLog(
@@ -2206,15 +2395,15 @@
       return;
     }
     if(chosen.kind === 'bonusAttack'){
-      const dmg1 = Math.max(1, Math.round((combatAtk(liverId) - combatEnemy._def) * affixMult) + rnd(-1,2));
-      const dmg2 = Math.max(1, Math.round((Math.round(combatAtk(liverId)*0.6) - Math.round(combatEnemy._def*0.5)) * affixMult) + rnd(-1,2));
+      const dmg1 = Math.max(1, Math.round((combatAtk(liverId) - effectiveEnemyDef()) * affixMult) + rnd(-1,2));
+      const dmg2 = Math.max(1, Math.round((Math.round(combatAtk(liverId)*0.6) - Math.round(effectiveEnemyDef()*0.5)) * affixMult) + rnd(-1,2));
       combatEnemyHp -= (dmg1+dmg2);
       pushLog(`${name}の「${chosen.name}」！ ${dmg1}+${dmg2} の連続攻撃。(MP-${mpCost})${drainSuffix(dmg1+dmg2)}`, 'combat', true);
       return;
     }
     if(chosen.kind === 'defBuff'){
       pendingDefBuffs[liverId] = chosen.reduceMult || 0.6;
-      const dmg = Math.max(1, Math.round((combatAtk(liverId) - combatEnemy._def) * affixMult) + rnd(-1,2));
+      const dmg = Math.max(1, Math.round((combatAtk(liverId) - effectiveEnemyDef()) * affixMult) + rnd(-1,2));
       combatEnemyHp -= dmg;
       pushLog(`${name}の「${chosen.name}」！ 身構えながら ${dmg} のダメージ。次の攻撃に備える。(MP-${mpCost})${drainSuffix(dmg)}`, 'combat', true);
       return;
@@ -2225,6 +2414,32 @@
       pushLog(`${name}の「${chosen.name}」！ HPが ${heal} 回復した。(MP-${mpCost})`, 'reward', true);
       return;
     }
+  }
+
+  function playerTurnAction(liverId){
+    const ls = liverState(liverId);
+    const name = liverDef(liverId).name;
+    const effects = playerStatusEffects[liverId];
+    const stunned = !!(effects && effects.stun);
+    const silenced = !!(effects && effects.silence);
+    if(stunned){
+      pushLog(`${name}はまだ動けない！`, 'system', true);
+    } else {
+      playerTurnActionInner(liverId, silenced);
+    }
+    tickStatusEffects(effects,
+      (type, eff)=>{
+        if(type === 'poison'){
+          const dmg = Math.max(1, Math.round(ls.maxHp * eff.amount));
+          ls.hp = Math.max(0, ls.hp - dmg);
+          pushLog(`${name}は毒のダメージを受けた。(-${dmg})`, 'danger', true);
+          checkLiverKO(liverId);
+        }
+      },
+      (type)=>{
+        pushLog(`${name}の「${statusEffectLabel(type)}」の効果が切れた。`, 'system', true);
+      }
+    );
   }
 
   function applyDamageToLiver(liverId, rawDmg, element){
@@ -2260,7 +2475,9 @@
    * 属性耐性(スキルにelementが設定されている場合のみ)を反映する。
    * 通常攻撃には属性を持たせていないため、耐性の影響を受けない。
    */
-  function enemyTurnDamage(){
+  /* 敵のターン処理の本体。実際の呼び出しはenemyTurnDamage()経由で、
+   * どの分岐を通っても最後に必ず自身の継続効果(自己バフ等)がtickされる。 */
+  function enemyTurnDamageInner(){
     combatEnemy.turnCount = (combatEnemy.turnCount||0) + 1;
     let target = pickRandomAliveTarget();
     if(!target) return; // 全滅済み(念のため)
@@ -2270,7 +2487,7 @@
     if(combatEnemy.charging){
       const skill = combatEnemy.charging;
       combatEnemy.charging = null;
-      const raw = Math.max(1, Math.round(combatEnemy._atk * skill.mult) + rnd(-1,2));
+      const raw = Math.max(1, Math.round(effectiveEnemyAtk() * skill.mult) + rnd(-1,2));
       const dmg = applyDamageToLiver(target, raw, skill.element);
       pushLog(`${(skill.executeText || (combatEnemy.name+'の渾身の一撃！')).replace('{name}', combatEnemy.name)} ${targetName}が ${dmg} のダメージを受けた。`, 'danger', true);
       checkLiverKO(target);
@@ -2280,22 +2497,45 @@
     const skills = combatEnemy.skills || [];
     const triggered = skills.find(s => s.everyNTurns && combatEnemy.turnCount % s.everyNTurns === 0);
     if(triggered){
+      if(triggered.effects){
+        // 新方式: 複合効果スキル。このターンは他の行動を取らず、効果を順に解決する。
+        pushLog((triggered.announceText || `${combatEnemy.name}の「${triggered.name}」！`).replace('{name}', combatEnemy.name), 'danger', true);
+        triggered.effects.forEach(effect => resolveEffect(effect, true));
+        return;
+      }
       if(triggered.kind === 'telegraphed'){
         combatEnemy.charging = triggered;
         pushLog((triggered.warnText || `${combatEnemy.name}が力を溜めている……`).replace('{name}', combatEnemy.name), 'system');
         return;
       }
-      const raw = Math.max(1, Math.round(combatEnemy._atk * triggered.mult) + rnd(-1,2));
+      const raw = Math.max(1, Math.round(effectiveEnemyAtk() * triggered.mult) + rnd(-1,2));
       const dmg = applyDamageToLiver(target, raw, triggered.element);
       pushLog(`${combatEnemy.name}の「${triggered.name}」！ ${targetName}が防御を貫く ${dmg} の会心の一撃を受けた！`, 'danger', true);
       checkLiverKO(target);
       return;
     }
 
-    const raw = Math.max(1, combatEnemy._atk - liverDefStat(target) + rnd(-1,1));
+    const raw = Math.max(1, effectiveEnemyAtk() - liverDefStat(target) + rnd(-1,1));
     const dmg = applyDamageToLiver(target, raw);
     pushLog(`${combatEnemy.name}の反撃、${targetName}が ${dmg} のダメージを受けた。`, 'danger', true);
     checkLiverKO(target);
+  }
+
+  function enemyTurnDamage(){
+    enemyTurnDamageInner();
+    if(!combatEnemy) return; // 反撃等で戦闘が終了した場合は何もしない
+    tickStatusEffects(combatEnemy.statusEffects,
+      (type, eff)=>{
+        if(type === 'regen'){
+          const heal = Math.max(1, Math.round(combatEnemy._maxHp * eff.amount));
+          combatEnemyHp = Math.min(combatEnemy._maxHp, combatEnemyHp + heal);
+          pushLog(`${combatEnemy.name}は自身の傷を癒やした。(+${heal})`, 'system', true);
+        }
+      },
+      (type)=>{
+        pushLog(`${combatEnemy.name}の「${statusEffectLabel(type)}」の効果が切れた。`, 'system', true);
+      }
+    );
   }
 
   function checkLiverKO(liverId){
@@ -2341,6 +2581,7 @@
         notifyAllyActed(id);
         render();
         if(combatEnemyHp <= 0) break;
+        if(checkPartyDefeated()) return; // 毒などの継続ダメージで全滅した場合はここで終了
         await sleep(280);
         if(!inCombat || combatPhase !== 'auto') return;
       }
