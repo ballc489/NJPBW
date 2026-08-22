@@ -375,15 +375,39 @@
   const ENEMY_POOLS = {
     ashen: [
       {key:'automaton', name:'錆びついた自動人形', hpMult:1.10, atkMult:0.90, defMult:1.25, weakness:'thunder',
-        skills:[{key:'shock', name:'帯電の一撃', everyNTurns:4, kind:'telegraphed', mult:2.4, element:'thunder',
-          warnText:'{name}の関節から放電音が響き始めた……', executeText:'放電と共に強烈な一撃が突き刺さった！'}]},
+        skills:[{key:'shock', name:'帯電の一撃', everyNTurns:4,
+          announceText:'{name}の関節から放電音が響いた！',
+          effects:[
+            {type:'damage', target:'enemyRandom', amount:1.4, element:'thunder'},
+            {type:'defDebuff', target:'enemyRandom', amount:0.25, duration:2}
+          ]}]},
       {key:'spider',    name:'瓦礫グモ',           hpMult:0.80, atkMult:1.20, defMult:0.75, weakness:'fire',
-        skills:[{key:'leap', name:'跳躍からの一撃', everyNTurns:3, kind:'telegraphed', mult:2.6,
-          warnText:'{name}が壁を蹴り、跳躍の姿勢を取った……', executeText:'跳躍からの一撃が突き刺さった！'}]},
+        skills:[{key:'leap', name:'跳躍からの一撃', everyNTurns:3,
+          announceText:'{name}が跳躍からの一撃を放った！',
+          effects:[
+            {type:'damage', target:'enemyRandom', amount:1.3},
+            {type:'atkBuff', target:'self', amount:0.35, duration:2}
+          ]}]},
       {key:'wraith',    name:'迷いし亡霊',         hpMult:0.90, atkMult:1.10, defMult:0.85, weakness:'ice',
-        skills:[{key:'curse', name:'呪いの一撃', everyNTurns:4, kind:'trueDamage', mult:1.9, element:'ice'}]},
-      {key:'guardian',  name:'苔むした番人',       hpMult:1.30, atkMult:0.80, defMult:1.35, weakness:'thunder'},
-      {key:'looter',    name:'廃墟の盗掘者',       hpMult:0.90, atkMult:1.00, defMult:0.95, weakness:'fire'},
+        skills:[{key:'curse', name:'呪いの一撃', everyNTurns:4,
+          announceText:'{name}が呪いの一撃を放った！',
+          effects:[
+            {type:'damage', target:'enemyRandom', amount:1.2, element:'ice'},
+            {type:'atkDebuff', target:'enemyRandom', amount:0.3, duration:3}
+          ]}]},
+      {key:'guardian',  name:'苔むした番人',       hpMult:1.30, atkMult:0.80, defMult:1.35, weakness:'thunder',
+        skills:[{key:'moss', name:'苔の再生', everyNTurns:4,
+          announceText:'{name}の苔むした体表がわずかに再生していく……',
+          effects:[
+            {type:'regen', target:'self', amount:0.12, duration:3}
+          ]}]},
+      {key:'looter',    name:'廃墟の盗掘者',       hpMult:0.90, atkMult:1.00, defMult:0.95, weakness:'fire',
+        skills:[{key:'snatch', name:'隙を突く一撃', everyNTurns:3,
+          announceText:'{name}が隙を突く一撃を放った！',
+          effects:[
+            {type:'damage', target:'enemyRandom', amount:1.15},
+            {type:'silence', target:'enemyRandom', amount:1, duration:2}
+          ]}]},
     ],
     spire: [
       {key:'spire_mage',  name:'尖塔の魔導兵',     hpMult:1.00, atkMult:1.05, defMult:1.00, weakness:'ice',
