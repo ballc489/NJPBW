@@ -339,6 +339,40 @@
   const GAME_SUBTITLE = 'TOWER OF SEVENS';
 
   /* ---------------------------------------------------------------
+   * 利用規約
+   * 法的な完全性を目指したものではなく、(1)不正行為に対して利用停止
+   * (BAN)を行う正当な根拠を示すこと、(2)非公式の二次創作であることの
+   * 理解、(3)広告収益が運営コスト相当に充てられることの理解、を得る
+   * ためのもの。内容を変更した場合はCURRENT_TOS_VERSIONを上げること。
+   * バージョンが上がると、既に同意済みのプレイヤーにも次回起動時に
+   * 再同意ダイアログが表示される(agree_to_tos RPC・players.tos_agreed_version)。
+   * --------------------------------------------------------------- */
+  const CURRENT_TOS_VERSION = 1;
+  const TOS_TEXT_HTML = `
+    <p><strong>第1条(本サービスについて)</strong><br>
+    「七彩の塔」(以下「本サービス」)は、個人が制作・運営する非公式の二次創作プロジェクトです。VTuberグループ「にじさんじ」の運営元である株式会社ANYCOLORとは一切関係が無く、公式のコンテンツやサービスではありません。本サービスは、ANYCOLOR株式会社が定める二次創作に関するガイドラインの範囲内で運営されます。</p>
+    <p><strong>第2条(収益について)</strong><br>
+    本サービスに広告等が表示される場合、その収益はサーバーの維持費など、本サービスの運営に必要なコストを賄う範囲にとどめるものとし、大規模な商業利用は行いません。</p>
+    <p><strong>第3条(アカウント)</strong><br>
+    本サービスは匿名の認証情報をもとにプレイデータを保存します。アカウント情報(ブラウザに保存される認証情報等)の管理はユーザー自身の責任で行うものとし、これに起因する不利益について運営者は責任を負いません。</p>
+    <p><strong>第4条(禁止事項)</strong><br>
+    本サービスの利用にあたり、次の行為を禁止します。</p>
+    <p style="padding-left:1em;">
+    ・通信内容の改ざん、非公開のAPIへの不正なアクセスその他の手段による、意図しないデータの取得・変更・詐称行為(いわゆるチート行為)<br>
+    ・他のユーザーへのなりすまし、誹謗中傷、迷惑行為<br>
+    ・複数アカウントを用いた不正な利益の取得<br>
+    ・本サービスの運営を妨害する行為<br>
+    ・その他、法令または公序良俗に反する行為
+    </p>
+    <p><strong>第5条(利用停止)</strong><br>
+    運営者は、ユーザーが前条の禁止事項に該当する、またはそのおそれがあると判断した場合、事前の通知なくそのアカウントによる本サービスの利用を停止(BAN)できるものとします。</p>
+    <p><strong>第6条(免責事項)</strong><br>
+    本サービスは現状有姿で提供されます。運営者は、本サービスの内容を予告なく変更・中断・終了することがあります。本サービスの利用により生じた損害について、運営者は法令上許容される範囲で責任を負わないものとします。</p>
+    <p><strong>第7条(規約の変更)</strong><br>
+    運営者は、本規約の内容を変更することがあります。内容を変更した場合、変更後の規約への同意を改めて求めることがあります。</p>
+  `;
+
+  /* ---------------------------------------------------------------
    * Supabase接続設定
    * SUPABASE_ANON_KEY は「ブラウザに埋め込んでよい公開用の鍵」
    * (sb_publishable_...)。Row Level Securityが正しく設定されている
@@ -3579,6 +3613,14 @@
         state = newCharacter(name, createSelectedLiver, uid);
         pushLog(`${name}は、${starterName}と共に再興の町に降り立った。`, 'system');
         await saveGame();
+        // ここでplayers行が初めて作られるため、ゲート同意時点では
+        // 更新できなかったtos_agreed_versionをサーバー側に反映させる
+        try{
+          await sb.rpc('agree_to_tos', { p_version: CURRENT_TOS_VERSION });
+          localStorage.removeItem('tosAgreedLocal');
+        }catch(e){
+          console.error('agree_to_tos resync failed', e);
+        }
         render();
       }catch(e){
         console.error('character creation failed', e);
@@ -4819,8 +4861,10 @@
   }
 
   /* ---------------- Init / セーブのマイグレーション ---------------- */
-  (async function init(){
-    app.innerHTML = `<p style="text-align:center;color:var(--text-muted);margin-top:80px;font-family:var(--font-mono);">呼び起こしている……</p>`;
+
+  /* 利用規約同意・BAN確認をクリアした後の本来の起動処理。
+   * 規約同意直後、および通常起動の両方から呼ばれる。 */
+  async function proceedToGame(){
     const loaded = await loadGame();
     if(loaded){
       state = loaded;
@@ -4841,6 +4885,85 @@
         render();
       }
     }, 5000);
+  }
+
+  function renderBanScreen(reason){
+    app.innerHTML = `
+      <div class="create-box">
+        <h1>${GAME_TITLE_HTML}</h1>
+        <p class="subtitle">${GAME_SUBTITLE}</p>
+        <p style="color:var(--danger);font-weight:700;margin-top:24px;">このアカウントは利用規約違反により、利用を停止しています。</p>
+        ${reason ? `<p style="color:var(--text-muted);font-size:12px;">理由: ${esc(reason)}</p>` : ''}
+      </div>
+    `;
+  }
+
+  async function handleAgreeTos(){
+    const btn = document.getElementById('agreeTosBtn');
+    if(btn) btn.disabled = true;
+    try{
+      const { error } = await sb.rpc('agree_to_tos', { p_version: CURRENT_TOS_VERSION });
+      if(error) throw error;
+      // まだplayers行が無い(=これからキャラ作成する)場合、agree_to_tosのUPDATEは
+      // 実質何もしない。キャラ作成前に再読み込みされてもゲートを出し直さないよう、
+      // ブラウザ側にも同意済みを控えておく(キャラ作成完了時にサーバー側へ再送する)。
+      localStorage.setItem('tosAgreedLocal', String(CURRENT_TOS_VERSION));
+      app.innerHTML = `<p style="text-align:center;color:var(--text-muted);margin-top:80px;font-family:var(--font-mono);">呼び起こしている……</p>`;
+      await proceedToGame();
+    }catch(e){
+      console.error('agree_to_tos failed', e);
+      if(btn) btn.disabled = false;
+      alert('同意の送信に失敗した。通信状況を確認してもう一度試してほしい。');
+    }
+  }
+
+  function renderTosGateScreen(){
+    app.innerHTML = `
+      <div class="create-box">
+        <h1>${GAME_TITLE_HTML}</h1>
+        <p class="subtitle">${GAME_SUBTITLE}</p>
+        <p class="section-label" style="text-align:left;margin-top:20px;">利用規約</p>
+        <div class="scrollbox" style="max-height:320px;text-align:left;font-size:12px;line-height:1.7;color:var(--text-muted);padding:10px;border:1px solid var(--win-border-inner);">
+          ${TOS_TEXT_HTML}
+        </div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:10px;">「同意して始める」を押すと、上記の利用規約に同意したものとみなします。</p>
+        <div class="actions" style="justify-content:center;margin-top:10px;">
+          <button class="primary" id="agreeTosBtn">同意して始める</button>
+        </div>
+      </div>
+    `;
+    const btn = document.getElementById('agreeTosBtn');
+    if(btn) btn.addEventListener('click', handleAgreeTos);
+  }
+
+  (async function init(){
+    app.innerHTML = `<p style="text-align:center;color:var(--text-muted);margin-top:80px;font-family:var(--font-mono);">呼び起こしている……</p>`;
+    try{
+      const uid = await ensureAuth();
+      const { data: gateRow, error } = await sb.from('players')
+        .select('tos_agreed_version, banned_at, ban_reason').eq('id', uid).maybeSingle();
+      if(error) throw error;
+
+      if(gateRow && gateRow.banned_at){
+        renderBanScreen(gateRow.ban_reason);
+        return;
+      }
+      // players行がまだ無い(=キャラ作成前)場合は、agree_to_tosのUPDATEが
+      // 何も更新できないため、ブラウザ側に控えた同意記録を代わりに参照する
+      // (キャラ作成完了時にサーバー側へ改めて同意を記録する)。
+      const agreedVersion = gateRow
+        ? (gateRow.tos_agreed_version || 0)
+        : parseInt(localStorage.getItem('tosAgreedLocal') || '0', 10);
+      if(agreedVersion < CURRENT_TOS_VERSION){
+        renderTosGateScreen();
+        return;
+      }
+    }catch(e){
+      // 規約確認自体の通信に失敗した場合は、プレイ不能にはせず通常フローに進む
+      // (実際の書き込みは各RPC側のBANチェックで最終的に守られているため)
+      console.error('tos/ban check failed', e);
+    }
+    await proceedToGame();
   })();
 
 })();
