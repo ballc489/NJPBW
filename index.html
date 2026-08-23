@@ -4720,10 +4720,9 @@
   }
 
   function switchChatChannel(channelId){
-    if(activeChatChannel === channelId || !CHAT_CHANNEL_DEFS.some(c=>c.id === channelId)) return;
+    if(!CHAT_CHANNEL_DEFS.some(c=>c.id === channelId)) return;
     activeChatChannel = channelId;
-    render();
-    refreshChatDOM();
+    toggleBottomTab('chat');
   }
 
   async function sendChatMessage(rawText){
@@ -4771,10 +4770,13 @@
   function renderBottomPanel(){
     const tab = (state.ui && state.ui.bottomTab) || 'log';
     const logActive = tab === 'log';
+    const channelTabsHtml = CHAT_CHANNEL_DEFS.map(c=>
+      `<button data-chat-channel="${c.id}" class="${(!logActive && activeChatChannel===c.id)?'primary':''}" style="padding:6px 14px;font-size:12px;">${esc(c.name)}</button>`
+    ).join('');
     const tabsHtml = `
-      <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
         <button data-bottom-tab="log" class="${logActive?'primary':''}" style="padding:6px 14px;font-size:12px;">冒険の記録</button>
-        <button data-bottom-tab="chat" class="${!logActive?'primary':''}" style="padding:6px 14px;font-size:12px;">チャット</button>
+        ${channelTabsHtml}
       </div>`;
     let body;
     if(logActive){
@@ -4783,11 +4785,7 @@
       body = `<div class="scrollbox history-log" id="historyLog">${rows}</div>`;
     } else {
       const activeChannelDef = CHAT_CHANNEL_DEFS.find(c=>c.id === activeChatChannel) || CHAT_CHANNEL_DEFS[0];
-      const channelTabsHtml = CHAT_CHANNEL_DEFS.map(c=>
-        `<button data-chat-channel="${c.id}" class="${activeChatChannel===c.id?'primary':''}" style="padding:4px 10px;font-size:11px;">${esc(c.name)}</button>`
-      ).join('');
       body = `
-        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">${channelTabsHtml}</div>
         <div class="scrollbox history-log" id="chatLog">${renderChatMessages()}</div>
         <div class="actions" style="margin-top:10px;flex-wrap:nowrap;">
           <input id="chatInput" class="name-input" style="flex:1;margin:0;" type="text" maxlength="200" placeholder="${esc(activeChannelDef.name)}に発言(他の全ユーザーに公開されます)">
