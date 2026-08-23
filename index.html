@@ -4617,6 +4617,9 @@
     document.querySelectorAll('[data-bottom-tab]').forEach(b=>{
       b.addEventListener('click', ()=>toggleBottomTab(b.getAttribute('data-bottom-tab')));
     });
+    document.querySelectorAll('[data-chat-channel]').forEach(b=>{
+      b.addEventListener('click', ()=>switchChatChannel(b.getAttribute('data-chat-channel')));
+    });
     document.querySelectorAll('[data-toggle-group]').forEach(b=>{
       b.addEventListener('click', ()=>toggleGroup(b.getAttribute('data-toggle-group')));
     });
@@ -4680,13 +4683,19 @@
   }
 
   /* ---------------- チャット(全ユーザー共有、Supabase Realtime) ---------------- */
+  const CHAT_CHANNEL_DEFS = [
+    { id:'general', name:'総合チャット' },
+    { id:'strategy', name:'攻略チャット' },
+    { id:'casual', name:'雑談チャット' },
+  ];
   let chatCache = [];
   let chatChannel = null;
+  let activeChatChannel = 'general';
 
-  async function loadChat(){
+  async function loadChat(channel){
     try{
       const { data, error } = await sb.from('chat_messages')
-        .select('*').order('created_at', {ascending:false}).limit(100);
+        .select('*').eq('channel', channel).order('created_at', {ascending:false}).limit(100);
       if(error) throw error;
       return (data||[]).slice().reverse().map(m=>(
         { name: m.player_name, id: m.player_id, text: m.body, ts: new Date(m.created_at).getTime() }
@@ -4705,9 +4714,16 @@
   async function refreshChatDOM(){
     const el = document.getElementById('chatLog');
     if(!el) return;
-    chatCache = await loadChat();
+    chatCache = await loadChat(activeChatChannel);
     el.innerHTML = renderChatMessages();
     el.scrollTop = el.scrollHeight;
+  }
+
+  function switchChatChannel(channelId){
+    if(activeChatChannel === channelId || !CHAT_CHANNEL_DEFS.some(c=>c.id === channelId)) return;
+    activeChatChannel = channelId;
+    render();
+    refreshChatDOM();
   }
 
   async function sendChatMessage(rawText){
@@ -4715,7 +4731,7 @@
     if(!text || !state) return;
     try{
       const { error } = await sb.from('chat_messages').insert({
-        player_id: state.playerId, player_name: state.name, body: text
+        player_id: state.playerId, player_name: state.name, body: text, channel: activeChatChannel
       });
       if(error) throw error;
       // 表示への反映は、下のRealtime購読側のINSERTイベントで(自分の発言も含めて)行われる
@@ -4741,6 +4757,7 @@
     chatChannel = sb.channel('public:chat_messages')
       .on('postgres_changes', {event:'INSERT', schema:'public', table:'chat_messages'}, (payload)=>{
         const m = payload.new;
+        if(m.channel !== activeChatChannel) return;
         chatCache.push({ name: m.player_name, id: m.player_id, text: m.body, ts: new Date(m.created_at).getTime() });
         if(chatCache.length > 100) chatCache.shift();
         if(state && state.ui && state.ui.bottomTab === 'chat'){
@@ -4765,10 +4782,15 @@
         || '<p style="color:var(--text-muted);">まだ記録はない。</p>';
       body = `<div class="scrollbox history-log" id="historyLog">${rows}</div>`;
     } else {
+      const activeChannelDef = CHAT_CHANNEL_DEFS.find(c=>c.id === activeChatChannel) || CHAT_CHANNEL_DEFS[0];
+      const channelTabsHtml = CHAT_CHANNEL_DEFS.map(c=>
+        `<button data-chat-channel="${c.id}" class="${activeChatChannel===c.id?'primary':''}" style="padding:4px 10px;font-size:11px;">${esc(c.name)}</button>`
+      ).join('');
       body = `
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">${channelTabsHtml}</div>
         <div class="scrollbox history-log" id="chatLog">${renderChatMessages()}</div>
         <div class="actions" style="margin-top:10px;flex-wrap:nowrap;">
-          <input id="chatInput" class="name-input" style="flex:1;margin:0;" type="text" maxlength="200" placeholder="全体チャットに発言(他の全ユーザーに公開されます)">
+          <input id="chatInput" class="name-input" style="flex:1;margin:0;" type="text" maxlength="200" placeholder="${esc(activeChannelDef.name)}に発言(他の全ユーザーに公開されます)">
           <button class="primary" id="sendChatBtn">送信</button>
         </div>`;
     }
