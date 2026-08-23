@@ -1669,7 +1669,30 @@
    *   予定(例: ['axe']を持たせると、ジョブがウィザードでも斧を装備できる)。
    * 未解放のライバーは「運命のチケット」ガチャ、または「確約されし運命の
    * チケット」での指名によって仲間になる(召喚で入手・使用する)。
-   * passive: ライバー固有の常時能力。本人の実際の言動・設定を根拠に選定
+   * ライバー固有の常時パッシブはCOSTUME_DEFS(このすぐ下)側に移した。
+   * 「衣装」を切り替えることでパッシブも切り替わる仕組みのため。
+   * --------------------------------------------------------------- */
+  const LIVER_DEFS = [
+    {id:'liver_1', name:'樋口楓', color:'#FBAF71', job:'dps', startUnlocked:false},
+    {id:'liver_2', name:'ジョー・力一', color:'#D598DD', job:'mage', startUnlocked:false},
+    {id:'liver_3', name:'魔界ノりりむ', color:'#EF6F94', job:'mage', startUnlocked:false},
+    {id:'liver_4', name:'加賀美ハヤト', color:'#B9ADB9', job:'tank', startUnlocked:false},
+    {id:'liver_5', name:'三枝明那', color:'#F03C32', job:'dps', startUnlocked:false},
+    {id:'liver_6', name:'弦月藤士郎', color:'#B43246', job:'tank', startUnlocked:false},
+    {id:'liver_7', name:'先斗寧', color:'#5A7DFF', job:'mage', startUnlocked:false},
+    {id:'liver_8', name:'石神のぞみ', color:'#E6325F', job:'mage', startUnlocked:false},
+    {id:'liver_9', name:'風楽奏斗', color:'#FAD246', job:'dps', startUnlocked:false},
+    {id:'liver_10', name:'栞葉るり', color:'#2887FF', job:'tank', startUnlocked:false},
+  ];
+
+  /* ---------------------------------------------------------------
+   * 衣装定義(ライバーIDごとの配列)
+   * ライバーは常にどれか1つの衣装を装備している状態で固定(外せない)。
+   * 各配列の先頭が「通常衣装」= キャラ解放と同時に自動解放される
+   * デフォルト衣装。それ以外の衣装は現時点では入手経路が未実装(通常の
+   * アイテムドロップには絡めない方針。将来的な専用の解放手段を想定した
+   * unlockCostume()だけ用意してある)。
+   * passive: 衣装装備中の常時能力。本人の実際の言動・設定を根拠に選定
    *   (ジョブは後からユーザーが自由に付け替えられるものなので、キャラ
    *   付けの根拠には使っていない)。alwaysがtrueの間は常時発動系なので
    *   ログを出さず、falseの間は条件付き発動につき発動時にログを出す。
@@ -1687,38 +1710,98 @@
    *   kind:'randomAllyBoon'    毎ラウンド低確率で、味方の誰か1人のHPを回復する。発動時にログを出す
    *   kind:'coverAlly'         味方のHPが割合threshold以下の時、その味方への攻撃を代わりに引き受ける。発動時にログを出す
    * --------------------------------------------------------------- */
-  const LIVER_DEFS = [
-    {id:'liver_1', name:'樋口楓', color:'#FBAF71', job:'dps', startUnlocked:false,
-      passive:{name:'こんでろーん', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
-        desc:'戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}},
-    {id:'liver_2', name:'ジョー・力一', color:'#D598DD', job:'mage', startUnlocked:false,
-      passive:{name:'NEOてぇてぇ', kind:'partySizeStatMult', stats:['atk','def'], perMember:0.06, always:true,
-        desc:'常時、編成人数が多いほど攻撃力・防御力が上昇する(1人につき+6%、4人編成で+18%)。'}},
-    {id:'liver_3', name:'魔界ノりりむ', color:'#EF6F94', job:'mage', startUnlocked:false,
-      passive:{name:'ばあっ！', kind:'onHitMpDrain', ratio:0.2, always:true,
-        desc:'常時、攻撃を命中させるたびに与えたダメージの20%をMPとして吸収する。'}},
-    {id:'liver_4', name:'加賀美ハヤト', color:'#B9ADB9', job:'tank', startUnlocked:false,
-      passive:{name:'私……社長ですけど', kind:'lootBonus', dropRateMult:1.3, goldMult:1.3, always:true,
-        desc:'常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が30%上昇する。'}},
-    {id:'liver_5', name:'三枝明那', color:'#F03C32', job:'dps', startUnlocked:false,
-      passive:{name:'最高の人生送ってる。', kind:'statMult', stat:'mpCost', mult:0.85, always:true,
-        desc:'常時、スキルのMP消費が15%軽減される。'}},
-    {id:'liver_6', name:'弦月藤士郎', color:'#B43246', job:'tank', startUnlocked:false,
-      passive:{name:'あなたはあなた', kind:'partyMpCostReduce', mult:0.9, always:true,
-        desc:'常時、パーティ全員のスキルMP消費が10%軽減される。'}},
-    {id:'liver_7', name:'先斗寧', color:'#5A7DFF', job:'mage', startUnlocked:false,
-      passive:{name:'ルー・ベー・リー', kind:'randomAllyBoon', chance:0.18, healRatio:0.15, always:false,
-        desc:'戦闘中、毎ラウンド18%の確率で妖精が味方の誰かを見守り、HPが15%回復する。'}},
-    {id:'liver_8', name:'石神のぞみ', color:'#E6325F', job:'mage', startUnlocked:false,
-      passive:{name:'だってさぁ！', kind:'lowHpAtkBoost', threshold:0.3, mult:1.25, always:false,
-        desc:'自身のHPが30%以下のとき、攻撃力が25%上昇する。'}},
-    {id:'liver_9', name:'風楽奏斗', color:'#FAD246', job:'dps', startUnlocked:false,
-      passive:{name:'楽しんでこっぜ！', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
-        desc:'常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}},
-    {id:'liver_10', name:'栞葉るり', color:'#2887FF', job:'tank', startUnlocked:false,
-      passive:{name:'取締ビーム', kind:'coverAlly', threshold:0.3, always:false,
-        desc:'味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}},
-  ];
+  const COSTUME_DEFS = {
+    liver_1: [
+      {key:'default', name:'通常衣装(樋口楓専用)',
+        passive:{name:'こんでろーん', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
+          desc:'戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}}
+    ],
+    liver_2: [
+      {key:'default', name:'通常衣装(ジョー・力一専用)',
+        passive:{name:'NEOてぇてぇ', kind:'partySizeStatMult', stats:['atk','def'], perMember:0.06, always:true,
+          desc:'常時、編成人数が多いほど攻撃力・防御力が上昇する(1人につき+6%、4人編成で+18%)。'}}
+    ],
+    liver_3: [
+      {key:'default', name:'通常衣装(魔界ノりりむ専用)',
+        passive:{name:'ばあっ！', kind:'onHitMpDrain', ratio:0.2, always:true,
+          desc:'常時、攻撃を命中させるたびに与えたダメージの20%をMPとして吸収する。'}}
+    ],
+    liver_4: [
+      {key:'default', name:'通常衣装(加賀美ハヤト専用)',
+        passive:{name:'私……社長ですけど', kind:'lootBonus', dropRateMult:1.3, goldMult:1.3, always:true,
+          desc:'常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が30%上昇する。'}}
+    ],
+    liver_5: [
+      {key:'default', name:'通常衣装(三枝明那専用)',
+        passive:{name:'最高の人生送ってる。', kind:'statMult', stat:'mpCost', mult:0.85, always:true,
+          desc:'常時、スキルのMP消費が15%軽減される。'}}
+    ],
+    liver_6: [
+      {key:'default', name:'通常衣装(弦月藤士郎専用)',
+        passive:{name:'あなたはあなた', kind:'partyMpCostReduce', mult:0.9, always:true,
+          desc:'常時、パーティ全員のスキルMP消費が10%軽減される。'}}
+    ],
+    liver_7: [
+      {key:'default', name:'通常衣装(先斗寧専用)',
+        passive:{name:'ルー・ベー・リー', kind:'randomAllyBoon', chance:0.18, healRatio:0.15, always:false,
+          desc:'戦闘中、毎ラウンド18%の確率で妖精が味方の誰かを見守り、HPが15%回復する。'}}
+    ],
+    liver_8: [
+      {key:'default', name:'通常衣装(石神のぞみ専用)',
+        passive:{name:'だってさぁ！', kind:'lowHpAtkBoost', threshold:0.3, mult:1.25, always:false,
+          desc:'自身のHPが30%以下のとき、攻撃力が25%上昇する。'}}
+    ],
+    liver_9: [
+      {key:'default', name:'通常衣装(風楽奏斗専用)',
+        passive:{name:'楽しんでこっぜ！', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
+          desc:'常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}}
+    ],
+    liver_10: [
+      {key:'default', name:'通常衣装(栞葉るり専用)',
+        passive:{name:'取締ビーム', kind:'coverAlly', threshold:0.3, always:false,
+          desc:'味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}}
+    ],
+  };
+  function costumeDefsFor(liverId){ return COSTUME_DEFS[liverId] || []; }
+  function defaultCostumeKeyFor(liverId){ const list = costumeDefsFor(liverId); return list.length ? list[0].key : null; }
+  function costumeDefFor(liverId, costumeKey){ return costumeDefsFor(liverId).find(c=>c.key===costumeKey); }
+  /* 現在装備中の衣装key。state.roster[id]がまだ存在しない場面
+   * (キャラ作成前のプレビュー・newLiverProgress構築中など)でも
+   * 安全にデフォルト衣装へフォールバックする。 */
+  function equippedCostumeKey(liverId){
+    const ls = state && state.roster && state.roster[liverId];
+    return (ls && ls.costume) || defaultCostumeKeyFor(liverId);
+  }
+  function equippedCostumeDef(liverId){
+    return costumeDefFor(liverId, equippedCostumeKey(liverId)) || costumeDefsFor(liverId)[0];
+  }
+  /* 旧LIVER_DEFS[id].passiveの代わりに、これで「今装備中の衣装のパッシブ」を取る。 */
+  function equippedPassive(liverId){
+    const def = equippedCostumeDef(liverId);
+    return def ? def.passive : null;
+  }
+  /* 将来の衣装解放手段(通常ドロップは使わない想定)から呼ぶための汎用関数。
+   * 呼び出し側でsaveGame()/render()を行うこと(unlockLiver()と同じ流儀)。 */
+  function unlockCostume(liverId, costumeKey){
+    const ls = liverState(liverId);
+    const def = costumeDefFor(liverId, costumeKey);
+    if(!ls || !def) return;
+    if(!ls.unlockedCostumes) ls.unlockedCostumes = [];
+    if(ls.unlockedCostumes.includes(costumeKey)) return;
+    ls.unlockedCostumes.push(costumeKey);
+    pushLog(`${liverDef(liverId).name}の新しい衣装「${def.name}」が解放された！`, 'reward');
+  }
+  function switchLiverCostume(liverId, costumeKey){
+    const ls = liverState(liverId);
+    const def = costumeDefFor(liverId, costumeKey);
+    if(!ls || !def) return;
+    if(!(ls.unlockedCostumes||[]).includes(costumeKey)) return;
+    if(ls.costume === costumeKey) return;
+    ls.costume = costumeKey;
+    recomputeLiverMaxStats(liverId, true);
+    pushLog(`${liverDef(liverId).name}の衣装を「${def.name}」に着替えた。`, 'system');
+    saveGame(); render();
+  }
   const PARTY_MAX = 4; // 編成上限は4のまま。ライバーが5人以上に増えても「誰を連れて行くか」の選択が生まれる設計にする
   function liverDef(id){ return LIVER_DEFS.find(d=>d.id===id); }
   function liverState(id){ return state.roster[id]; }
@@ -1733,7 +1816,7 @@
 
   /* 常時発動系パッシブ(kind:'statMult')による倍率。対象外なら1を返す。 */
   function passiveStatMult(liverId, stat){
-    const p = liverDef(liverId).passive;
+    const p = equippedPassive(liverId);
     if(!p) return 1;
     if(p.kind==='statMult' && p.stat===stat) return p.mult;
     if(p.kind==='partySizeStatMult' && (p.stats||[]).includes(stat)){
@@ -1830,11 +1913,14 @@
     const maxMp = Math.round(jobMaxMp(job, 1) * passiveStatMult(liverDefObj.id, 'mp'));
     const jobProgress = {};
     Object.keys(JOB_DEFS).forEach(jobId=>{ jobProgress[jobId] = newJobProgress(jobId); });
+    const defaultCostume = defaultCostumeKeyFor(liverDefObj.id);
     return {
       job, jobProgress,
       hp:maxHp, maxHp, mp:maxMp, maxMp,
       equipped: {weapon:null, armor:null},
-      unlocked: !!liverDefObj.startUnlocked
+      unlocked: !!liverDefObj.startUnlocked,
+      costume: defaultCostume,
+      unlockedCostumes: defaultCostume ? [defaultCostume] : []
     };
   }
 
@@ -1883,7 +1969,7 @@
    * 条件をまたいだ瞬間にのみpushLogで発動を知らせ、以後は同じ戦闘中は
    * 再通知しない。 */
   function activeCombatAtkMult(id){
-    const p = liverDef(id).passive;
+    const p = equippedPassive(id);
     if(!p) return 1;
     if(!combatPassiveFlags[id]) combatPassiveFlags[id] = {};
     const flags = combatPassiveFlags[id];
@@ -1926,7 +2012,7 @@
   function partyBuffAtkMult(){
     let mult = 1;
     state.party.forEach(id=>{
-      const p = liverDef(id).passive;
+      const p = equippedPassive(id);
       if(p && p.kind==='battleStartPartyBuff' && combatEnemy && (combatEnemy.turnCount||0) < (p.turns||0)){
         mult *= p.mult;
       }
@@ -1948,7 +2034,7 @@
   function partyLootMult(){
     let dropMult = 1, goldMult = 1;
     state.party.forEach(id=>{
-      const p = liverDef(id).passive;
+      const p = equippedPassive(id);
       if(p && p.kind==='lootBonus'){
         dropMult *= (p.dropRateMult || 1);
         goldMult *= (p.goldMult || 1);
@@ -1961,7 +2047,7 @@
   function partyMpCostMult(){
     let mult = 1;
     state.party.forEach(id=>{
-      const p = liverDef(id).passive;
+      const p = equippedPassive(id);
       if(p && p.kind==='partyMpCostReduce') mult *= (p.mult || 1);
     });
     return mult;
@@ -1971,7 +2057,7 @@
    * 戻り値は実際に回復したMP量(戦闘ログへの追記に使う)。 */
   function applyOnHitMpDrain(liverId, dmg){
     const ls = liverState(liverId);
-    const p = liverDef(liverId).passive;
+    const p = equippedPassive(liverId);
     if(!p || p.kind !== 'onHitMpDrain' || dmg <= 0) return 0;
     const before = ls.mp;
     ls.mp = Math.min(ls.maxMp, ls.mp + Math.max(1, Math.round(dmg * p.ratio)));
@@ -1981,11 +2067,11 @@
   /* 毎ラウンド低確率で発動する妖精の加護(先斗寧)。ラウンド開始時に1回だけ判定する。 */
   function maybeTriggerFairyBoon(){
     const holderId = state.party.find(id=>{
-      const p = liverDef(id).passive;
+      const p = equippedPassive(id);
       return p && p.kind==='randomAllyBoon' && liverState(id) && liverState(id).hp > 0;
     });
     if(!holderId) return;
-    const p = liverDef(holderId).passive;
+    const p = equippedPassive(holderId);
     if(Math.random() >= (p.chance||0)) return;
     const alive = alivePartyIds();
     if(!alive.length) return;
@@ -2005,7 +2091,7 @@
       if(id === actorId) return;
       const ls = liverState(id);
       if(!ls || ls.hp <= 0) return;
-      const p = liverDef(id).passive;
+      const p = equippedPassive(id);
       if(!p || p.kind !== 'allyActionStack') return;
       if(!combatPassiveFlags[id]) combatPassiveFlags[id] = {};
       const cur = combatPassiveFlags[id].stacks || 0;
@@ -2022,11 +2108,11 @@
       if(id === targetId) return false;
       const ls = liverState(id);
       if(!ls || ls.hp <= 0) return false;
-      const p = liverDef(id).passive;
+      const p = equippedPassive(id);
       return p && p.kind === 'coverAlly';
     });
     if(!coverId) return targetId;
-    const p = liverDef(coverId).passive;
+    const p = equippedPassive(coverId);
     if((targetLs.hp/targetLs.maxHp) > (p.threshold||0)) return targetId;
     pushLog(`${liverDef(coverId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}をかばった！`, 'system', true);
     return coverId;
@@ -2189,7 +2275,9 @@
           equipped_weapon_id: r.equipped.weapon ? r.equipped.weapon.id : null,
           equipped_armor_id: r.equipped.armor ? r.equipped.armor.id : null,
           loadout: jp.loadout.enabled, unlocked: !!r.unlocked,
-          job_progress: r.jobProgress
+          job_progress: r.jobProgress,
+          costume: r.costume || defaultCostumeKeyFor(def.id),
+          unlocked_costumes: r.unlockedCostumes || [defaultCostumeKeyFor(def.id)]
         };
       });
 
@@ -2293,7 +2381,11 @@
             weapon: r.equipped_weapon_id ? (itemById[r.equipped_weapon_id]||null) : null,
             armor: r.equipped_armor_id ? (itemById[r.equipped_armor_id]||null) : null
           },
-          unlocked: r.unlocked
+          unlocked: r.unlocked,
+          costume: r.costume || defaultCostumeKeyFor(r.liver_id),
+          unlockedCostumes: (Array.isArray(r.unlocked_costumes) && r.unlocked_costumes.length)
+            ? r.unlocked_costumes
+            : [defaultCostumeKeyFor(r.liver_id)]
         };
       });
       // 装備中のアイテムは所持品リストからは除外する(以前のwindow.storage版と同じ表現)
@@ -2480,7 +2572,7 @@
     combatPassiveFlags = {};
     pushLog(`Lv.${enemy.level} ${enemy.name}${enemy.boss?'が行く手を阻んだ！':'が現れた。'}`, 'danger');
     state.party.forEach(id=>{
-      const p = liverDef(id).passive;
+      const p = equippedPassive(id);
       if(p && p.kind==='battleStartPartyBuff'){
         pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ パーティ全体の士気が高まった！`, 'system', true);
       }
@@ -2632,7 +2724,7 @@
     if(element){
       dmg = Math.max(1, Math.round(dmg * liverElementalMultiplier(liverId, element)));
     }
-    const passive = liverDef(liverId).passive;
+    const passive = equippedPassive(liverId);
     if(passive && passive.kind === 'lowHpMitigate' && ls.maxHp > 0 && (ls.hp/ls.maxHp) <= passive.threshold){
       dmg = Math.max(1, Math.round(dmg * passive.mult));
       if(!combatPassiveFlags[liverId]) combatPassiveFlags[liverId] = {};
@@ -2737,7 +2829,7 @@
         if(otherId === liverId) return;
         const otherLs = liverState(otherId);
         if(!otherLs || otherLs.hp <= 0) return;
-        const passive = liverDef(otherId).passive;
+        const passive = equippedPassive(otherId);
         if(!passive || passive.kind !== 'allyDownRage') return;
         if(!combatPassiveFlags[otherId]) combatPassiveFlags[otherId] = {};
         if(!combatPassiveFlags[otherId].rageActive){
@@ -3276,12 +3368,13 @@
   function renderCreate(){
     const liverCardsHtml = LIVER_DEFS.map(def=>{
       const selected = createSelectedLiver === def.id;
+      const passive = equippedPassive(def.id);
       return `
         <button data-pick-liver="${def.id}" class="create-liver-card${selected?' selected':''}" style="${selected?`border-color:${def.color};`:''}">
           <span class="create-liver-chip" style="background:${def.color};"></span>
           <span class="create-liver-name">${esc(def.name)}</span>
           <span class="create-liver-title">${esc(JOB_DEFS[def.job].name)}</span>
-          ${def.passive ? `<span class="create-liver-title" style="opacity:.8;">パッシブ:${esc(def.passive.name)}</span>` : ''}
+          ${passive ? `<span class="create-liver-title" style="opacity:.8;">パッシブ:${esc(passive.name)}</span>` : ''}
         </button>`;
     }).join('');
 
@@ -3684,6 +3777,17 @@
     const jobSwitchHtml = Object.keys(JOB_DEFS).map(jobId=>`
       <button data-switch-liver-job="${id}:${jobId}" ${ls.job===jobId?'disabled':''} style="padding:3px 9px;font-size:11px;">${ls.job===jobId?'◆ ':''}${esc(JOB_DEFS[jobId].name)}</button>`).join('');
 
+    const currentCostumeKey = equippedCostumeKey(id);
+    const unlockedCostumeKeys = ls.unlockedCostumes || [defaultCostumeKeyFor(id)];
+    const costumeSwitchHtml = costumeDefsFor(id).map(c=>{
+      const isCurrent = c.key === currentCostumeKey;
+      const isUnlocked = unlockedCostumeKeys.includes(c.key);
+      if(!isUnlocked){
+        return `<button disabled style="padding:3px 9px;font-size:11px;opacity:.45;">🔒 ${esc(c.name)}</button>`;
+      }
+      return `<button data-switch-liver-costume="${id}:${c.key}" ${isCurrent?'disabled':''} style="padding:3px 9px;font-size:11px;">${isCurrent?'◆ ':''}${esc(c.name)}</button>`;
+    }).join('');
+
     const atkRow = `
       <div class="inv-item" style="border-left-color:var(--text-muted);opacity:.85;">
         <span class="inv-item-name">通常攻撃 <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(常時習得済み・下限50%)</span></span>
@@ -3692,7 +3796,7 @@
         </span>
       </div>`;
 
-    const passive = def.passive;
+    const passive = equippedPassive(id);
     const passiveRow = passive ? `
       <div class="inv-item" style="border-left-color:${def.color};">
         <span class="inv-item-name">
@@ -3747,6 +3851,8 @@
         <p style="color:var(--text-muted);font-size:11px;margin:0 0 6px;">EXP ${jp.exp}/${expToNext(jp.level)} ・ ${esc(job.desc)}</p>
         <p class="section-label" style="margin:6px 0 6px;">装備</p>
         ${equipHtml}
+        <p class="section-label" style="margin:10px 0 6px;">衣装</p>
+        <div class="actions" style="margin-top:0;margin-bottom:10px;">${costumeSwitchHtml}</div>
         <p class="section-label" style="margin:10px 0 6px;">パッシブスキル</p>
         ${passiveRow}
         <p class="section-label" style="margin:10px 0 6px;">ジョブ</p>
@@ -4249,6 +4355,12 @@
       b.addEventListener('click', ()=>{
         const [liverId, jobId] = b.getAttribute('data-switch-liver-job').split(':');
         switchLiverJob(liverId, jobId);
+      });
+    });
+    document.querySelectorAll('[data-switch-liver-costume]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const [liverId, costumeKey] = b.getAttribute('data-switch-liver-costume').split(':');
+        switchLiverCostume(liverId, costumeKey);
       });
     });
     document.querySelectorAll('[data-toggle-skill]').forEach(b=>{
