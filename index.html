@@ -2330,6 +2330,84 @@
     saveGame(); render();
   }
 
+  /* ---------------------------------------------------------------
+   * 戦闘力ランキング
+   * 数値自体はSupabase側(sync_combat_power RPC)がplayer_roster/
+   * player_inventoryの保存済みデータから権威を持って再計算するため、
+   * クライアントは表示専用。rankingListPreview/rankingBoardは戦闘中の
+   * combatEnemy等と同様、セーブ不要な一時状態としてモジュールスコープの
+   * 変数で保持する。
+   * 「総合」は1プレイヤーにつき一番強いライバー1体だけがエントリーする
+   * (liver_power_overall_rankingビュー側でplayer_idごとに絞り込み済み)。
+   * --------------------------------------------------------------- */
+  let rankingListPreview = null; // { loading, top:[...] } | null
+  let rankingBoard = null;       // { key, loading, top:[...], myRank:{rank, entry}|null, error } | null
+
+  function rankingBoardName(key){
+    if(key === 'overall') return '総合ランキング';
+    const def = liverDef(key);
+    return def ? def.name : key;
+  }
+
+  async function openRankingList(){
+    if(inCombat) return;
+    state.screen = 'rankings';
+    rankingListPreview = { loading:true, top:[] };
+    render();
+    try{
+      const { data, error } = await sb.from('liver_power_overall_ranking').select('*')
+        .order('combat_power', {ascending:false}).order('achieved_at', {ascending:true}).limit(5);
+      if(error) throw error;
+      rankingListPreview = { loading:false, top: data || [] };
+    }catch(e){
+      console.error('ranking preview fetch failed', e);
+      rankingListPreview = { loading:false, top:[] };
+    }
+    render();
+  }
+
+  /* boardKeyは'overall'、またはライバーID(個別ランキング)。 */
+  async function openRankingDetail(boardKey){
+    if(inCombat) return;
+    state.screen = 'rankingDetail';
+    if(!state.ui) state.ui = {};
+    state.ui.rankingSelected = boardKey;
+    rankingBoard = { key: boardKey, loading:true, top:[], myRank:null, error:false };
+    render();
+    try{
+      const uid = await ensureAuth();
+      const table = boardKey === 'overall' ? 'liver_power_overall_ranking' : 'liver_power_rankings';
+
+      let topQuery = sb.from(table).select('*')
+        .order('combat_power', {ascending:false}).order('achieved_at', {ascending:true}).limit(100);
+      if(boardKey !== 'overall') topQuery = topQuery.eq('liver_id', boardKey);
+      const { data: topData, error: topError } = await topQuery;
+      if(topError) throw topError;
+
+      let myEntryQuery = sb.from(table).select('*').eq('player_id', uid);
+      if(boardKey !== 'overall') myEntryQuery = myEntryQuery.eq('liver_id', boardKey);
+      const { data: myEntry } = await myEntryQuery.maybeSingle();
+
+      let myRank = null;
+      if(myEntry){
+        let higherQuery = sb.from(table).select('*', {count:'exact', head:true}).gt('combat_power', myEntry.combat_power);
+        let tieQuery = sb.from(table).select('*', {count:'exact', head:true}).eq('combat_power', myEntry.combat_power).lt('achieved_at', myEntry.achieved_at);
+        if(boardKey !== 'overall'){
+          higherQuery = higherQuery.eq('liver_id', boardKey);
+          tieQuery = tieQuery.eq('liver_id', boardKey);
+        }
+        const [{count:higherCount}, {count:tieCount}] = await Promise.all([higherQuery, tieQuery]);
+        myRank = { rank: (higherCount||0) + (tieCount||0) + 1, entry: myEntry };
+      }
+
+      rankingBoard = { key: boardKey, loading:false, top: topData || [], myRank, error:false };
+    }catch(e){
+      console.error('ranking detail fetch failed', e);
+      rankingBoard = { key: boardKey, loading:false, top:[], myRank:null, error:true };
+    }
+    render();
+  }
+
   /* ---------------- Persistence(Supabase) ---------------- */
 
   /* stateオブジェクトの形は今まで通り保ったまま、読み書きの中身だけを
@@ -2394,6 +2472,11 @@
         p_tutorial_done: !!state.tutorialDone
       });
       if(error) console.error('save_full_state failed', error);
+
+      // 戦闘力ランキング反映。サーバー側で保存済みのroster/inventoryから
+      // 権威ある値を再計算するため、失敗してもメインの保存自体は成功扱いにする。
+      const { error: cpError } = await sb.rpc('sync_combat_power');
+      if(cpError) console.error('sync_combat_power failed', cpError);
     }catch(e){ console.error('save failed', e); }
   }
 
@@ -3666,6 +3749,7 @@
         <button class="primary" id="gotoSummonBtn">召喚</button>
         <button class="primary" id="gotoExchangeBtn">交換所</button>
         <button class="primary" id="gotoHomeBtn">家へ帰る</button>
+        <button class="primary" id="gotoRankingsBtn">ランキング</button>
         <button class="danger" id="gotoColosseumBtn">コロシアムタワー</button>
         <button class="danger" id="gotoRiftBtn">次元断層ポモ・ドーロ</button>
       </div>
@@ -3691,6 +3775,87 @@
       <div class="section-block">
         <p class="section-label">挑むパーティ</p>
         ${partyRowsHtml || '<p class="inv-empty">パーティが編成されていない。</p>'}
+      </div>
+    `;
+  }
+
+  function renderRankingRow(row, index, highlight){
+    const liverLabel = row.liver_id ? (liverDef(row.liver_id) ? liverDef(row.liver_id).name : row.liver_id) : '';
+    return `
+      <div class="inv-item" style="${highlight ? 'border-left-color:var(--gold);background:rgba(255,216,99,0.12);' : ''}">
+        <span class="inv-item-name">
+          <span style="color:var(--gold);font-family:var(--font-mono);">${index}位</span>
+          ${esc(row.player_name)}${liverLabel ? ` <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${esc(liverLabel)})</span>` : ''}
+          <span style="float:right;color:var(--gold);font-family:var(--font-mono);">戦闘力 ${row.combat_power}</span>
+        </span>
+      </div>`;
+  }
+
+  function renderRankingsInner(){
+    const boardButtonsHtml = [{key:'overall', name:'総合ランキング'}]
+      .concat(LIVER_DEFS.map(d=>({key:d.id, name:d.name})))
+      .map(b=>`<button data-open-ranking="${b.key}" style="padding:5px 12px;font-size:12px;">${esc(b.name)}</button>`)
+      .join('');
+
+    const previewHtml = (!rankingListPreview || rankingListPreview.loading)
+      ? '<p class="log-entry system">読み込み中……</p>'
+      : rankingListPreview.top.length
+        ? rankingListPreview.top.map((row,i)=>renderRankingRow(row, i+1, row.player_id===state.playerId)).join('')
+        : '<p class="inv-empty">まだ記録がありません。</p>';
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('戦闘力ランキング')}
+        <p class="log-entry system">気になるランキングを選ぶと、上位100位とあなたの順位を確認できる。</p>
+      </div>
+      <div class="actions">
+        <button id="backTownBtn">町に戻る</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">総合ランキング TOP5</p>
+        ${previewHtml}
+      </div>
+      <div class="section-block">
+        <p class="section-label">ランキング一覧</p>
+        <div class="actions" style="margin-top:0;">${boardButtonsHtml}</div>
+      </div>
+    `;
+  }
+
+  function renderRankingDetailInner(){
+    const boardKey = state.ui.rankingSelected;
+    const board = rankingBoard;
+
+    const myRankHtml = (!board || board.loading)
+      ? '<p class="log-entry system">読み込み中……</p>'
+      : board.error
+        ? '<p class="log-entry danger">読み込みに失敗した。時間をおいて開き直してみてほしい。</p>'
+        : board.myRank
+          ? renderRankingRow(
+              { player_name: state.name, liver_id: board.myRank.entry.liver_id, combat_power: board.myRank.entry.combat_power },
+              board.myRank.rank, true)
+          : '<p class="inv-empty">まだランクインする記録がない(このライバーで戦闘力が反映されると表示される)。</p>';
+
+    const listHtml = (!board || board.loading || board.error)
+      ? ''
+      : board.top.length
+        ? board.top.map((row,i)=>renderRankingRow(row, i+1, row.player_id===state.playerId)).join('')
+        : '<p class="inv-empty">まだ記録がありません。</p>';
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml(rankingBoardName(boardKey))}
+      </div>
+      <div class="actions">
+        <button id="backRankingsBtn">ランキング一覧に戻る</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">あなたの順位</p>
+        ${myRankHtml}
+      </div>
+      <div class="section-block">
+        <p class="section-label">TOP100</p>
+        ${listHtml}
       </div>
     `;
   }
@@ -4188,6 +4353,8 @@
     else if(state.screen === 'exchange') inner = renderExchangeInner();
     else if(state.screen === 'rift') inner = renderRiftInner();
     else if(state.screen === 'home') inner = renderHomeInner();
+    else if(state.screen === 'rankings') inner = renderRankingsInner();
+    else if(state.screen === 'rankingDetail') inner = renderRankingDetailInner();
     else if(state.screen === 'dead') inner = renderDeadInner();
     else inner = renderTownInner();
     return `<div class="scene">${inner}</div>`;
@@ -4361,6 +4528,13 @@
     on('gotoColosseumBtn', gotoColosseum);
     on('gotoRiftBtn', ()=>gotoScreen('rift'));
     on('riftEnterBtn', startRift);
+    on('gotoRankingsBtn', openRankingList);
+    on('backRankingsBtn', openRankingList);
+    document.querySelectorAll('[data-open-ranking]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        openRankingDetail(b.getAttribute('data-open-ranking'));
+      });
+    });
     on('riftClaimBtn', claimRiftReward);
     on('riftRetreatBtn', retreatFromRift);
     on('riftCloseResultBtn', closeRiftResult);
