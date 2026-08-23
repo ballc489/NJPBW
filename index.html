@@ -531,8 +531,10 @@
     const type = pool[Math.floor(Math.random()*pool.length)];
     /* 敵の強さはパーティの強さではなく、そのダンジョン固有のレベルを基準にする。
      * こうすることで、育った仲間を連れて序盤のダンジョンへ新キャラを鍛えに
-     * 戻っても、敵の強さは変わらず安全に育成できる(意図的な設計)。 */
-    const level = Math.max(1, dungeonDef.level + pickLevelOffset(depth));
+     * 戻っても、敵の強さは変わらず安全に育成できる(意図的な設計)。
+     * チュートリアル専用ダンジョンだけは、深度が進んでも雑魚が強くならない
+     * よう常にLv.1固定にする(Lv.1・1人パーティを想定した唯一のダンジョンのため)。 */
+    const level = dungeonDef.id === 'tutorial' ? 1 : Math.max(1, dungeonDef.level + pickLevelOffset(depth));
     const base = statsForLevel(level);
     const hp  = Math.max(5, Math.round(base.hp  * type.hpMult * partySizeHpMult()));
     const atk = Math.max(1, Math.round(base.atk * type.atkMult));
