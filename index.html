@@ -3521,6 +3521,17 @@
     return d.innerHTML;
   }
 
+  /* 表示名の横に添える短縮ID。名前は自由に変更できてしまうため、
+   * 変更不可能なplayer_id(UUID)の先頭8文字を、なりすまし対策の
+   * 目印として一緒に表示する(ランキング・チャット・コロシアムの
+   * 門番表示など、他プレイヤーの名前が出る箇所全般で使う)。 */
+  function shortId(playerId){
+    return playerId ? esc(playerId.slice(0,8)) : '--------';
+  }
+  function nameWithId(name, playerId){
+    return `${esc(name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:10px;">#${shortId(playerId)}</span>`;
+  }
+
   function renderCreate(){
     const liverCardsHtml = LIVER_DEFS.map(def=>{
       const selected = createSelectedLiver === def.id;
@@ -3785,7 +3796,7 @@
       <div class="inv-item" style="${highlight ? 'border-left-color:var(--gold);background:rgba(255,216,99,0.12);' : ''}">
         <span class="inv-item-name">
           <span style="color:var(--gold);font-family:var(--font-mono);">${index}位</span>
-          ${esc(row.player_name)}${liverLabel ? ` <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${esc(liverLabel)})</span>` : ''}
+          ${nameWithId(row.player_name, row.player_id)}${liverLabel ? ` <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${esc(liverLabel)})</span>` : ''}
           <span style="float:right;color:var(--gold);font-family:var(--font-mono);">戦闘力 ${row.combat_power}</span>
         </span>
       </div>`;
@@ -3832,7 +3843,7 @@
         ? '<p class="log-entry danger">読み込みに失敗した。時間をおいて開き直してみてほしい。</p>'
         : board.myRank
           ? renderRankingRow(
-              { player_name: state.name, liver_id: board.myRank.entry.liver_id, combat_power: board.myRank.entry.combat_power },
+              { player_name: state.name, player_id: state.playerId, liver_id: board.myRank.entry.liver_id, combat_power: board.myRank.entry.combat_power },
               board.myRank.rank, true)
           : '<p class="inv-empty">まだランクインする記録がない(このライバーで戦闘力が反映されると表示される)。</p>';
 
@@ -4410,7 +4421,7 @@
           ${sceneHeadingHtml(`コロシアムタワー ${combatEnemy.colosseumFloor}F`)}
           ${actionsHtml}
           <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--text-muted);margin-top:16px;">
-            Lv.${combatEnemy.level} ${esc(combatEnemy.name)} — HP ${Math.max(0,combatEnemyHp)}/${combatEnemy._maxHp}
+            Lv.${combatEnemy.level} ${nameWithId(combatEnemy.name, combatEnemy.colosseumHolderId)} — HP ${Math.max(0,combatEnemyHp)}/${combatEnemy._maxHp}
           </p>
           <div class="bar-track" style="margin-bottom:6px;"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#7a2fc6,#b06bff);height:100%;"></div></div>
           <div style="margin-bottom:14px;">${renderStatusEffectChips(combatEnemy.statusEffects)}</div>
@@ -4434,7 +4445,7 @@
         </div>`).join('');
       gatekeeperHtml = `
         <p class="log-entry" style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">
-          ${cs.floorRight}Fの門番: ${esc(rec.holderName || '(まだ誰も登録していない)')}
+          ${cs.floorRight}Fの門番: ${rec.holderName ? nameWithId(rec.holderName, rec.holderId) : esc('(まだ誰も登録していない)')}
         </p>
         <p class="log-entry" style="font-size:12px;color:var(--text-muted);">残りHP: ${rec.hpPool} / ${rec.maxHpPool} (${hpPct}%)${rec.wins ? ` ・ 防衛${rec.wins}勝` : ''}</p>
         <div class="bar-track" style="margin-bottom:10px;"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#7a2fc6,#b06bff);height:100%;"></div></div>
@@ -4631,7 +4642,7 @@
         .select('*').order('created_at', {ascending:false}).limit(100);
       if(error) throw error;
       return (data||[]).slice().reverse().map(m=>(
-        { name: m.player_name, text: m.body, ts: new Date(m.created_at).getTime() }
+        { name: m.player_name, id: m.player_id, text: m.body, ts: new Date(m.created_at).getTime() }
       ));
     }catch(e){
       console.error('load chat failed', e);
@@ -4641,7 +4652,7 @@
 
   function renderChatMessages(){
     if(!chatCache.length) return '<p style="color:var(--text-muted);">まだ発言はない。</p>';
-    return chatCache.map(m=>`<p><span style="color:var(--gold);">${esc(m.name)}:</span> ${esc(m.text)}</p>`).join('');
+    return chatCache.map(m=>`<p><span style="color:var(--gold);">${nameWithId(m.name, m.id)}:</span> ${esc(m.text)}</p>`).join('');
   }
 
   async function refreshChatDOM(){
@@ -4683,7 +4694,7 @@
     chatChannel = sb.channel('public:chat_messages')
       .on('postgres_changes', {event:'INSERT', schema:'public', table:'chat_messages'}, (payload)=>{
         const m = payload.new;
-        chatCache.push({ name: m.player_name, text: m.body, ts: new Date(m.created_at).getTime() });
+        chatCache.push({ name: m.player_name, id: m.player_id, text: m.body, ts: new Date(m.created_at).getTime() });
         if(chatCache.length > 100) chatCache.shift();
         if(state && state.ui && state.ui.bottomTab === 'chat'){
           const el = document.getElementById('chatLog');
