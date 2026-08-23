@@ -1841,6 +1841,52 @@
   function jobBaseDef(jobId, level){ return Math.round(baseDefFor(level) * JOB_DEFS[jobId].defMult); }
   function jobMaxMp(jobId, level){ return Math.round(baseMpFor(level) * JOB_DEFS[jobId].mpMult); }
 
+  /* ---------------------------------------------------------------
+   * 戦闘力
+   * あえてパッシブは一切加味しない(ライバーによって自身のステータスに
+   * 乗らない系統のパッシブもあり、育成状況が同じなのに数値差が開いて
+   * しまうのを避けるため)。スキル編成の中身(何を有効化しているか)も
+   * 見ない(戦術的に一部だけ有効化する選択を不利にしたくないため)。
+   *
+   * 現在のジョブ(装備込み)のステータスを主体としつつ、他の2ジョブの
+   * 育成状況(そのジョブでのレベル分のステータス「素質」、装備ボーナスは
+   * 乗らない)も控えめな重みで加算する。これにより、同じレベルでも
+   * 他ジョブを育てている人の方が戦闘力で優位に立てる。
+   * --------------------------------------------------------------- */
+  const CP_MAIN_WEIGHT = { hp:1.0, atk:3.5, def:3.5, mp:0.5 };
+  const CP_OTHER_JOB_WEIGHT = { hp:0.3, atk:1.0, def:1.0, mp:0.15 };
+
+  function jobStatPotential(jobId, level){
+    return {
+      hp: jobMaxHp(jobId, level),
+      atk: jobBaseAtk(jobId, level),
+      def: jobBaseDef(jobId, level),
+      mp: jobMaxMp(jobId, level)
+    };
+  }
+  function weightedStatSum(stat, weight){
+    return stat.hp*weight.hp + stat.atk*weight.atk + stat.def*weight.def + stat.mp*weight.mp;
+  }
+
+  function combatPower(liverId){
+    const ls = liverState(liverId);
+    if(!ls) return 0;
+    const activeJob = ls.job;
+    const activeLevel = (ls.jobProgress[activeJob] || {}).level || 1;
+
+    const mainStat = jobStatPotential(activeJob, activeLevel);
+    mainStat.atk += ls.equipped.weapon ? ls.equipped.weapon.value : 0;
+    mainStat.def += ls.equipped.armor ? ls.equipped.armor.value : 0;
+
+    let total = weightedStatSum(mainStat, CP_MAIN_WEIGHT);
+    Object.keys(JOB_DEFS).forEach(jobId=>{
+      if(jobId === activeJob) return;
+      const level = (ls.jobProgress[jobId] || {}).level || 1;
+      total += weightedStatSum(jobStatPotential(jobId, level), CP_OTHER_JOB_WEIGHT);
+    });
+    return Math.round(total);
+  }
+
   /* 常時発動系パッシブ(kind:'statMult')による倍率。対象外なら1を返す。 */
   function passiveStatMult(liverId, stat){
     const p = equippedPassive(liverId);
@@ -3786,7 +3832,7 @@
     const summaryRow = `
       <div class="inv-item" style="${inParty?'border-left-color:var(--gold);':''}">
         <span style="width:10px;height:10px;background:${def.color};display:inline-block;margin-right:8px;"></span>
-        <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${jp.level} ・ ${esc(job.name)}</span></span>
+        <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${jp.level} ・ ${esc(job.name)} ・ <span style="color:var(--gold);">戦闘力 ${combatPower(id)}</span></span></span>
         <span class="inv-item-actions">
           <button data-toggle-party="${id}" ${(!inParty && state.party.length>=PARTY_MAX)?'disabled':''}>${inParty?'外す':'編成に入れる'}</button>
           <button data-toggle-group="liver:${id}" class="${expanded?'primary':''}">${expanded?'閉じる':'詳細設定'}</button>
