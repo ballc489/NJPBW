@@ -315,6 +315,11 @@
     border-radius:0;margin:14px 0;
   }
   .create-box p{color:var(--text-muted);line-height:1.7;font-size:14px;}
+  /* 利用規約本文: 板(.panel)の中は.create-box pの薄灰色より読みやすい
+   * text-primaryを優先させたいので、.create-box pと同specificityのまま
+   * 後勝ちさせるためここで再宣言する。 */
+  .tos-panel p{color:var(--text-primary);text-align:left;}
+  .tos-panel strong{color:#fff;}
   .create-liver-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px;}
   .create-liver-card{
     display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;
@@ -4893,7 +4898,7 @@
         <h1>${GAME_TITLE_HTML}</h1>
         <p class="subtitle">${GAME_SUBTITLE}</p>
         <p style="color:var(--danger);font-weight:700;margin-top:24px;">このアカウントは利用規約違反により、利用を停止しています。</p>
-        ${reason ? `<p style="color:var(--text-muted);font-size:12px;">理由: ${esc(reason)}</p>` : ''}
+        ${reason ? `<p style="color:#000;font-size:12px;">理由: ${esc(reason)}</p>` : ''}
       </div>
     `;
   }
@@ -4922,11 +4927,11 @@
       <div class="create-box">
         <h1>${GAME_TITLE_HTML}</h1>
         <p class="subtitle">${GAME_SUBTITLE}</p>
-        <p class="section-label" style="text-align:left;margin-top:20px;">利用規約</p>
-        <div class="scrollbox" style="max-height:320px;text-align:left;font-size:12px;line-height:1.7;color:var(--text-muted);padding:10px;border:1px solid var(--win-border-inner);">
+        <p class="section-label" style="text-align:left;margin-top:20px;color:#000;">利用規約</p>
+        <div class="panel tos-panel scrollbox" style="max-height:320px;font-size:12px;">
           ${TOS_TEXT_HTML}
         </div>
-        <p style="font-size:11px;color:var(--text-muted);margin-top:10px;">「同意して始める」を押すと、上記の利用規約に同意したものとみなします。</p>
+        <p style="font-size:11px;color:var(--text-primary);text-shadow:1px 1px 0 #2c5c2c;margin-top:10px;">「同意して始める」を押すと、上記の利用規約に同意したものとみなします。</p>
         <div class="actions" style="justify-content:center;margin-top:10px;">
           <button class="primary" id="agreeTosBtn">同意して始める</button>
         </div>
