@@ -28,6 +28,9 @@
     --rare-uncommon:#8fe08f;
     --rare-rare:#ffd863;
     --rare-epic:#ff9f5a;
+    --buff:#5eea87;
+    --debuff:#ffb347;
+    --ailment:#e08bff;
 
     --font-display:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic Medium","Yu Gothic","Meiryo",sans-serif;
     --font-body:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic Medium","Yu Gothic","Meiryo",sans-serif;
@@ -280,6 +283,29 @@
   .mini-bar-fill.hp{background:linear-gradient(90deg,#c62f2f,var(--hp-red));}
   .mini-bar-fill.mp{background:linear-gradient(90deg,#2a5ec9,#5a9bf0);}
   .party-compact-hp{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);width:60px;flex:0 0 auto;text-align:right;}
+
+  /* バフ/デバフ/状態異常アイコン(絵文字は使わず自作のインラインSVG) */
+  .icon-row{display:flex;gap:6px;margin-top:3px;flex-wrap:wrap;}
+  .icon-chip{
+    position:relative;
+    width:18px;height:18px;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+    border:1.5px solid currentColor;
+    cursor:default;
+  }
+  .icon-chip svg{width:12px;height:12px;display:block;}
+  .icon-chip.buff{color:var(--buff);background:rgba(94,234,135,0.22);}
+  .icon-chip.debuff{color:var(--debuff);background:rgba(255,179,71,0.22);}
+  .icon-chip.ailment{color:var(--ailment);background:rgba(224,139,255,0.22);}
+  .icon-chip .turns{
+    position:absolute;right:-4px;bottom:-5px;
+    font-family:var(--font-mono);font-size:8px;font-weight:700;line-height:1;
+    color:#0a1230;padding:1px 2.5px;border-radius:5px;
+  }
+  .icon-chip.buff .turns{background:var(--buff);}
+  .icon-chip.debuff .turns{background:var(--debuff);}
+  .icon-chip.ailment .turns{background:var(--ailment);}
+  .icon-chip[title]:hover{outline:1px solid var(--gold);outline-offset:1px;}
 
   /* character creation */
   .create-box{max-width:440px;margin:60px auto;text-align:center;}
@@ -1253,6 +1279,39 @@
     poison:'毒', regen:'再生', stun:'行動不能', silence:'沈黙'
   };
   function statusEffectLabel(type){ return STATUS_EFFECT_LABELS[type] || type; }
+
+  /* パーティ欄・敵ステータス欄に出すバフ/デバフ/状態異常アイコン。
+   * 絵文字は使わず、種類ごとに形の異なる塗りつぶしSVGを自作している。
+   * category(buff/debuff/ailment)がCSS側の配色(緑/橙/紫)を決める。 */
+  const STATUS_EFFECT_ICONS = {
+    atkBuff:  { category:'buff',    svg:'<path d="M12 3 L21 15 H15 V21 H9 V15 H3 Z"/>' },
+    defBuff:  { category:'buff',    svg:'<path d="M12 2 L20 5.5 V11 C20 16.5 16.8 20.2 12 22 C7.2 20.2 4 16.5 4 11 V5.5 Z"/>' },
+    regen:    { category:'buff',    svg:'<path d="M11 4 H13 V11 H20 V13 H13 V20 H11 V13 H4 V11 H11 Z"/>' },
+    atkDebuff:{ category:'debuff',  svg:'<path d="M12 21 L3 9 H9 V3 H15 V9 H21 Z"/>' },
+    defDebuff:{ category:'debuff',  svg:'<path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" d="M12 2 L20 5.5 V11 C20 16.5 16.8 20.2 12 22 C7.2 20.2 4 16.5 4 11 V5.5 Z"/>' },
+    poison:   { category:'ailment', svg:'<path d="M12 2 C12 2 5.5 11 5.5 15.5 A6.5 6.5 0 0 0 18.5 15.5 C18.5 11 12 2 12 2 Z"/>' },
+    stun:     { category:'ailment', svg:'<path d="M8 4 H11 V20 H8 Z M13 4 H16 V20 H13 Z"/>' },
+    silence:  { category:'ailment', svg:'<path fill="currentColor" d="M4 5 H20 V15 H10 L6 19 V15 H4 Z"/><line x1="2" y1="21" x2="22" y2="3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' }
+  };
+
+  /* effectsMapからバフ/デバフ/状態異常アイコンの行HTMLを組み立てる。
+   * 何も付与されていなければ空文字(既存レイアウトに一切影響しない)。 */
+  function renderStatusEffectChips(effectsMap){
+    if(!effectsMap) return '';
+    const keys = Object.keys(effectsMap);
+    if(!keys.length) return '';
+    const chips = keys.map(type=>{
+      const meta = STATUS_EFFECT_ICONS[type];
+      if(!meta) return '';
+      const eff = effectsMap[type];
+      const label = statusEffectLabel(type);
+      return `<span class="icon-chip ${meta.category}" title="${esc(label)}(残り${eff.turnsLeft}ターン)">
+        <svg viewBox="0 0 24 24" fill="currentColor">${meta.svg}</svg>
+        <span class="turns">${eff.turnsLeft}</span>
+      </span>`;
+    }).join('');
+    return `<span class="icon-row">${chips}</span>`;
+  }
 
   /* ---------------------------------------------------------------
    * 敵スキル: 汎用効果システム
@@ -3373,7 +3432,8 @@
           <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--text-muted);margin-top:16px;">
             Lv.${combatEnemy.level} ${esc(combatEnemy.name)} — HP ${Math.max(0,combatEnemyHp)}/${combatEnemy._maxHp} ・ 弱点属性: ${esc(weaknessLabel)}
           </p>
-          <div class="bar-track" style="margin-bottom:14px;"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#c62f2f,var(--hp-red));height:100%;"></div></div>
+          <div class="bar-track" style="margin-bottom:6px;"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#c62f2f,var(--hp-red));height:100%;"></div></div>
+          <div style="margin-bottom:14px;">${renderStatusEffectChips(combatEnemy.statusEffects)}</div>
           ${renderLog()}
         </div>`;
     }
@@ -3948,6 +4008,7 @@
           <span class="party-compact-bars">
             <span class="mini-bar-track"><span class="mini-bar-fill hp" style="width:${hpPct}%;"></span></span>
             <span class="mini-bar-track"><span class="mini-bar-fill mp" style="width:${mpPct}%;"></span></span>
+            ${renderStatusEffectChips(playerStatusEffects[id])}
           </span>
           <span class="party-compact-hp">${ls.hp<=0?'戦闘不能':`${ls.hp}/${ls.maxHp}`}</span>
         </div>`;
@@ -3971,7 +4032,8 @@
           <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--text-muted);margin-top:16px;">
             Lv.${combatEnemy.level} ${esc(combatEnemy.name)} — HP ${Math.max(0,combatEnemyHp)}/${combatEnemy._maxHp}
           </p>
-          <div class="bar-track" style="margin-bottom:14px;"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#7a2fc6,#b06bff);height:100%;"></div></div>
+          <div class="bar-track" style="margin-bottom:6px;"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#7a2fc6,#b06bff);height:100%;"></div></div>
+          <div style="margin-bottom:14px;">${renderStatusEffectChips(combatEnemy.statusEffects)}</div>
           ${renderLog()}
         </div>`;
     }
