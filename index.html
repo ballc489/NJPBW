@@ -3588,11 +3588,11 @@
       <div class="create-box">
         <h1>${GAME_TITLE_HTML}</h1>
         <p class="subtitle">${GAME_SUBTITLE}</p>
-        <p>かつての文明が滅びてから幾星霜。地の底には、失われた時代の遺構が今も眠っている。<br>
+        <p style="color:#000;">かつての文明が滅びてから幾星霜。地の底には、失われた時代の遺構が今も眠っている。<br>
         あなたは再興された小さな町に降り立ち、糧となる何かを求めて迷宮へ向かおうとしている。</p>
         <input id="nameInput" type="text" placeholder="冒険者の名を入力" maxlength="12" value="${esc(createNameDraft)}">
-        <p class="section-label" style="margin-top:18px;text-align:left;">最初の仲間を1人選ぼう</p>
-        <p style="color:var(--text-muted);font-size:11px;margin:0 0 10px;text-align:left;">選ばなかった仲間は、この先の迷宮の奥で出会うことになる。</p>
+        <p class="section-label" style="margin-top:18px;text-align:left;color:var(--text-primary);text-shadow:1px 1px 0 var(--field-ground-dark);">最初の仲間を1人選ぼう</p>
+        <p style="color:var(--text-primary);text-shadow:1px 1px 0 var(--field-ground-dark);font-size:11px;margin:0 0 10px;text-align:left;">選ばなかった仲間は、この先の迷宮の奥で出会うことになる。</p>
         <div class="create-liver-grid">${liverCardsHtml}</div>
         <div class="actions" style="justify-content:center;">
           <button class="primary" id="startBtn" ${createSelectedLiver?'':'disabled'}>町へ降り立つ</button>
@@ -4789,14 +4789,14 @@
     if(state.rift.result){
       const r = state.rift.result;
       const levelUpHtml = r.levelUps.length
-        ? r.levelUps.map(lu=>`<p class="log-entry reward" style="margin:2px 0;">${esc(lu.name)}のレベルが ${lu.level} に上がった！</p>`).join('')
+        ? r.levelUps.map(lu=>`<p class="log-entry reward" style="margin:2px 0;color:var(--gold);">${esc(lu.name)}のレベルが ${lu.level} に上がった！</p>`).join('')
         : '';
       return `
         <div class="create-box" style="text-align:center;">
           <h1>${GAME_TITLE_HTML}</h1>
           <p class="subtitle">${GAME_SUBTITLE}</p>
           <h2 style="margin-top:24px;">次元断層ポモ・ドーロ ― 探索結果</h2>
-          <p class="log-entry system" style="font-size:15px;">パーティが無事に帰還した。</p>
+          <p class="log-entry system" style="font-size:15px;color:#000;">パーティが無事に帰還した。</p>
           <div class="section-block" style="text-align:left;max-width:360px;margin:16px auto;">
             <div class="inv-item"><span class="inv-item-name">ゴールド</span><span class="inv-item-actions" style="color:var(--gold);">+${r.gold}G</span></div>
             <div class="inv-item"><span class="inv-item-name">経験値</span><span class="inv-item-actions">+${r.exp}</span></div>
@@ -4804,7 +4804,7 @@
           </div>
           ${levelUpHtml}
           <div class="actions" style="justify-content:center;margin-top:16px;"><button class="primary" id="riftCloseResultBtn">閉じる</button></div>
-          <p class="section-label" style="margin-top:20px;">挑んでいた仲間</p>
+          <p class="section-label" style="margin-top:20px;color:var(--text-primary);text-shadow:1px 1px 0 var(--field-ground-dark);">挑んでいた仲間</p>
           <div style="max-width:360px;margin:0 auto;">${participantsHtml}</div>
         </div>
       `;
@@ -4821,14 +4821,14 @@
         <p class="subtitle">${GAME_SUBTITLE}</p>
         <h2 style="margin-top:24px;">次元断層ポモ・ドーロ</h2>
         ${ready
-          ? `<p class="log-entry reward" style="font-size:16px;">探索が完了した。仲間たちが戻ってくる……</p>
+          ? `<p class="log-entry reward" style="font-size:16px;color:var(--gold);">探索が完了した。仲間たちが戻ってくる……</p>
              <div class="actions" style="justify-content:center;"><button class="primary" id="riftClaimBtn">結果を受け取る</button></div>`
-          : `<p class="log-entry system" style="font-size:16px;">次元の狭間に挑んでいる……</p>
+          : `<p class="log-entry system" style="font-size:16px;color:#000;">次元の狭間に挑んでいる……</p>
              <p style="font-family:var(--font-mono);font-size:28px;color:var(--gold);margin:16px 0;">${mins}:${String(secs).padStart(2,'0')}</p>
-             <p style="color:var(--text-muted);font-size:12px;">この間、画面遷移やチャットを含め他の操作は一切行えません。</p>
+             <p style="color:var(--text-primary);text-shadow:1px 1px 0 var(--field-ground-dark);font-size:12px;">この間、画面遷移やチャットを含め他の操作は一切行えません。</p>
              <div class="actions" style="justify-content:center;margin-top:12px;"><button class="danger" id="riftRetreatBtn">撤退する</button></div>`
         }
-        <p class="section-label" style="margin-top:20px;">挑んでいる仲間</p>
+        <p class="section-label" style="margin-top:20px;color:var(--text-primary);text-shadow:1px 1px 0 var(--field-ground-dark);">挑んでいる仲間</p>
         <div style="max-width:360px;margin:0 auto;">${participantsHtml}</div>
       </div>
     `;
@@ -4913,7 +4913,7 @@
       // 実質何もしない。キャラ作成前に再読み込みされてもゲートを出し直さないよう、
       // ブラウザ側にも同意済みを控えておく(キャラ作成完了時にサーバー側へ再送する)。
       localStorage.setItem('tosAgreedLocal', String(CURRENT_TOS_VERSION));
-      app.innerHTML = `<p style="text-align:center;color:var(--text-muted);margin-top:80px;font-family:var(--font-mono);">呼び起こしている……</p>`;
+      app.innerHTML = `<p style="text-align:center;color:#000;margin-top:80px;font-family:var(--font-mono);">呼び起こしている……</p>`;
       await proceedToGame();
     }catch(e){
       console.error('agree_to_tos failed', e);
