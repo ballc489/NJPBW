@@ -1714,27 +1714,42 @@
     liver_1: [
       {key:'default', name:'通常衣装(樋口楓専用)',
         passive:{name:'こんでろーん', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
-          desc:'戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}}
+          desc:'戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'statMult', stat:'atk', mult:1.2, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、攻撃力が20%上昇する。'}}
     ],
     liver_2: [
       {key:'default', name:'通常衣装(ジョー・力一専用)',
         passive:{name:'NEOてぇてぇ', kind:'partySizeStatMult', stats:['atk','def'], perMember:0.06, always:true,
-          desc:'常時、編成人数が多いほど攻撃力・防御力が上昇する(1人につき+6%、4人編成で+18%)。'}}
+          desc:'常時、編成人数が多いほど攻撃力・防御力が上昇する(1人につき+6%、4人編成で+18%)。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'lowHpAtkBoost', threshold:0.3, mult:1.3, always:false,
+          desc:'(仮設定・後日差し替え予定) 自身のHPが30%以下のとき、攻撃力が30%上昇する。'}}
     ],
     liver_3: [
       {key:'default', name:'通常衣装(魔界ノりりむ専用)',
         passive:{name:'ばあっ！', kind:'onHitMpDrain', ratio:0.2, always:true,
-          desc:'常時、攻撃を命中させるたびに与えたダメージの20%をMPとして吸収する。'}}
+          desc:'常時、攻撃を命中させるたびに与えたダメージの20%をMPとして吸収する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'lootBonus', dropRateMult:1.25, goldMult:1.25, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が25%上昇する。'}}
     ],
     liver_4: [
       {key:'default', name:'通常衣装(加賀美ハヤト専用)',
         passive:{name:'私……社長ですけど', kind:'lootBonus', dropRateMult:1.3, goldMult:1.3, always:true,
-          desc:'常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が30%上昇する。'}}
+          desc:'常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が30%上昇する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'partyMpCostReduce', mult:0.9, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、パーティ全員のスキルMP消費が10%軽減される。'}}
     ],
     liver_5: [
       {key:'default', name:'通常衣装(三枝明那専用)',
         passive:{name:'最高の人生送ってる。', kind:'statMult', stat:'mpCost', mult:0.85, always:true,
-          desc:'常時、スキルのMP消費が15%軽減される。'}}
+          desc:'常時、スキルのMP消費が15%軽減される。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}}
     ],
     liver_6: [
       {key:'default', name:'通常衣装(弦月藤士郎専用)',
@@ -1744,22 +1759,34 @@
     liver_7: [
       {key:'default', name:'通常衣装(先斗寧専用)',
         passive:{name:'ルー・ベー・リー', kind:'randomAllyBoon', chance:0.18, healRatio:0.15, always:false,
-          desc:'戦闘中、毎ラウンド18%の確率で妖精が味方の誰かを見守り、HPが15%回復する。'}}
+          desc:'戦闘中、毎ラウンド18%の確率で妖精が味方の誰かを見守り、HPが15%回復する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'coverAlly', threshold:0.3, always:false,
+          desc:'(仮設定・後日差し替え予定) 味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}}
     ],
     liver_8: [
       {key:'default', name:'通常衣装(石神のぞみ専用)',
         passive:{name:'だってさぁ！', kind:'lowHpAtkBoost', threshold:0.3, mult:1.25, always:false,
-          desc:'自身のHPが30%以下のとき、攻撃力が25%上昇する。'}}
+          desc:'自身のHPが30%以下のとき、攻撃力が25%上昇する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
+          desc:'(仮設定・後日差し替え予定) 戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}}
     ],
     liver_9: [
       {key:'default', name:'通常衣装(風楽奏斗専用)',
         passive:{name:'楽しんでこっぜ！', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
-          desc:'常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}}
+          desc:'常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'onHitMpDrain', ratio:0.15, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、攻撃を命中させるたびに与えたダメージの15%をMPとして吸収する。'}}
     ],
     liver_10: [
       {key:'default', name:'通常衣装(栞葉るり専用)',
         passive:{name:'取締ビーム', kind:'coverAlly', threshold:0.3, always:false,
-          desc:'味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}}
+          desc:'味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'lowEnemyHpBoost', threshold:0.3, mult:1.2, always:false,
+          desc:'(仮設定・後日差し替え予定) 敵の残りHPが30%以下の間、自分の与ダメージが20%上昇する。'}}
     ],
   };
   function costumeDefsFor(liverId){ return COSTUME_DEFS[liverId] || []; }
