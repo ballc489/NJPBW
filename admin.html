@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>七彩の塔 管理画面</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{
+    --bg:#12151c; --panel:#1b212c; --border:#2c3446;
+    --text:#e8ecf4; --muted:#8b93a7;
+    --accent:#5b8cff; --danger:#ff6b6b; --gold:#e8c15a;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic Medium","Yu Gothic","Meiryo",sans-serif;
+    min-height:100vh;
+  }
+  #app{max-width:960px;margin:0 auto;padding:24px 20px 60px;}
+  h1{font-size:20px;margin:0;}
+  h3{margin:0 0 12px;font-size:15px;color:var(--gold);}
+  header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border);}
+  nav{display:flex;gap:8px;margin-bottom:20px;}
+  button{
+    font-family:inherit;font-size:13px;
+    background:var(--panel);color:var(--text);
+    border:1px solid var(--border);border-radius:6px;
+    padding:8px 16px;cursor:pointer;
+  }
+  button:hover{border-color:var(--accent);}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
+  button.danger{border-color:var(--danger);color:var(--danger);}
+  button.danger:hover{background:rgba(255,107,107,0.12);}
+  input, textarea{
+    font-family:inherit;font-size:13px;
+    background:#0e1219;color:var(--text);
+    border:1px solid var(--border);border-radius:6px;
+    padding:8px 10px;width:100%;
+  }
+  textarea{resize:vertical;}
+  label{display:block;margin-bottom:12px;font-size:12px;color:var(--muted);}
+  label input, label textarea{margin-top:6px;}
+  .toolbar{display:flex;gap:8px;margin-bottom:16px;}
+  .toolbar input{flex:1;}
+  .table-scroll{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:640px;}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+  .muted{color:var(--muted);font-size:12px;}
+  .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;}
+  .badge.danger{background:rgba(255,107,107,0.16);color:var(--danger);}
+  .badge.gold{background:rgba(232,193,90,0.16);color:var(--gold);}
+  .tag{display:inline-block;font-size:11px;color:var(--gold);border:1px solid var(--gold);border-radius:10px;padding:1px 8px;margin:4px 4px 0 0;}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:20px;}
+  .actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;}
+  .ann-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:10px;flex-wrap:wrap;}
+  .login-box{max-width:340px;margin:120px auto;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:28px;text-align:center;}
+  .login-box h1{margin-bottom:20px;font-size:18px;}
+  .login-box input{margin-bottom:12px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(function(){
+  const SUPABASE_URL = 'https://rdvdfnbtehdqsvqunpxa.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_2xCoQ-5GyH-9yNWRFrwGOA_-siKxE0Q';
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const app = document.getElementById('app');
+
+  function esc(str){
+    const d = document.createElement('div');
+    d.textContent = str == null ? '' : String(str);
+    return d.innerHTML;
+  }
+
+  let session = null;
+  let tab = 'players';
+  let playerQuery = '';
+  let playerList = [];
+  let playerListLoading = false;
+  let announcementList = [];
+  let announcementListLoading = false;
+  let editingAnnouncement = null; // null=フォーム非表示 / {id,title,body,tags,published_at}
+
+  async function init(){
+    const { data: { session: s } } = await sb.auth.getSession();
+    session = s;
+    if(session){
+      const ok = await checkAdmin();
+      if(ok){
+        await Promise.all([loadPlayers(), loadAnnouncements()]);
+      }
+    }
+    render();
+  }
+
+  async function checkAdmin(){
+    try{
+      const { data, error } = await sb.rpc('is_admin');
+      if(error) throw error;
+      if(!data){
+        await sb.auth.signOut();
+        session = null;
+        alert('このアカウントには管理者権限がありません。');
+        return false;
+      }
+      return true;
+    }catch(e){
+      console.error('is_admin check failed', e);
+      await sb.auth.signOut();
+      session = null;
+      return false;
+    }
+  }
+
+  async function handleLogin(email, password){
+    const btn = document.getElementById('loginBtn');
+    if(btn) btn.disabled = true;
+    try{
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
+      if(error) throw error;
+      session = data.session;
+      const ok = await checkAdmin();
+      if(ok){
+        await Promise.all([loadPlayers(), loadAnnouncements()]);
+      }
+    }catch(e){
+      alert('ログインに失敗しました: ' + e.message);
+    }
+    if(btn) btn.disabled = false;
+    render();
+  }
+
+  async function handleLogout(){
+    await sb.auth.signOut();
+    session = null;
+    render();
+  }
+
+  async function loadPlayers(){
+    playerListLoading = true; render();
+    try{
+      let q = sb.from('players').select('id,name,gold,banned_at,ban_reason,created_at,updated_at')
+        .order('created_at', {ascending:false}).limit(100);
+      if(playerQuery.trim()) q = q.ilike('name', `%${playerQuery.trim()}%`);
+      const { data, error } = await q;
+      if(error) throw error;
+      playerList = data || [];
+    }catch(e){
+      console.error('load players failed', e);
+      playerList = [];
+    }
+    playerListLoading = false; render();
+  }
+
+  async function setBan(id, banned, reason){
+    try{
+      const { error } = await sb.rpc('admin_set_ban', { p_target_id: id, p_banned: banned, p_reason: reason || null });
+      if(error) throw error;
+      await loadPlayers();
+    }catch(e){
+      alert('BAN処理に失敗しました: ' + e.message);
+    }
+  }
+
+  async function loadAnnouncements(){
+    announcementListLoading = true; render();
+    try{
+      const { data, error } = await sb.from('announcements').select('*')
+        .order('published_at', {ascending:false}).limit(200);
+      if(error) throw error;
+      announcementList = data || [];
+    }catch(e){
+      console.error('load announcements failed', e);
+      announcementList = [];
+    }
+    announcementListLoading = false; render();
+  }
+
+  async function saveAnnouncement(form){
+    try{
+      const tags = form.tags.split(',').map(s=>s.trim()).filter(Boolean);
+      const publishedIso = form.publishedAt ? new Date(form.publishedAt).toISOString() : new Date().toISOString();
+      const { error } = await sb.rpc('admin_upsert_announcement', {
+        p_title: form.title, p_body: form.body, p_id: form.id || null,
+        p_tags: tags, p_published_at: publishedIso
+      });
+      if(error) throw error;
+      editingAnnouncement = null;
+      await loadAnnouncements();
+    }catch(e){
+      alert('保存に失敗しました: ' + e.message);
+    }
+  }
+
+  async function deleteAnnouncement(id){
+    if(!confirm('このお知らせを削除しますか？')) return;
+    try{
+      const { error } = await sb.rpc('admin_delete_announcement', { p_id: id });
+      if(error) throw error;
+      await loadAnnouncements();
+    }catch(e){
+      alert('削除に失敗しました: ' + e.message);
+    }
+  }
+
+  function toLocalInputValue(iso){
+    const d = new Date(iso);
+    const pad = n=>String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function renderLogin(){
+    app.innerHTML = `
+      <div class="login-box">
+        <h1>七彩の塔 管理画面</h1>
+        <input id="emailInput" type="email" placeholder="メールアドレス" autocomplete="username">
+        <input id="passwordInput" type="password" placeholder="パスワード" autocomplete="current-password">
+        <button id="loginBtn" class="primary" style="width:100%;">ログイン</button>
+      </div>
+    `;
+    const loginBtn = document.getElementById('loginBtn');
+    const passwordInput = document.getElementById('passwordInput');
+    loginBtn.addEventListener('click', ()=>{
+      const email = document.getElementById('emailInput').value.trim();
+      const password = passwordInput.value;
+      if(!email || !password) return;
+      handleLogin(email, password);
+    });
+    passwordInput.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter') loginBtn.click();
+    });
+  }
+
+  function renderPlayerRow(p){
+    const banned = !!p.banned_at;
+    return `
+      <tr>
+        <td class="mono">${esc(p.id.slice(0,8))}</td>
+        <td>${esc(p.name)}${banned ? `<span class="badge danger">BAN中</span>` : ''}</td>
+        <td class="mono">${p.gold}</td>
+        <td class="mono">${new Date(p.created_at).toLocaleDateString('ja-JP')}</td>
+        <td>${banned ? `<span class="muted">${esc(p.ban_reason||'')}</span>` : '-'}</td>
+        <td><button data-ban-toggle="${p.id}" data-banned="${banned}" class="${banned?'':'danger'}">${banned?'解除':'BAN'}</button></td>
+      </tr>
+    `;
+  }
+
+  function renderPlayersTab(){
+    const rows = playerListLoading
+      ? `<tr><td colspan="6">読み込み中……</td></tr>`
+      : playerList.length
+        ? playerList.map(renderPlayerRow).join('')
+        : `<tr><td colspan="6">該当するプレイヤーがいません。</td></tr>`;
+    return `
+      <div class="toolbar">
+        <input id="playerSearchInput" type="text" placeholder="名前で検索(部分一致)" value="${esc(playerQuery)}">
+        <button id="playerSearchBtn">検索</button>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>ID</th><th>名前</th><th>ゴールド</th><th>作成日</th><th>BAN理由</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderAnnouncementForm(a){
+    const isNew = !a.id;
+    const publishedLocal = toLocalInputValue(a.published_at || new Date().toISOString());
+    return `
+      <div class="panel">
+        <h3>${isNew ? '新規お知らせ' : 'お知らせを編集'}</h3>
+        <label>タイトル<input id="annTitle" type="text" value="${esc(a.title||'')}"></label>
+        <label>本文<textarea id="annBody" rows="6">${esc(a.body||'')}</textarea></label>
+        <label>タグ(カンマ区切り)<input id="annTags" type="text" value="${esc((a.tags||[]).join(', '))}"></label>
+        <label>掲載日時(未来の日時にすると予約投稿になる)<input id="annPublishedAt" type="datetime-local" value="${publishedLocal}"></label>
+        <div class="actions">
+          <button id="annSaveBtn" class="primary">保存</button>
+          <button id="annCancelBtn">キャンセル</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAnnouncementsTab(){
+    const listHtml = announcementListLoading
+      ? '<p class="muted">読み込み中……</p>'
+      : announcementList.length
+        ? announcementList.map(a=>{
+            const scheduled = new Date(a.published_at) > new Date();
+            const tagsHtml = (Array.isArray(a.tags) ? a.tags : []).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
+            return `
+              <div class="ann-row">
+                <div>
+                  <strong>${esc(a.title)}</strong>${scheduled ? '<span class="badge gold">予約</span>' : ''}
+                  <div class="muted mono">${new Date(a.published_at).toLocaleString('ja-JP')}</div>
+                  <div>${tagsHtml}</div>
+                </div>
+                <div class="actions">
+                  <button data-edit-ann="${a.id}">編集</button>
+                  <button data-delete-ann="${a.id}" class="danger">削除</button>
+                </div>
+              </div>`;
+          }).join('')
+        : '<p class="muted">お知らせはまだありません。</p>';
+
+    const formHtml = editingAnnouncement ? renderAnnouncementForm(editingAnnouncement) : '';
+
+    return `
+      <div class="actions" style="margin-bottom:16px;">
+        <button id="annNewBtn" class="primary">新規作成</button>
+      </div>
+      ${formHtml}
+      <div class="ann-list">${listHtml}</div>
+    `;
+  }
+
+  function render(){
+    if(!session){ renderLogin(); return; }
+    app.innerHTML = `
+      <header>
+        <h1>七彩の塔 管理画面</h1>
+        <button id="logoutBtn">ログアウト</button>
+      </header>
+      <nav>
+        <button data-tab="players" class="${tab==='players'?'primary':''}">プレイヤー</button>
+        <button data-tab="announcements" class="${tab==='announcements'?'primary':''}">お知らせ</button>
+      </nav>
+      <main>${tab==='players' ? renderPlayersTab() : renderAnnouncementsTab()}</main>
+    `;
+    bindEvents();
+  }
+
+  function bindEvents(){
+    const logoutBtn = document.getElementById('logoutBtn');
+    if(logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+
+    document.querySelectorAll('[data-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>{ tab = b.getAttribute('data-tab'); render(); });
+    });
+
+    const searchBtn = document.getElementById('playerSearchBtn');
+    const searchInput = document.getElementById('playerSearchInput');
+    if(searchBtn) searchBtn.addEventListener('click', ()=>{
+      playerQuery = searchInput.value;
+      loadPlayers();
+    });
+    if(searchInput) searchInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') searchBtn.click(); });
+
+    document.querySelectorAll('[data-ban-toggle]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.getAttribute('data-ban-toggle');
+        const currentlyBanned = b.getAttribute('data-banned') === 'true';
+        if(currentlyBanned){
+          if(confirm('BANを解除しますか？')) setBan(id, false, null);
+        } else {
+          const reason = prompt('BAN理由を入力してください:');
+          if(reason !== null) setBan(id, true, reason);
+        }
+      });
+    });
+
+    const newBtn = document.getElementById('annNewBtn');
+    if(newBtn) newBtn.addEventListener('click', ()=>{
+      editingAnnouncement = { id:null, title:'', body:'', tags:[], published_at:new Date().toISOString() };
+      render();
+    });
+
+    document.querySelectorAll('[data-edit-ann]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = Number(b.getAttribute('data-edit-ann'));
+        editingAnnouncement = announcementList.find(a=>a.id===id) || null;
+        render();
+      });
+    });
+    document.querySelectorAll('[data-delete-ann]').forEach(b=>{
+      b.addEventListener('click', ()=>{ deleteAnnouncement(Number(b.getAttribute('data-delete-ann'))); });
+    });
+
+    const saveBtn = document.getElementById('annSaveBtn');
+    if(saveBtn) saveBtn.addEventListener('click', ()=>{
+      const title = document.getElementById('annTitle').value.trim();
+      const body = document.getElementById('annBody').value.trim();
+      const tags = document.getElementById('annTags').value;
+      const publishedAt = document.getElementById('annPublishedAt').value;
+      if(!title || !body){ alert('タイトルと本文は必須です。'); return; }
+      saveAnnouncement({ id: editingAnnouncement.id || null, title, body, tags, publishedAt });
+    });
+    const cancelBtn = document.getElementById('annCancelBtn');
+    if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ editingAnnouncement = null; render(); });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
