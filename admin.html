@@ -71,10 +71,16 @@
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const app = document.getElementById('app');
 
+  // 属性値(value="...")の中でも使うため、DOMのtextContent/innerHTML
+  // 往復(<, >, & のみエスケープ)ではなく、クォート類も含めて明示的に
+  // エスケープする(属性コンテキストで " や ' を残すと属性から抜けられる)。
   function esc(str){
-    const d = document.createElement('div');
-    d.textContent = str == null ? '' : String(str);
-    return d.innerHTML;
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   let session = null;
