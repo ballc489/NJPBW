@@ -307,6 +307,21 @@
   .icon-chip.ailment .turns{background:var(--ailment);}
   .icon-chip[title]:hover{outline:1px solid var(--gold);outline-offset:1px;}
 
+  /* お知らせのタグ・未読バッジ */
+  .tag-chip{
+    display:inline-block;
+    font-family:var(--font-mono);font-size:10px;
+    color:var(--gold);border:1px solid var(--gold);
+    padding:1px 6px;margin:0 4px 4px 0;
+  }
+  .notify-badge{
+    display:inline-block;
+    font-family:var(--font-mono);font-size:10px;font-weight:700;
+    background:var(--gold);color:#1c2e6e;
+    border-radius:8px;padding:1px 6px;margin-left:6px;
+    vertical-align:middle;
+  }
+
   /* character creation */
   .create-box{max-width:440px;margin:60px auto;text-align:center;}
   .create-box input{
@@ -2447,6 +2462,88 @@
     render();
   }
 
+  /* ---------------------------------------------------------------
+   * お知らせ: announcements(管理者がSQL Editorから直接書き込む想定、
+   * 管理画面は用意しない)+ player_announcement_reads(既読管理)。
+   * ランキング機能と同様、表示専用データなのでモジュールスコープの
+   * 一時変数で保持する。
+   * --------------------------------------------------------------- */
+  let announcementList = null;      // { loading, items:[...] } | null
+  let announcementReadIds = new Set();
+  let announcementUnreadCount = 0;  // 町のボタンに出すバッジ用
+
+  function formatAnnouncementDate(iso){
+    const d = new Date(iso);
+    return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  /* 町の画面を開くたびに毎回問い合わせるのは無駄なので、ログイン直後に
+   * 1度だけ取得してバッジ件数をキャッシュしておく(お知らせ一覧を開いた
+   * 際は改めて最新状態を取得し直す)。 */
+  async function refreshAnnouncementUnreadCount(){
+    try{
+      const uid = await ensureAuth();
+      const [{ data: items, error: e1 }, { data: reads, error: e2 }] = await Promise.all([
+        sb.from('announcements').select('id'),
+        sb.from('player_announcement_reads').select('announcement_id').eq('player_id', uid)
+      ]);
+      if(e1) throw e1;
+      if(e2) throw e2;
+      const readSet = new Set((reads||[]).map(r=>r.announcement_id));
+      announcementUnreadCount = (items||[]).filter(a=>!readSet.has(a.id)).length;
+      render();
+    }catch(e){
+      console.error('unread announcement count fetch failed', e);
+    }
+  }
+
+  async function openAnnouncementList(){
+    if(inCombat) return;
+    state.screen = 'announcements';
+    announcementList = { loading:true, items:[] };
+    render();
+    try{
+      const uid = await ensureAuth();
+      const [{ data: items, error: e1 }, { data: reads, error: e2 }] = await Promise.all([
+        sb.from('announcements').select('*').order('published_at', {ascending:false}).limit(50),
+        sb.from('player_announcement_reads').select('announcement_id').eq('player_id', uid)
+      ]);
+      if(e1) throw e1;
+      if(e2) throw e2;
+      announcementReadIds = new Set((reads||[]).map(r=>r.announcement_id));
+      announcementList = { loading:false, items: items || [] };
+      announcementUnreadCount = announcementList.items.filter(a=>!announcementReadIds.has(a.id)).length;
+    }catch(e){
+      console.error('announcement list fetch failed', e);
+      announcementList = { loading:false, items:[] };
+    }
+    render();
+  }
+
+  async function openAnnouncementDetail(id){
+    if(inCombat) return;
+    state.screen = 'announcementDetail';
+    if(!state.ui) state.ui = {};
+    state.ui.announcementSelected = id;
+
+    if(!announcementReadIds.has(id)){
+      announcementReadIds.add(id);
+      announcementUnreadCount = Math.max(0, announcementUnreadCount - 1);
+      render();
+      try{
+        const uid = await ensureAuth();
+        const { error } = await sb.from('player_announcement_reads')
+          .insert({ player_id: uid, announcement_id: id });
+        // 23505 = 既に既読(重複挿入)は無視して良い
+        if(error && error.code !== '23505') throw error;
+      }catch(e){
+        console.error('mark announcement read failed', e);
+      }
+    } else {
+      render();
+    }
+  }
+
   /* ---------------- Persistence(Supabase) ---------------- */
 
   /* stateオブジェクトの形は今まで通り保ったまま、読み書きの中身だけを
@@ -3626,6 +3723,7 @@
         }catch(e){
           console.error('agree_to_tos resync failed', e);
         }
+        refreshAnnouncementUnreadCount();
         render();
       }catch(e){
         console.error('character creation failed', e);
@@ -3801,6 +3899,7 @@
         <p class="log-entry system">かつての瓦礫の上に、人々が再び火を灯し始めた場所。宿の煙突からは絶えず煙が上がり、市場には迷宮帰りの冒険者たちの姿がある。</p>
       </div>
       <div class="actions">
+        <button class="primary" id="gotoAnnouncementsBtn">お知らせ${announcementUnreadCount > 0 ? `<span class="notify-badge">${announcementUnreadCount}</span>` : ''}</button>
         <button class="primary" id="gotoPartyBtn">編成</button>
         <button class="primary" id="gotoInnBtn">宿屋</button>
         <button class="primary" id="gotoShopBtn">商店</button>
@@ -3914,6 +4013,69 @@
       <div class="section-block">
         <p class="section-label">TOP100</p>
         ${listHtml}
+      </div>
+    `;
+  }
+
+  function renderAnnouncementsInner(){
+    const list = announcementList;
+    const itemsHtml = (!list || list.loading)
+      ? '<p class="log-entry system">読み込み中……</p>'
+      : list.items.length
+        ? list.items.map(a=>{
+            const unread = !announcementReadIds.has(a.id);
+            const tagsHtml = (Array.isArray(a.tags) ? a.tags : [])
+              .map(t=>`<span class="tag-chip">${esc(t)}</span>`).join('');
+            return `
+              <div class="inv-item" data-open-announcement="${a.id}" style="cursor:pointer;${unread?'border-left-color:var(--gold);':''}">
+                <span class="inv-item-name">
+                  ${unread ? '<span class="notify-badge" style="margin-left:0;margin-right:6px;">未読</span>' : ''}${esc(a.title)}
+                  <span style="float:right;color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${formatAnnouncementDate(a.published_at)}</span>
+                </span>
+                ${tagsHtml ? `<div style="margin-top:6px;">${tagsHtml}</div>` : ''}
+              </div>`;
+          }).join('')
+        : '<p class="inv-empty">お知らせはまだありません。</p>';
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('お知らせ')}
+      </div>
+      <div class="actions">
+        <button id="backTownBtn">町に戻る</button>
+      </div>
+      <div class="section-block">
+        ${itemsHtml}
+      </div>
+    `;
+  }
+
+  function renderAnnouncementDetailInner(){
+    const id = state.ui.announcementSelected;
+    const a = (announcementList && announcementList.items || []).find(x=>x.id === id);
+    if(!a){
+      return `
+        <div class="scene-text">
+          ${sceneHeadingHtml('お知らせ')}
+          <p class="log-entry system">読み込み中……</p>
+        </div>
+        <div class="actions">
+          <button id="backAnnouncementsBtn">お知らせ一覧に戻る</button>
+        </div>
+      `;
+    }
+    const tagsHtml = (Array.isArray(a.tags) ? a.tags : [])
+      .map(t=>`<span class="tag-chip">${esc(t)}</span>`).join('');
+    const bodyHtml = esc(a.body).replace(/\n/g, '<br>');
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml(a.title)}
+        <p style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;margin-top:4px;">${formatAnnouncementDate(a.published_at)}</p>
+        ${tagsHtml ? `<div style="margin:8px 0 4px;">${tagsHtml}</div>` : ''}
+        <p class="log-entry system" style="margin-top:12px;">${bodyHtml}</p>
+      </div>
+      <div class="actions">
+        <button id="backAnnouncementsBtn">お知らせ一覧に戻る</button>
       </div>
     `;
   }
@@ -4413,6 +4575,8 @@
     else if(state.screen === 'home') inner = renderHomeInner();
     else if(state.screen === 'rankings') inner = renderRankingsInner();
     else if(state.screen === 'rankingDetail') inner = renderRankingDetailInner();
+    else if(state.screen === 'announcements') inner = renderAnnouncementsInner();
+    else if(state.screen === 'announcementDetail') inner = renderAnnouncementDetailInner();
     else if(state.screen === 'dead') inner = renderDeadInner();
     else inner = renderTownInner();
     return `<div class="scene">${inner}</div>`;
@@ -4588,6 +4752,13 @@
     on('riftEnterBtn', startRift);
     on('gotoRankingsBtn', openRankingList);
     on('backRankingsBtn', openRankingList);
+    on('gotoAnnouncementsBtn', openAnnouncementList);
+    on('backAnnouncementsBtn', openAnnouncementList);
+    document.querySelectorAll('[data-open-announcement]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        openAnnouncementDetail(Number(b.getAttribute('data-open-announcement')));
+      });
+    });
     document.querySelectorAll('[data-open-ranking]').forEach(b=>{
       b.addEventListener('click', ()=>{
         openRankingDetail(b.getAttribute('data-open-ranking'));
@@ -4901,6 +5072,7 @@
     }
     render();
     startChatPolling();
+    refreshAnnouncementUnreadCount();
     setInterval(()=>{
       if(state && state.screen === 'colosseum' && !inCombat){
         const remain = COLOSSEUM_COOLDOWN_MS - (Date.now() - (state.colosseum.lastChallengeAt||0));
