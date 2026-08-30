@@ -102,7 +102,7 @@
     body.playing{
       height:100vh;
       overflow-y:auto;
-      padding:16px clamp(16px,3vw,56px) 16px;
+      padding:10px clamp(16px,3vw,56px) 10px;
       display:flex;
       flex-direction:column;
       align-items:center;
@@ -115,7 +115,13 @@
       flex-direction:column;
       overflow:hidden;
     }
-    body.playing header{flex:0 0 auto;}
+    /* メインウィンドウの高さを少しでも稼ぐため、プレイ中のヘッダー
+     * (タイトル・右上のリソース表示)は詰めて表示する。 */
+    body.playing header{flex:0 0 auto;padding-bottom:6px;margin-bottom:8px;}
+    body.playing h1{font-size:clamp(18px,2.2vw,22px);}
+    body.playing .subtitle{margin-top:1px;font-size:10px;}
+    body.playing .depth-badge{padding:5px 10px;gap:3px;min-width:120px;}
+    body.playing .badge-resource{font-size:12px;}
     body.playing .layout{flex:1 1 auto;min-height:0;align-items:stretch;}
     body.playing .layout > div{display:flex;flex-direction:column;min-height:0;}
     body.playing .layout > div > .scene{flex:1 1 auto;min-height:0;overflow-y:auto;}
@@ -221,7 +227,7 @@
   }
   .history-panel{margin-top:16px;}
   .history-log{
-    max-height:170px;
+    max-height:var(--history-log-height, 170px);
     font-family:var(--font-mono);font-size:12px;line-height:1.65;
   }
   .history-log p{margin:0 0 4px;}
@@ -1463,6 +1469,26 @@
   let createSelectedLiver = null; // キャラ作成画面: 選択中の最初の仲間
   let createNameDraft = '';       // キャラ作成画面: 選択操作で再描画されても名前欄を保持する
   let lastRenderedScreen = null;  // render()がスクロール位置を保持すべきか(=同じ画面内の再描画か)の判定用
+
+  /* 冒険の記録/チャット欄の表示行数(px)。ユーザーごとの好みで、ゲームデータ
+   * ではなくこの端末・ブラウザだけの表示設定として扱う(localStorage)。 */
+  const HISTORY_LOG_HEIGHT_KEY = 'historyLogHeightPx';
+  const HISTORY_LOG_HEIGHT_DEFAULT = 170;
+  let historyLogHeightPx = HISTORY_LOG_HEIGHT_DEFAULT;
+  try{
+    const saved = Number(localStorage.getItem(HISTORY_LOG_HEIGHT_KEY));
+    if(saved > 0) historyLogHeightPx = saved;
+  }catch(e){}
+
+  function applyHistoryLogHeight(){
+    document.documentElement.style.setProperty('--history-log-height', historyLogHeightPx + 'px');
+  }
+  function setHistoryLogHeight(px){
+    historyLogHeightPx = px;
+    applyHistoryLogHeight();
+    try{ localStorage.setItem(HISTORY_LOG_HEIGHT_KEY, String(px)); }catch(e){}
+  }
+  applyHistoryLogHeight();
   let inCombat = false;
   let combatPhase = null; // 'choice' | 'auto' | null
   let combatEnemy = null;
@@ -5068,6 +5094,11 @@
       sendChatMessage(text);
     });
 
+    const historyLogHeightSelect = document.getElementById('historyLogHeightSelect');
+    if(historyLogHeightSelect) historyLogHeightSelect.addEventListener('change', (e)=>{
+      setHistoryLogHeight(Number(e.target.value));
+    });
+
     const chatInput = document.getElementById('chatInput');
     if(chatInput) chatInput.addEventListener('keydown', (e)=>{
       if(e.key === 'Enter'){ document.getElementById('sendChatBtn').click(); }
@@ -5238,10 +5269,15 @@
     const channelTabsHtml = CHAT_CHANNEL_DEFS.map(c=>
       `<button data-chat-channel="${c.id}" class="${(!logActive && activeChatChannel===c.id)?'primary':''}" style="padding:6px 14px;font-size:12px;">${esc(c.name)}</button>`
     ).join('');
+    const heightOptions = [
+      {px:120, label:'表示: 小'}, {px:170, label:'表示: 中'},
+      {px:260, label:'表示: 大'}, {px:380, label:'表示: 特大'}
+    ].map(o=>`<option value="${o.px}" ${historyLogHeightPx===o.px?'selected':''}>${o.label}</option>`).join('');
     const tabsHtml = `
-      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
         <button data-bottom-tab="log" class="${logActive?'primary':''}" style="padding:6px 14px;font-size:12px;">冒険の記録</button>
         ${channelTabsHtml}
+        <select id="historyLogHeightSelect" title="この欄の表示行数(この端末だけの設定)" style="margin-left:auto;font-size:11px;padding:4px 6px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${heightOptions}</select>
       </div>`;
     let body;
     if(logActive){
