@@ -1304,6 +1304,41 @@
     return true;
   }
 
+  /* ---------------------------------------------------------------
+   * 道具: オーブ・素材と同じくスタック管理(state.tools、キー→所持数)
+   * だが、合成・錬金の材料ではなく「所持品から直接使用する」消費アイテム。
+   * purchasable: trueの道具だけが商店の「買う」に並ぶ(将来、錬金でしか
+   * 作れない道具を追加する余地を残すため)。
+   * canUse()が無い、またはtrueを返す時だけ所持品側に「使用」ボタンが出る。
+   * --------------------------------------------------------------- */
+  const TOOL_DEFS = {
+    stamina_potion_10: {
+      name:'スタミナ回復薬',
+      desc:'使うとスタミナを10回復する。',
+      price: 80,
+      purchasable: true,
+      canUse: () => state.stamina < STAMINA_MAX,
+      use: () => {
+        recomputeStamina();
+        state.stamina = Math.min(STAMINA_MAX, state.stamina + 10);
+      }
+    },
+  };
+
+  function toolCount(key){
+    return (state.tools && state.tools[key]) || 0;
+  }
+
+  function useToolItem(key){
+    const def = TOOL_DEFS[key];
+    if(!def || toolCount(key) < 1) return;
+    if(def.canUse && !def.canUse()) return;
+    def.use();
+    state.tools[key] = toolCount(key) - 1;
+    pushLog(`「${def.name}」を使った。`, 'reward');
+    saveGame(); render();
+  }
+
   /* 突入・受け取り・撤退・結果を閉じる、いずれの直後も必ずDBへの保存が
    * 完了してからロック画面/通常画面へ切り替える(saveGameをawaitする)。
    * 先に画面だけ切り替えてしまうと、保存が終わる前にページを更新された
@@ -2282,6 +2317,7 @@
       destinyTickets: 0, guaranteedTickets: 0,
       orbs: {}, // レアリティ(common/uncommon/rare/epic)ごとの所持数。合成で消費する
       materials: {}, // 素材キーごとの所持数。錬金で消費する
+      tools: {}, // 道具キーごとの所持数。所持品から直接使用する
       stamina: STAMINA_MAX, staminaUpdatedAt: Date.now(),
       rift: null // { startedAt, partyIds } / 非アクティブならnull
     };
@@ -2821,7 +2857,8 @@
         p_orbs: state.orbs || {},
         p_materials: state.materials || {},
         p_stamina: state.stamina,
-        p_stamina_updated_at: new Date(state.staminaUpdatedAt).toISOString()
+        p_stamina_updated_at: new Date(state.staminaUpdatedAt).toISOString(),
+        p_tools: state.tools || {}
       });
       if(error) console.error('save_full_state failed', error);
 
@@ -2944,6 +2981,7 @@
         materials: (playerRow.materials && typeof playerRow.materials === 'object') ? playerRow.materials : {},
         stamina: (typeof playerRow.stamina === 'number') ? playerRow.stamina : STAMINA_MAX,
         staminaUpdatedAt: playerRow.stamina_updated_at ? new Date(playerRow.stamina_updated_at).getTime() : Date.now(),
+        tools: (playerRow.tools && typeof playerRow.tools === 'object') ? playerRow.tools : {},
         rift: (playerRow.rift_state && playerRow.rift_state.startedAt)
           ? { startedAt: playerRow.rift_state.startedAt, partyIds: playerRow.rift_state.partyIds || [], result: playerRow.rift_state.result || null }
           : null
@@ -3878,6 +3916,40 @@
     saveGame(); render();
   }
 
+  function toolSellPrice(key){
+    return Math.max(1, Math.round(TOOL_DEFS[key].price/3));
+  }
+  function buyToolItem(key){
+    const def = TOOL_DEFS[key];
+    if(!def || !def.purchasable) return;
+    if(state.gold < def.price) return;
+    state.gold -= def.price;
+    if(!state.tools) state.tools = {};
+    state.tools[key] = toolCount(key) + 1;
+    pushLog(`「${def.name}」を購入した。`, 'reward');
+    saveGame(); render();
+  }
+  function sellToolItem(key){
+    const def = TOOL_DEFS[key];
+    if(!def || toolCount(key) < 1) return;
+    const price = toolSellPrice(key);
+    state.tools[key] = toolCount(key) - 1;
+    state.gold += price;
+    pushLog(`「${def.name}」を ${price}G で売却した。`, 'system');
+    saveGame(); render();
+  }
+
+  function toggleShopTab(tab){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.shopTab = tab;
+    render();
+  }
+  function toggleShopItemTab(tab){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.shopItemTab = tab;
+    render();
+  }
+
   /* ---------------- 家 ---------------- */
   function renameCharacter(){
     const input = document.getElementById('nameEditInput');
@@ -4806,21 +4878,51 @@
 
   function renderShopInner(){
     const line = SHOPKEEPER_LINES[Math.floor(Math.random()*SHOPKEEPER_LINES.length)];
-    const buyHtml = shopStock.length ? shopStock.map(item=>`
-      <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
-        <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
-        <span class="inv-item-actions">
-          <button data-buy-shop="${item.id}" ${(state.gold<item.price)?'disabled':''}>${item.price}G 購入</button>
-        </span>
-      </div>`).join('') : `<p class="inv-empty">今日の品はもう出払っている。</p>`;
+    const buyActive = ((state.ui && state.ui.shopTab) || 'buy') === 'buy';
+    const equipActive = ((state.ui && state.ui.shopItemTab) || 'equip') === 'equip';
 
-    const sellHtml = state.inventory.length ? state.inventory.map(item=>`
-      <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
-        <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
-        <span class="inv-item-actions">
-          <button data-sell="${item.id}">${Math.max(1,Math.round(item.value*3))}G で売る</button>
-        </span>
-      </div>`).join('') : `<p class="inv-empty">売れる物がない。</p>`;
+    let bodyHtml;
+    if(buyActive && equipActive){
+      bodyHtml = shopStock.length ? shopStock.map(item=>`
+        <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
+          <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
+          <span class="inv-item-actions">
+            <button data-buy-shop="${item.id}" ${(state.gold<item.price)?'disabled':''}>${item.price}G 購入</button>
+          </span>
+        </div>`).join('') : `<p class="inv-empty">今日の品はもう出払っている。</p>`;
+    } else if(buyActive && !equipActive){
+      const keys = Object.keys(TOOL_DEFS).filter(k=>TOOL_DEFS[k].purchasable);
+      bodyHtml = keys.length ? keys.map(key=>{
+        const def = TOOL_DEFS[key];
+        return `
+          <div class="inv-item" title="${esc(def.desc)}">
+            <span class="inv-item-name">${esc(def.name)}</span>
+            <span class="inv-item-actions">
+              <button data-buy-tool="${key}" ${(state.gold<def.price)?'disabled':''}>${def.price}G 購入</button>
+            </span>
+          </div>`;
+      }).join('') : `<p class="inv-empty">購入できるアイテムが無い。</p>`;
+    } else if(!buyActive && equipActive){
+      bodyHtml = state.inventory.length ? state.inventory.map(item=>`
+        <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
+          <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
+          <span class="inv-item-actions">
+            <button data-sell="${item.id}">${Math.max(1,Math.round(item.value*3))}G で売る</button>
+          </span>
+        </div>`).join('') : `<p class="inv-empty">売れる装備が無い。</p>`;
+    } else {
+      const keys = Object.keys(TOOL_DEFS).filter(k=>toolCount(k) > 0);
+      bodyHtml = keys.length ? keys.map(key=>{
+        const def = TOOL_DEFS[key];
+        return `
+          <div class="inv-item" title="${esc(def.desc)}">
+            <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">所持: ${toolCount(key)}</span></span>
+            <span class="inv-item-actions">
+              <button data-sell-tool="${key}">${toolSellPrice(key)}G で売る</button>
+            </span>
+          </div>`;
+      }).join('') : `<p class="inv-empty">売れるアイテムが無い。</p>`;
+    }
 
     return `
       <div class="scene-text">
@@ -4828,13 +4930,16 @@
         <p class="log-entry system">商人オーレンス:「${esc(line)}」</p>
       </div>
       <div class="actions"><button id="backTownBtn">町に戻る</button></div>
-      <div class="section-block">
-        <p class="section-label">購入</p>
-        ${buyHtml}
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button data-shop-tab="buy" class="${buyActive?'primary':''}" style="padding:6px 14px;font-size:12px;">買う</button>
+        <button data-shop-tab="sell" class="${!buyActive?'primary':''}" style="padding:6px 14px;font-size:12px;">売る</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button data-shop-item-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
+        <button data-shop-item-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
       </div>
       <div class="section-block">
-        <p class="section-label">売却</p>
-        ${sellHtml}
+        ${bodyHtml}
       </div>
     `;
   }
@@ -5096,11 +5201,14 @@
     return list; // new_asc
   }
 
-  function renderItemStackRow(name, count, rarityLabel){
+  function renderItemStackRow(name, count, rarityLabel, actionHtml, desc){
     return `
-      <div class="inv-item ${rarityLabel||''}">
+      <div class="inv-item ${rarityLabel||''}" ${desc?`title="${esc(desc)}"`:''}>
         <span class="inv-item-name">${esc(name)}</span>
-        <span class="inv-item-actions"><span style="color:var(--gold);font-family:var(--font-mono);">${count}</span></span>
+        <span class="inv-item-actions">
+          <span style="color:var(--gold);font-family:var(--font-mono);">${count}</span>
+          ${actionHtml||''}
+        </span>
       </div>`;
   }
 
@@ -5140,10 +5248,20 @@
     const materialStacks = Object.keys(MATERIAL_DEFS)
       .filter(key => materialCount(key) > 0)
       .map(key => ({ name: MATERIAL_DEFS[key].name, count: materialCount(key), rarity: null }));
-    const itemStacksBase = [...orbStacks, ...materialStacks]; // 新着順の代わり(素材に取得順の記録が無いため、オーブ→素材の固定順)
+    const toolStacks = Object.keys(TOOL_DEFS)
+      .filter(key => toolCount(key) > 0)
+      .map(key => {
+        const def = TOOL_DEFS[key];
+        const usable = !def.canUse || def.canUse();
+        return {
+          name: def.name, count: toolCount(key), rarity: null, desc: def.desc,
+          actionHtml: usable ? `<button data-use-tool="${key}">使用</button>` : ''
+        };
+      });
+    const itemStacksBase = [...orbStacks, ...materialStacks, ...toolStacks]; // 新着順の代わり(取得順の記録が無いため、オーブ→素材→道具の固定順)
     const itemStacks = applyInventorySort(itemStacksBase, itemSort, s => s.rarity ? RARITY_SORT_ORDER[s.rarity] : -1);
     const itemHtml = itemStacks.length
-      ? itemStacks.map(s=>renderItemStackRow(s.name, s.count, s.rarity)).join('')
+      ? itemStacks.map(s=>renderItemStackRow(s.name, s.count, s.rarity, s.actionHtml, s.desc)).join('')
       : `<p class="inv-empty">アイテムはまだない。</p>`;
 
     return `
@@ -5233,6 +5351,9 @@
     document.querySelectorAll('[data-inventory-tab]').forEach(b=>{
       b.addEventListener('click', ()=>toggleInventoryTab(b.getAttribute('data-inventory-tab')));
     });
+    document.querySelectorAll('[data-use-tool]').forEach(b=>{
+      b.addEventListener('click', ()=>useToolItem(b.getAttribute('data-use-tool')));
+    });
     const inventorySortSelect = document.getElementById('inventorySortSelect');
     if(inventorySortSelect) inventorySortSelect.addEventListener('change', (e)=>{
       setInventorySort(e.target.value);
@@ -5266,6 +5387,18 @@
     });
     document.querySelectorAll('[data-buy-shop]').forEach(b=>{
       b.addEventListener('click', ()=>buyShopItem(b.getAttribute('data-buy-shop')));
+    });
+    document.querySelectorAll('[data-buy-tool]').forEach(b=>{
+      b.addEventListener('click', ()=>buyToolItem(b.getAttribute('data-buy-tool')));
+    });
+    document.querySelectorAll('[data-sell-tool]').forEach(b=>{
+      b.addEventListener('click', ()=>sellToolItem(b.getAttribute('data-sell-tool')));
+    });
+    document.querySelectorAll('[data-shop-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>toggleShopTab(b.getAttribute('data-shop-tab')));
+    });
+    document.querySelectorAll('[data-shop-item-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>toggleShopItemTab(b.getAttribute('data-shop-item-tab')));
     });
     document.querySelectorAll('[data-use-guaranteed]').forEach(b=>{
       b.addEventListener('click', ()=>useGuaranteedTicket(b.getAttribute('data-use-guaranteed')));
