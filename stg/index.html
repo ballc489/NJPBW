@@ -1574,7 +1574,6 @@
   let pendingDefBuffs = {}; // { liverId: reduceMult } その本人の次の被弾にのみ適用
   let combatPassiveFlags = {}; // { liverId: {...} } 条件付きパッシブの発動状態・ログ済みフラグ。戦闘開始時にリセット
   let playerStatusEffects = {}; // { liverId: { [effectType]: {amount, turnsLeft, freshlyGranted} } } 戦闘中のみ・保存しない
-  let shopStock = []; // セーブしない一時データ。商店に入るたび再生成
 
   /* 通常攻撃(スキルを使わなかった場合の攻撃)時、低確率で防御力を無視した
    * 大ダメージが発生する。プレイヤー側は「会心の一撃」、敵側は「痛恨の一撃」
@@ -3843,7 +3842,6 @@
   /* ---------------- 街・移動 ---------------- */
   function gotoScreen(name){
     if(inCombat) return;
-    if(name==='shop') shopStock = generateShopStock();
     state.screen = name;
     saveGame(); render();
   }
@@ -3883,28 +3881,6 @@
   }
 
   /* ---------------- 商店 ---------------- */
-  function generateShopStock(){
-    const arr = [];
-    for(let i=0;i<4;i++){
-      const type = i%2===0 ? 'weapon' : 'armor';
-      const item = makeItem(type, Math.max(1, partyLevel()*2), 0);
-      item.price = Math.max(10, Math.round(item.value*9));
-      arr.push(item);
-    }
-    return arr;
-  }
-  function buyShopItem(id){
-    const idx = shopStock.findIndex(i=>i.id===id);
-    if(idx<0) return;
-    const item = shopStock[idx];
-    if(state.gold < item.price) return;
-    state.gold -= item.price;
-    const { price, ...rest } = item;
-    state.inventory.push({...rest, id:'itm_'+Math.random().toString(36).slice(2,9)});
-    shopStock.splice(idx,1);
-    pushLog(`「${item.name}」を購入した。`, 'reward');
-    saveGame(); render();
-  }
   function sellItem(id){
     const idx = state.inventory.findIndex(i=>i.id===id);
     if(idx<0) return;
@@ -4882,15 +4858,7 @@
     const equipActive = ((state.ui && state.ui.shopItemTab) || 'equip') === 'equip';
 
     let bodyHtml;
-    if(buyActive && equipActive){
-      bodyHtml = shopStock.length ? shopStock.map(item=>`
-        <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
-          <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
-          <span class="inv-item-actions">
-            <button data-buy-shop="${item.id}" ${(state.gold<item.price)?'disabled':''}>${item.price}G 購入</button>
-          </span>
-        </div>`).join('') : `<p class="inv-empty">今日の品はもう出払っている。</p>`;
-    } else if(buyActive && !equipActive){
+    if(buyActive){
       const keys = Object.keys(TOOL_DEFS).filter(k=>TOOL_DEFS[k].purchasable);
       bodyHtml = keys.length ? keys.map(key=>{
         const def = TOOL_DEFS[key];
@@ -4902,7 +4870,7 @@
             </span>
           </div>`;
       }).join('') : `<p class="inv-empty">購入できるアイテムが無い。</p>`;
-    } else if(!buyActive && equipActive){
+    } else if(equipActive){
       bodyHtml = state.inventory.length ? state.inventory.map(item=>`
         <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
           <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
@@ -4934,10 +4902,11 @@
         <button data-shop-tab="buy" class="${buyActive?'primary':''}" style="padding:6px 14px;font-size:12px;">買う</button>
         <button data-shop-tab="sell" class="${!buyActive?'primary':''}" style="padding:6px 14px;font-size:12px;">売る</button>
       </div>
+      ${buyActive ? '' : `
       <div style="display:flex;gap:8px;margin:10px 0;">
         <button data-shop-item-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
         <button data-shop-item-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
-      </div>
+      </div>`}
       <div class="section-block">
         ${bodyHtml}
       </div>
@@ -5384,9 +5353,6 @@
     });
     document.querySelectorAll('[data-unequip]').forEach(b=>{
       b.addEventListener('click', ()=>unequipSlot(b.getAttribute('data-unequip'), b.getAttribute('data-unequip-for')));
-    });
-    document.querySelectorAll('[data-buy-shop]').forEach(b=>{
-      b.addEventListener('click', ()=>buyShopItem(b.getAttribute('data-buy-shop')));
     });
     document.querySelectorAll('[data-buy-tool]').forEach(b=>{
       b.addEventListener('click', ()=>buyToolItem(b.getAttribute('data-buy-tool')));
