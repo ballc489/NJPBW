@@ -238,7 +238,6 @@
 
   .inventory-scroll{max-height:280px;}
   .equip-picker-scroll{max-height:min(50vh, 420px);}
-  .inventory-count{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin:-4px 0 10px;}
   .char-name{font-family:var(--font-display);font-size:19px;font-weight:700;margin:0 0 2px;color:#fff;}
   .char-level{font-family:var(--font-mono);font-size:12px;color:var(--gold);margin:0 0 14px;}
 
@@ -729,11 +728,6 @@
     const recipe = ALCHEMY_RECIPES.find(r=>r.id===recipeId);
     if(!recipe) return;
     if(!canAffordRecipe(recipe)) return;
-    if(recipe.output.type === 'item' && state.inventory.length >= INVENTORY_MAX){
-      pushLog('所持品がいっぱいで錬成できない。', 'system');
-      render();
-      return;
-    }
 
     if(!state.materials) state.materials = {};
     recipe.materials.forEach(m=>{ state.materials[m.key] = materialCount(m.key) - m.qty; });
@@ -1328,7 +1322,7 @@
       .map(id=>({ name: liverDef(id).name, level: jobProgressFor(id).level }));
 
     let itemName = null;
-    if(Math.random() < 0.35 && state.inventory.length < INVENTORY_MAX){
+    if(Math.random() < 0.35){
       const type = Math.random() < 0.5 ? 'weapon' : 'armor';
       const item = makeItem(type, lv, 0);
       if(addItemToInventory(item)){
@@ -2244,7 +2238,7 @@
       activeDungeonId: 'tutorial',
       tutorialDone: false,
       home: { furniture: [] },
-      ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null },
+      ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip' },
       pendingDefeatGoldLoss: 0,
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
@@ -2896,7 +2890,7 @@
         activeDungeonId: tutorialDone ? null : 'tutorial',
         tutorialDone,
         home: { furniture: playerRow.home_furniture || [] },
-        ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null },
+        ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip' },
         pendingDefeatGoldLoss: 0,
         dungeons,
         colosseum: {
@@ -3005,13 +2999,7 @@
     pushLog(`パーティは経験値を ${amount} 獲得した。`, 'reward');
   }
 
-  const INVENTORY_MAX = 20;
-
   function addItemToInventory(item){
-    if(state.inventory.length >= INVENTORY_MAX){
-      pushLog(`所持品がいっぱいで「${item.name}」を持ち帰れなかった。`, 'system');
-      return false;
-    }
     state.inventory.push(item);
     return true;
   }
@@ -3704,10 +3692,6 @@
     const ls = liverState(liverId);
     const item = ls.equipped[slot];
     if(!item) return;
-    if(state.inventory.length >= INVENTORY_MAX){
-      pushLog('所持品がいっぱいで外せない。', 'system');
-      return;
-    }
     ls.equipped[slot] = null;
     state.inventory.push(item);
     pushLog(`${liverDef(liverId).name}の${slot==='weapon' ? '武器':'防具'}を外した。`, 'system');
@@ -3820,10 +3804,6 @@
     if(idx<0) return;
     const item = shopStock[idx];
     if(state.gold < item.price) return;
-    if(state.inventory.length >= INVENTORY_MAX){
-      pushLog('所持品がいっぱいで購入できない。', 'system');
-      return;
-    }
     state.gold -= item.price;
     const { price, ...rest } = item;
     state.inventory.push({...rest, id:'itm_'+Math.random().toString(36).slice(2,9)});
@@ -4391,11 +4371,6 @@
       saveGame(); render();
       return;
     }
-    if(state.inventory.length >= INVENTORY_MAX){
-      pushLog('所持品がいっぱいで交換できない。', 'system');
-      render();
-      return;
-    }
     const item = entry.make();
     state.colosseum.medals -= entry.cost;
     addItemToInventory(item);
@@ -4778,7 +4753,7 @@
       <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
         <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
         <span class="inv-item-actions">
-          <button data-buy-shop="${item.id}" ${(state.gold<item.price || state.inventory.length>=INVENTORY_MAX)?'disabled':''}>${item.price}G 購入</button>
+          <button data-buy-shop="${item.id}" ${(state.gold<item.price)?'disabled':''}>${item.price}G 購入</button>
         </span>
       </div>`).join('') : `<p class="inv-empty">今日の品はもう出払っている。</p>`;
 
@@ -5031,10 +5006,29 @@
     `;
   }
 
+  function toggleInventoryTab(tab){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.inventoryTab = tab;
+    render();
+  }
+
+  function renderItemStackRow(name, count, rarityLabel){
+    return `
+      <div class="inv-item ${rarityLabel||''}">
+        <span class="inv-item-name">${esc(name)}</span>
+        <span class="inv-item-actions"><span style="color:var(--gold);font-family:var(--font-mono);">${count}</span></span>
+      </div>`;
+  }
+
   /* 装備の変更は「編成」画面の詳細設定から行うため、このサイドパネルは
-   * 所持品の一覧確認と破棄だけを担う。 */
+   * 所持品の一覧確認と破棄だけを担う。装備(武器・防具、個体ごとに
+   * 別枠で保持)とアイテム(オーブ・素材、種類ごとにスタックして個数だけ
+   * 保持)はデータの持ち方が違うため、タブで切り替えて表示する。 */
   function renderInventoryLane(){
-    const inv = state.inventory.length
+    const tab = (state.ui && state.ui.inventoryTab) || 'equip';
+    const equipActive = tab === 'equip';
+
+    const equipHtml = state.inventory.length
       ? state.inventory.map(i=>`
           <div class="inv-item ${i.rarityLabel}" title="${esc(itemDetailText(i))}">
             <span class="inv-item-name">${esc(i.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(i))}</span></span>
@@ -5042,13 +5036,25 @@
               <button data-discard="${i.id}">破棄</button>
             </span>
           </div>`).join('')
-      : `<p class="inv-empty">所持品はまだない。</p>`;
+      : `<p class="inv-empty">所持している装備はまだない。</p>`;
+
+    const orbRows = Object.keys(RARITY)
+      .filter(key => ((state.orbs && state.orbs[key]) || 0) > 0)
+      .map(key => renderItemStackRow(`${RARITY[key].label}のオーブ`, state.orbs[key], key));
+    const materialRows = Object.keys(MATERIAL_DEFS)
+      .filter(key => materialCount(key) > 0)
+      .map(key => renderItemStackRow(MATERIAL_DEFS[key].name, materialCount(key)));
+    const itemRows = [...orbRows, ...materialRows];
+    const itemHtml = itemRows.length ? itemRows.join('') : `<p class="inv-empty">アイテムはまだない。</p>`;
 
     return `
       <div class="panel">
         <h2>所持品</h2>
-        <p class="inventory-count">${state.inventory.length} / ${INVENTORY_MAX}</p>
-        <div class="scrollbox inventory-scroll">${inv}</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button data-inventory-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
+          <button data-inventory-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
+        </div>
+        <div class="scrollbox inventory-scroll">${equipActive ? equipHtml : itemHtml}</div>
       </div>
     `;
   }
@@ -5123,6 +5129,9 @@
 
     document.querySelectorAll('[data-bottom-tab]').forEach(b=>{
       b.addEventListener('click', ()=>toggleBottomTab(b.getAttribute('data-bottom-tab')));
+    });
+    document.querySelectorAll('[data-inventory-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>toggleInventoryTab(b.getAttribute('data-inventory-tab')));
     });
     document.querySelectorAll('[data-chat-channel]').forEach(b=>{
       b.addEventListener('click', ()=>switchChatChannel(b.getAttribute('data-chat-channel')));
