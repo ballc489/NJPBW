@@ -238,7 +238,6 @@
 
   .inventory-scroll{max-height:280px;}
   .equip-picker-scroll{max-height:min(50vh, 420px);}
-  .inventory-count{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin:-4px 0 10px;}
   .char-name{font-family:var(--font-display);font-size:19px;font-weight:700;margin:0 0 2px;color:#fff;}
   .char-level{font-family:var(--font-mono);font-size:12px;color:var(--gold);margin:0 0 14px;}
 
@@ -728,11 +727,6 @@
     const recipe = ALCHEMY_RECIPES.find(r=>r.id===recipeId);
     if(!recipe) return;
     if(!canAffordRecipe(recipe)) return;
-    if(recipe.output.type === 'item' && state.inventory.length >= INVENTORY_MAX){
-      pushLog('所持品がいっぱいで錬成できない。', 'system');
-      render();
-      return;
-    }
 
     if(!state.materials) state.materials = {};
     recipe.materials.forEach(m=>{ state.materials[m.key] = materialCount(m.key) - m.qty; });
@@ -1274,10 +1268,40 @@
    * 画面だけを表示する)、経過後に結果を受け取れる。ポモドーロ限定アイテムは
    * 設けず、通常のドロップ抽選(makeItem)を使い回す。
    * --------------------------------------------------------------- */
-  const RIFT_DURATION_MS = 1 * 60 * 1000; // ← 動作確認用に1分。確認が終わったら 25 * 60 * 1000 に戻すこと
+  const RIFT_DURATION_MS = 25 * 60 * 1000;
   function riftEndTime(){ return state.rift ? state.rift.startedAt + RIFT_DURATION_MS : 0; }
   function riftRemainMs(){ return Math.max(0, riftEndTime() - Date.now()); }
   function riftReady(){ return !!state.rift && Date.now() >= riftEndTime(); }
+
+  /* ---------------------------------------------------------------
+   * スタミナ: ダンジョン探索に必要な、ライバー単位ではなくプレイヤー
+   * (アカウント)単位のリソース。上限100固定、1分に1回復。時間経過以外の
+   * 回復手段(アイテム消費・広告視聴など)は今のところ設けない。
+   *
+   * 他の資源(ゴールド・チケットなど)と同じ信頼モデルで、サーバー側の
+   * 厳密な検証はせず、state.stamina/staminaUpdatedAtをクライアント側で
+   * 計算してそのまま保存する。staminaUpdatedAtは「最後に回復を計算した
+   * 時刻」で、上限に達している間は常に現在時刻に合わせておく(上限中に
+   * 経過した分を後で一気に回収できてしまうのを防ぐため)。
+   * --------------------------------------------------------------- */
+  const STAMINA_MAX = 100;
+  const STAMINA_REGEN_MS = 60 * 1000;
+  const RIFT_STAMINA_COST = 25;
+
+  function recomputeStamina(){
+    if(!state) return false;
+    const now = Date.now();
+    if(state.stamina >= STAMINA_MAX){
+      state.staminaUpdatedAt = now;
+      return false;
+    }
+    const elapsedMs = now - (state.staminaUpdatedAt || now);
+    const ticks = Math.floor(elapsedMs / STAMINA_REGEN_MS);
+    if(ticks <= 0) return false;
+    state.stamina = Math.min(STAMINA_MAX, state.stamina + ticks);
+    state.staminaUpdatedAt += ticks * STAMINA_REGEN_MS;
+    return true;
+  }
 
   /* 突入・受け取り・撤退・結果を閉じる、いずれの直後も必ずDBへの保存が
    * 完了してからロック画面/通常画面へ切り替える(saveGameをawaitする)。
@@ -1291,6 +1315,13 @@
       render();
       return;
     }
+    recomputeStamina();
+    if(state.stamina < RIFT_STAMINA_COST){
+      pushLog(`スタミナが足りない(必要: ${RIFT_STAMINA_COST})。時間経過で回復するのを待とう。`, 'system');
+      render();
+      return;
+    }
+    state.stamina -= RIFT_STAMINA_COST;
     state.rift = { startedAt: Date.now(), partyIds: state.party.slice(), result: null };
     pushLog('次元断層ポモ・ドーロへ突入した。探索を終えるまで、他の行動は取れない。', 'system');
     await saveGame();
@@ -1327,7 +1358,7 @@
       .map(id=>({ name: liverDef(id).name, level: jobProgressFor(id).level }));
 
     let itemName = null;
-    if(Math.random() < 0.35 && state.inventory.length < INVENTORY_MAX){
+    if(Math.random() < 0.35){
       const type = Math.random() < 0.5 ? 'weapon' : 'armor';
       const item = makeItem(type, lv, 0);
       if(addItemToInventory(item)){
@@ -2243,13 +2274,14 @@
       activeDungeonId: 'tutorial',
       tutorialDone: false,
       home: { furniture: [] },
-      ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null },
+      ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip' },
       pendingDefeatGoldLoss: 0,
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
       destinyTickets: 0, guaranteedTickets: 0,
       orbs: {}, // レアリティ(common/uncommon/rare/epic)ごとの所持数。合成で消費する
       materials: {}, // 素材キーごとの所持数。錬金で消費する
+      stamina: STAMINA_MAX, staminaUpdatedAt: Date.now(),
       rift: null // { startedAt, partyIds } / 非アクティブならnull
     };
   }
@@ -2786,7 +2818,9 @@
         p_rift_state: state.rift ? { startedAt: state.rift.startedAt, partyIds: state.rift.partyIds, result: state.rift.result || null } : null,
         p_tutorial_done: !!state.tutorialDone,
         p_orbs: state.orbs || {},
-        p_materials: state.materials || {}
+        p_materials: state.materials || {},
+        p_stamina: state.stamina,
+        p_stamina_updated_at: new Date(state.staminaUpdatedAt).toISOString()
       });
       if(error) console.error('save_full_state failed', error);
 
@@ -2895,7 +2929,7 @@
         activeDungeonId: tutorialDone ? null : 'tutorial',
         tutorialDone,
         home: { furniture: playerRow.home_furniture || [] },
-        ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null },
+        ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip' },
         pendingDefeatGoldLoss: 0,
         dungeons,
         colosseum: {
@@ -2907,6 +2941,8 @@
         guaranteedTickets: playerRow.guaranteed_tickets || 0,
         orbs: (playerRow.orbs && typeof playerRow.orbs === 'object') ? playerRow.orbs : {},
         materials: (playerRow.materials && typeof playerRow.materials === 'object') ? playerRow.materials : {},
+        stamina: (typeof playerRow.stamina === 'number') ? playerRow.stamina : STAMINA_MAX,
+        staminaUpdatedAt: playerRow.stamina_updated_at ? new Date(playerRow.stamina_updated_at).getTime() : Date.now(),
         rift: (playerRow.rift_state && playerRow.rift_state.startedAt)
           ? { startedAt: playerRow.rift_state.startedAt, partyIds: playerRow.rift_state.partyIds || [], result: playerRow.rift_state.result || null }
           : null
@@ -3004,13 +3040,7 @@
     pushLog(`パーティは経験値を ${amount} 獲得した。`, 'reward');
   }
 
-  const INVENTORY_MAX = 20;
-
   function addItemToInventory(item){
-    if(state.inventory.length >= INVENTORY_MAX){
-      pushLog(`所持品がいっぱいで「${item.name}」を持ち帰れなかった。`, 'system');
-      return false;
-    }
     state.inventory.push(item);
     return true;
   }
@@ -3601,6 +3631,13 @@
     const ds = currentDungeonState();
     if(!dungeonDef || !ds) return;
     if(!alivePartyIds().length) return; // 全員戦闘不能では進めない
+    recomputeStamina();
+    if(state.stamina < 1){
+      pushLog('スタミナが足りない。時間経過で回復するのを待とう。', 'system');
+      render();
+      return;
+    }
+    state.stamina -= 1;
     // 踏破率が100%に達したら深度のカウントは止める。これが装備・敵の強さの
     // 上限になる(ボス撃破でprogressは0に戻るが、depthは戻さないので、
     // 一度上限に達したダンジョンはそれ以降ずっと同じ上限のまま)。
@@ -3649,6 +3686,13 @@
     const dungeonDef = currentDungeonDef();
     const ds = currentDungeonState();
     if(!dungeonDef || !ds || ds.progress < 100) return;
+    recomputeStamina();
+    if(state.stamina < 1){
+      pushLog('スタミナが足りない。時間経過で回復するのを待とう。', 'system');
+      render();
+      return;
+    }
+    state.stamina -= 1;
     const enemy = spawnEnemy(dungeonDef, ds.depth, true);
     enemy.isDungeonBoss = true;
     startCombat(enemy);
@@ -3703,10 +3747,6 @@
     const ls = liverState(liverId);
     const item = ls.equipped[slot];
     if(!item) return;
-    if(state.inventory.length >= INVENTORY_MAX){
-      pushLog('所持品がいっぱいで外せない。', 'system');
-      return;
-    }
     ls.equipped[slot] = null;
     state.inventory.push(item);
     pushLog(`${liverDef(liverId).name}の${slot==='weapon' ? '武器':'防具'}を外した。`, 'system');
@@ -3819,10 +3859,6 @@
     if(idx<0) return;
     const item = shopStock[idx];
     if(state.gold < item.price) return;
-    if(state.inventory.length >= INVENTORY_MAX){
-      pushLog('所持品がいっぱいで購入できない。', 'system');
-      return;
-    }
     state.gold -= item.price;
     const { price, ...rest } = item;
     state.inventory.push({...rest, id:'itm_'+Math.random().toString(36).slice(2,9)});
@@ -4002,6 +4038,7 @@
       <div class="depth-badge">
         <div class="badge-row badge-location">${esc(locationLabel())}</div>
         <div class="badge-resources">
+          <span class="badge-resource" title="スタミナ(1分に1回復、上限${STAMINA_MAX})">⚡${state.stamina}/${STAMINA_MAX}</span>
           <span class="badge-resource" title="所持金">💰${state.gold}</span>
           <span class="badge-resource" title="運命のチケット">🎫${state.destinyTickets}</span>
           <span class="badge-resource" title="コロシアムメダル">🏅${state.colosseum.medals}</span>
@@ -4093,8 +4130,8 @@
     const isTutorial = dungeonDef.id === 'tutorial';
     const actionsHtml = `
       <div class="actions">
-        ${(bossReady && isTutorial) ? '' : `<button class="primary" id="advBtn" ${!alivePartyIds().length?'disabled':''}>奥へ進む</button>`}
-        ${bossReady ? `<button class="danger" id="bossBtn" ${!alivePartyIds().length?'disabled':''}>${ds.cleared ? 'ボスに再挑戦' : 'ボスに挑む'}</button>` : ''}
+        ${(bossReady && isTutorial) ? '' : `<button class="primary" id="advBtn" ${(!alivePartyIds().length || state.stamina<1)?'disabled':''}>奥へ進む</button>`}
+        ${bossReady ? `<button class="danger" id="bossBtn" ${(!alivePartyIds().length || state.stamina<1)?'disabled':''}>${ds.cleared ? 'ボスに再挑戦' : 'ボスに挑む'}</button>` : ''}
         ${isTutorial ? '' : `<button id="backTownBtn">町に戻る</button>`}
       </div>`;
     return `
@@ -4144,7 +4181,7 @@
       </div>
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
-        <button class="danger" id="riftEnterBtn" ${!state.party.length?'disabled':''}>突入する(25分)</button>
+        <button class="danger" id="riftEnterBtn" ${(!state.party.length || state.stamina<RIFT_STAMINA_COST)?'disabled':''}>突入する(25分・スタミナ${RIFT_STAMINA_COST}消費)</button>
       </div>
       <div class="section-block">
         <p class="section-label">挑むパーティ</p>
@@ -4388,11 +4425,6 @@
       state.orbs[entry.orb] = (state.orbs[entry.orb] || 0) + 1;
       pushLog(`メダル${entry.cost}枚を「${entry.name}」と交換した。`, 'reward');
       saveGame(); render();
-      return;
-    }
-    if(state.inventory.length >= INVENTORY_MAX){
-      pushLog('所持品がいっぱいで交換できない。', 'system');
-      render();
       return;
     }
     const item = entry.make();
@@ -4777,7 +4809,7 @@
       <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
         <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
         <span class="inv-item-actions">
-          <button data-buy-shop="${item.id}" ${(state.gold<item.price || state.inventory.length>=INVENTORY_MAX)?'disabled':''}>${item.price}G 購入</button>
+          <button data-buy-shop="${item.id}" ${(state.gold<item.price)?'disabled':''}>${item.price}G 購入</button>
         </span>
       </div>`).join('') : `<p class="inv-empty">今日の品はもう出払っている。</p>`;
 
@@ -5030,24 +5062,98 @@
     `;
   }
 
+  function toggleInventoryTab(tab){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.inventoryTab = tab;
+    render();
+  }
+
+  function setInventorySort(mode){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    const key = (state.ui.inventoryTab === 'item') ? 'itemSort' : 'equipSort';
+    state.ui[key] = mode;
+    render();
+  }
+
+  const RARITY_SORT_ORDER = {common:0, uncommon:1, rare:2, epic:3};
+  const INVENTORY_SORT_DEFAULT = 'new_asc';
+  const INVENTORY_SORT_OPTIONS = [
+    { value:'new_asc',     label:'新着順(昇順)' },
+    { value:'new_desc',    label:'新着順(降順)' },
+    { value:'rarity_asc',  label:'レアリティ順(昇順)' },
+    { value:'rarity_desc', label:'レアリティ順(降順)' },
+  ];
+
+  /* mode: 'new_asc'|'new_desc'|'rarity_asc'|'rarity_desc'。新着順は登録順
+   * (配列の並び=古いものが上)を基準に、必要なら反転するだけ。
+   * rarityOfはリストの各要素からレアリティの序列値を取り出す関数
+   * (レアリティの概念が無い素材は-1を返し、昇順では先頭・降順では末尾に来る)。 */
+  function applyInventorySort(list, mode, rarityOf){
+    if(mode === 'new_desc') return [...list].reverse();
+    if(mode === 'rarity_asc') return [...list].sort((a,b)=> rarityOf(a) - rarityOf(b));
+    if(mode === 'rarity_desc') return [...list].sort((a,b)=> rarityOf(b) - rarityOf(a));
+    return list; // new_asc
+  }
+
+  function renderItemStackRow(name, count, rarityLabel){
+    return `
+      <div class="inv-item ${rarityLabel||''}">
+        <span class="inv-item-name">${esc(name)}</span>
+        <span class="inv-item-actions"><span style="color:var(--gold);font-family:var(--font-mono);">${count}</span></span>
+      </div>`;
+  }
+
+  function renderInventorySortSelect(currentSort){
+    const options = INVENTORY_SORT_OPTIONS.map(o=>
+      `<option value="${o.value}" ${currentSort===o.value?'selected':''}>${esc(o.label)}</option>`
+    ).join('');
+    return `<select id="inventorySortSelect" style="width:100%;margin-bottom:10px;font-size:11px;padding:4px 6px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${options}</select>`;
+  }
+
   /* 装備の変更は「編成」画面の詳細設定から行うため、このサイドパネルは
-   * 所持品の一覧確認と破棄だけを担う。 */
+   * 所持品の一覧確認と破棄だけを担う。装備(武器・防具、個体ごとに
+   * 別枠で保持)とアイテム(オーブ・素材、種類ごとにスタックして個数だけ
+   * 保持)はデータの持ち方が違うため、タブで切り替えて表示する。
+   * ソート順(新着順/レアリティ順 × 昇順/降順)は装備・アイテムそれぞれ
+   * 別に保持する。 */
   function renderInventoryLane(){
-    const inv = state.inventory.length
-      ? state.inventory.map(i=>`
+    const tab = (state.ui && state.ui.inventoryTab) || 'equip';
+    const equipActive = tab === 'equip';
+    const equipSort = (state.ui && state.ui.equipSort) || INVENTORY_SORT_DEFAULT;
+    const itemSort = (state.ui && state.ui.itemSort) || INVENTORY_SORT_DEFAULT;
+
+    const equipList = applyInventorySort(state.inventory, equipSort, i => RARITY_SORT_ORDER[i.rarity] || 0);
+    const equipHtml = equipList.length
+      ? equipList.map(i=>`
           <div class="inv-item ${i.rarityLabel}" title="${esc(itemDetailText(i))}">
             <span class="inv-item-name">${esc(i.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(i))}</span></span>
             <span class="inv-item-actions">
               <button data-discard="${i.id}">破棄</button>
             </span>
           </div>`).join('')
-      : `<p class="inv-empty">所持品はまだない。</p>`;
+      : `<p class="inv-empty">所持している装備はまだない。</p>`;
+
+    const orbStacks = Object.keys(RARITY)
+      .filter(key => ((state.orbs && state.orbs[key]) || 0) > 0)
+      .map(key => ({ name:`${RARITY[key].label}のオーブ`, count: state.orbs[key], rarity: key }));
+    const materialStacks = Object.keys(MATERIAL_DEFS)
+      .filter(key => materialCount(key) > 0)
+      .map(key => ({ name: MATERIAL_DEFS[key].name, count: materialCount(key), rarity: null }));
+    const itemStacksBase = [...orbStacks, ...materialStacks]; // 新着順の代わり(素材に取得順の記録が無いため、オーブ→素材の固定順)
+    const itemStacks = applyInventorySort(itemStacksBase, itemSort, s => s.rarity ? RARITY_SORT_ORDER[s.rarity] : -1);
+    const itemHtml = itemStacks.length
+      ? itemStacks.map(s=>renderItemStackRow(s.name, s.count, s.rarity)).join('')
+      : `<p class="inv-empty">アイテムはまだない。</p>`;
 
     return `
       <div class="panel">
         <h2>所持品</h2>
-        <p class="inventory-count">${state.inventory.length} / ${INVENTORY_MAX}</p>
-        <div class="scrollbox inventory-scroll">${inv}</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button data-inventory-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
+          <button data-inventory-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
+        </div>
+        ${renderInventorySortSelect(equipActive ? equipSort : itemSort)}
+        <div class="scrollbox inventory-scroll">${equipActive ? equipHtml : itemHtml}</div>
       </div>
     `;
   }
@@ -5122,6 +5228,13 @@
 
     document.querySelectorAll('[data-bottom-tab]').forEach(b=>{
       b.addEventListener('click', ()=>toggleBottomTab(b.getAttribute('data-bottom-tab')));
+    });
+    document.querySelectorAll('[data-inventory-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>toggleInventoryTab(b.getAttribute('data-inventory-tab')));
+    });
+    const inventorySortSelect = document.getElementById('inventorySortSelect');
+    if(inventorySortSelect) inventorySortSelect.addEventListener('change', (e)=>{
+      setInventorySort(e.target.value);
     });
     document.querySelectorAll('[data-chat-channel]').forEach(b=>{
       b.addEventListener('click', ()=>switchChatChannel(b.getAttribute('data-chat-channel')));
@@ -5384,6 +5497,7 @@
    * 別の画面へ実際に遷移した時だけ先頭に戻す。 */
   function render(){
     if(!state){ document.body.classList.remove('playing'); renderCreate(); return; }
+    recomputeStamina();
     if(state.rift){
       document.body.classList.remove('playing');
       app.innerHTML = renderRiftLockScreen();
@@ -5442,13 +5556,16 @@
     startChatPolling();
     refreshAnnouncementUnreadCount();
     setInterval(()=>{
-      if(state && state.screen === 'colosseum' && !inCombat){
+      if(!state) return;
+      let needsRender = recomputeStamina();
+      if(state.screen === 'colosseum' && !inCombat){
         const remain = COLOSSEUM_COOLDOWN_MS - (Date.now() - (state.colosseum.lastChallengeAt||0));
-        if(remain > 0) render();
+        if(remain > 0) needsRender = true;
       }
-      if(state && state.rift){
-        render();
+      if(state.rift){
+        needsRender = true;
       }
+      if(needsRender) render();
     }, 5000);
   }
 
