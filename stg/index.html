@@ -271,7 +271,7 @@
   .inv-item.epic{border-left-color:var(--rare-epic);}
   .inv-item button{padding:4px 10px;font-size:11px;}
   .inv-item-name{flex:1 1 auto;min-width:0;margin-right:8px;overflow-wrap:break-word;}
-  .inv-item-actions{flex:0 0 auto;display:flex;gap:6px;white-space:nowrap;}
+  .inv-item-actions{flex:0 0 auto;display:flex;align-items:center;gap:6px;white-space:nowrap;}
   .inv-empty{color:var(--text-muted);font-size:12px;font-style:italic;}
 
   .gold-line{font-family:var(--font-mono);font-size:13px;color:var(--gold);margin-top:6px;}
@@ -1313,9 +1313,9 @@
    * --------------------------------------------------------------- */
   const TOOL_DEFS = {
     stamina_potion_10: {
-      name:'スタミナ回復薬',
+      name:'スタミナ10回復薬',
       desc:'使うとスタミナを10回復する。',
-      price: 80,
+      price: 500,
       purchasable: true,
       canUse: () => state.stamina < STAMINA_MAX,
       use: () => {
