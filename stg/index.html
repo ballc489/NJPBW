@@ -5012,6 +5012,15 @@
     render();
   }
 
+  function setInventorySort(mode){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    const key = (state.ui.inventoryTab === 'item') ? 'itemSort' : 'equipSort';
+    state.ui[key] = mode;
+    render();
+  }
+
+  const RARITY_SORT_ORDER = {common:0, uncommon:1, rare:2, epic:3};
+
   function renderItemStackRow(name, count, rarityLabel){
     return `
       <div class="inv-item ${rarityLabel||''}">
@@ -5020,16 +5029,30 @@
       </div>`;
   }
 
+  function renderInventorySortButtons(currentSort){
+    return `
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <button data-inventory-sort="new" class="${currentSort==='new'?'primary':''}" style="padding:4px 10px;font-size:11px;">新着順</button>
+        <button data-inventory-sort="rarity" class="${currentSort==='rarity'?'primary':''}" style="padding:4px 10px;font-size:11px;">レアリティ順</button>
+      </div>`;
+  }
+
   /* 装備の変更は「編成」画面の詳細設定から行うため、このサイドパネルは
    * 所持品の一覧確認と破棄だけを担う。装備(武器・防具、個体ごとに
    * 別枠で保持)とアイテム(オーブ・素材、種類ごとにスタックして個数だけ
-   * 保持)はデータの持ち方が違うため、タブで切り替えて表示する。 */
+   * 保持)はデータの持ち方が違うため、タブで切り替えて表示する。
+   * ソート順(新着順/レアリティ順)は装備・アイテムそれぞれ別に保持する。 */
   function renderInventoryLane(){
     const tab = (state.ui && state.ui.inventoryTab) || 'equip';
     const equipActive = tab === 'equip';
+    const equipSort = (state.ui && state.ui.equipSort) || 'new';
+    const itemSort = (state.ui && state.ui.itemSort) || 'new';
 
-    const equipHtml = state.inventory.length
-      ? state.inventory.map(i=>`
+    const equipList = equipSort === 'rarity'
+      ? [...state.inventory].sort((a,b)=> (RARITY_SORT_ORDER[b.rarity]||0) - (RARITY_SORT_ORDER[a.rarity]||0))
+      : state.inventory; // 新着順(登録順=配列順、古いものが上)はそのまま
+    const equipHtml = equipList.length
+      ? equipList.map(i=>`
           <div class="inv-item ${i.rarityLabel}" title="${esc(itemDetailText(i))}">
             <span class="inv-item-name">${esc(i.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(i))}</span></span>
             <span class="inv-item-actions">
@@ -5038,14 +5061,23 @@
           </div>`).join('')
       : `<p class="inv-empty">所持している装備はまだない。</p>`;
 
-    const orbRows = Object.keys(RARITY)
+    const orbStacks = Object.keys(RARITY)
       .filter(key => ((state.orbs && state.orbs[key]) || 0) > 0)
-      .map(key => renderItemStackRow(`${RARITY[key].label}のオーブ`, state.orbs[key], key));
-    const materialRows = Object.keys(MATERIAL_DEFS)
+      .map(key => ({ name:`${RARITY[key].label}のオーブ`, count: state.orbs[key], rarity: key }));
+    const materialStacks = Object.keys(MATERIAL_DEFS)
       .filter(key => materialCount(key) > 0)
-      .map(key => renderItemStackRow(MATERIAL_DEFS[key].name, materialCount(key)));
-    const itemRows = [...orbRows, ...materialRows];
-    const itemHtml = itemRows.length ? itemRows.join('') : `<p class="inv-empty">アイテムはまだない。</p>`;
+      .map(key => ({ name: MATERIAL_DEFS[key].name, count: materialCount(key), rarity: null }));
+    let itemStacks = [...orbStacks, ...materialStacks]; // 新着順の代わり(素材に取得順の記録が無いため、オーブ→素材の固定順)
+    if(itemSort === 'rarity'){
+      itemStacks = [...itemStacks].sort((a,b)=>{
+        const ra = a.rarity ? RARITY_SORT_ORDER[a.rarity] : -1;
+        const rb = b.rarity ? RARITY_SORT_ORDER[b.rarity] : -1;
+        return rb - ra; // レアリティが無い素材は末尾
+      });
+    }
+    const itemHtml = itemStacks.length
+      ? itemStacks.map(s=>renderItemStackRow(s.name, s.count, s.rarity)).join('')
+      : `<p class="inv-empty">アイテムはまだない。</p>`;
 
     return `
       <div class="panel">
@@ -5054,6 +5086,7 @@
           <button data-inventory-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
           <button data-inventory-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
         </div>
+        ${renderInventorySortButtons(equipActive ? equipSort : itemSort)}
         <div class="scrollbox inventory-scroll">${equipActive ? equipHtml : itemHtml}</div>
       </div>
     `;
@@ -5132,6 +5165,9 @@
     });
     document.querySelectorAll('[data-inventory-tab]').forEach(b=>{
       b.addEventListener('click', ()=>toggleInventoryTab(b.getAttribute('data-inventory-tab')));
+    });
+    document.querySelectorAll('[data-inventory-sort]').forEach(b=>{
+      b.addEventListener('click', ()=>setInventorySort(b.getAttribute('data-inventory-sort')));
     });
     document.querySelectorAll('[data-chat-channel]').forEach(b=>{
       b.addEventListener('click', ()=>switchChatChannel(b.getAttribute('data-chat-channel')));
