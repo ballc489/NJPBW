@@ -1516,11 +1516,6 @@
     'この宿の火だけは、何があっても絶やさないと決めているんだ。',
     '外はまだ危ないだろう。今夜はゆっくりお休み。',
   ];
-  const SHOPKEEPER_LINES = [
-    '瓦礫の中から拾い集めた掘り出し物だ、見ていきな。',
-    '値は張るが、腕は確かだ。損はさせないよ。',
-    '迷宮帰りの得物なら、こっちで下取りもするぜ。',
-  ];
   const FURNITURE_CATALOG = [
     {id:'hearth',    name:'暖炉',         price:80,  flavor:'小さな炎が部屋を暖める。長い探索の後、これを眺めるとほっとする。'},
     {id:'bookshelf', name:'古びた本棚',    price:60,  flavor:'拾い集めた古文書が並ぶ。まだ読み解けない頁も多い。'},
@@ -4853,7 +4848,6 @@
   }
 
   function renderShopInner(){
-    const line = SHOPKEEPER_LINES[Math.floor(Math.random()*SHOPKEEPER_LINES.length)];
     const buyActive = ((state.ui && state.ui.shopTab) || 'buy') === 'buy';
     const equipActive = ((state.ui && state.ui.shopItemTab) || 'equip') === 'equip';
 
@@ -4899,7 +4893,6 @@
     return `
       <div class="scene-text">
         ${sceneHeadingHtml('商店')}
-        <p class="log-entry system">商人オーレンス:「${esc(line)}」</p>
       </div>
       <div class="actions"><button id="backTownBtn">町に戻る</button></div>
       <div style="display:flex;gap:8px;margin:14px 0 10px;">
@@ -4907,11 +4900,11 @@
         <button data-shop-tab="sell" class="${!buyActive?'primary':''}" style="padding:6px 14px;font-size:12px;">売る</button>
       </div>
       ${buyActive ? '' : `
-      <div style="display:flex;gap:8px;margin:10px 0;">
+      <div style="display:flex;gap:8px;align-items:center;margin:10px 0;">
         <button data-shop-item-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
         <button data-shop-item-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
-      </div>
-      ${renderSortSelect('shopSortSelect', (state.ui && (equipActive ? state.ui.equipSort : state.ui.itemSort)) || INVENTORY_SORT_DEFAULT)}`}
+        ${renderSortSelect('shopSortSelect', (state.ui && (equipActive ? state.ui.equipSort : state.ui.itemSort)) || INVENTORY_SORT_DEFAULT)}
+      </div>`}
       <div class="section-block">
         ${bodyHtml}
       </div>
@@ -5191,7 +5184,7 @@
     const options = INVENTORY_SORT_OPTIONS.map(o=>
       `<option value="${o.value}" ${currentSort===o.value?'selected':''}>${esc(o.label)}</option>`
     ).join('');
-    return `<select id="${id}" style="width:100%;margin-bottom:10px;font-size:11px;padding:4px 6px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${options}</select>`;
+    return `<select id="${id}" style="margin-left:auto;min-width:0;flex:0 1 auto;font-size:11px;padding:4px 4px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${options}</select>`;
   }
 
   /* 装備の変更は「編成」画面の詳細設定から行うため、このサイドパネルは
@@ -5242,11 +5235,11 @@
     return `
       <div class="panel">
         <h2>所持品</h2>
-        <div style="display:flex;gap:8px;margin-bottom:10px;">
-          <button data-inventory-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
-          <button data-inventory-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
+        <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;margin-bottom:10px;">
+          <button data-inventory-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 10px;font-size:12px;flex:0 0 auto;">装備</button>
+          <button data-inventory-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 10px;font-size:12px;flex:0 0 auto;">アイテム</button>
+          ${renderSortSelect('inventorySortSelect', equipActive ? equipSort : itemSort)}
         </div>
-        ${renderSortSelect('inventorySortSelect', equipActive ? equipSort : itemSort)}
         <div class="scrollbox inventory-scroll">${equipActive ? equipHtml : itemHtml}</div>
       </div>
     `;
