@@ -632,6 +632,116 @@
     return item.value + itemEnhanceIncrement(item.value) * level;
   }
 
+  /* ---------------------------------------------------------------
+   * 錬金: 素材(スタック管理、player_inventoryとは別枠でplayers.materials
+   * に個数だけ持つ)を消費してレシピを実行する。
+   *
+   * レシピは全て公開状態(習得の概念は無し)で、素材が足りているものだけ
+   * 実行できる。今後カテゴリが増えてもリストが破綻しないよう、レシピ
+   * ごとにcategoryを持たせてグループ表示する。
+   *
+   * 素材を集めるダンジョンはまだ無いため(今後実装予定)、ここでは
+   * エンジンとサンプルレシピのみ用意する。
+   * --------------------------------------------------------------- */
+  const MATERIAL_DEFS = {
+    iron_ore:      { name:'鉄鉱石' },
+    branch:        { name:'木の枝' },
+    beast_hide:    { name:'獣の皮' },
+    mana_residue:  { name:'魔力の残滓' },
+    fine_iron_ore: { name:'上質な鉄鉱石' },
+  };
+
+  /* 錬金の大成功: 出来上がったアイテムが装備(武器・防具)の時だけ判定する。
+   * 素材・道具など強化値の概念が無いものには適用しない。 */
+  function rollAlchemyGrade(){
+    const r = Math.random() * 100;
+    if(r < 2) return 3;
+    if(r < 5) return 2;
+    if(r < 10) return 1;
+    return 0;
+  }
+
+  const ALCHEMY_RECIPES = [
+    {
+      id:'refine_iron_ore', category:'素材の精製',
+      name:'上質な鉄鉱石の精製',
+      desc:'鉄鉱石をまとめて精製し、上質な鉄鉱石にする。',
+      materials:[{key:'iron_ore', qty:5}],
+      output:{ type:'material', key:'fine_iron_ore', qty:1 }
+    },
+    {
+      id:'refine_common_orb', category:'素材の精製',
+      name:'コモンオーブの精製',
+      desc:'魔力の残滓を凝縮し、合成で使うコモンオーブにする。',
+      materials:[{key:'mana_residue', qty:5}],
+      output:{ type:'orb', key:'common', qty:1 }
+    },
+    {
+      id:'craft_iron_sword', category:'装備の製作',
+      name:'鉄の剣を打つ',
+      desc:'鉄鉱石と木の枝から、まっすぐな剣を打ち出す。',
+      materials:[{key:'iron_ore', qty:3}, {key:'branch', qty:2}],
+      output:{ type:'item', make: () => ({
+        id:'itm_'+Math.random().toString(36).slice(2,9),
+        type:'weapon', weaponType:'sword',
+        rarity:'common', rarityLabel:'common', name:'鉄の剣', value:12, affix:null, resist:null
+      }) }
+    },
+    {
+      id:'craft_hide_armor', category:'装備の製作',
+      name:'獣皮の鎧を仕立てる',
+      desc:'鞣した獣の皮と上質な鉄鉱石で、軽い鎧を仕立てる。',
+      materials:[{key:'beast_hide', qty:3}, {key:'fine_iron_ore', qty:1}],
+      output:{ type:'item', make: () => ({
+        id:'itm_'+Math.random().toString(36).slice(2,9),
+        type:'armor',
+        rarity:'common', rarityLabel:'common', name:'獣皮の鎧', value:10, resist:null
+      }) }
+    },
+  ];
+
+  function materialCount(key){
+    return (state.materials && state.materials[key]) || 0;
+  }
+  function canAffordRecipe(recipe){
+    return recipe.materials.every(m => materialCount(m.key) >= m.qty);
+  }
+
+  function craftRecipe(recipeId){
+    if(!canManageEquipment()) return;
+    const recipe = ALCHEMY_RECIPES.find(r=>r.id===recipeId);
+    if(!recipe) return;
+    if(!canAffordRecipe(recipe)) return;
+    if(recipe.output.type === 'item' && state.inventory.length >= INVENTORY_MAX){
+      pushLog('所持品がいっぱいで錬成できない。', 'system');
+      render();
+      return;
+    }
+
+    if(!state.materials) state.materials = {};
+    recipe.materials.forEach(m=>{ state.materials[m.key] = materialCount(m.key) - m.qty; });
+
+    if(recipe.output.type === 'material'){
+      const key = recipe.output.key;
+      state.materials[key] = materialCount(key) + recipe.output.qty;
+      pushLog(`「${recipe.name}」に成功し、${MATERIAL_DEFS[key].name}を${recipe.output.qty}個手に入れた。`, 'reward');
+    } else if(recipe.output.type === 'orb'){
+      const key = recipe.output.key;
+      if(!state.orbs) state.orbs = {};
+      state.orbs[key] = (state.orbs[key]||0) + recipe.output.qty;
+      pushLog(`「${recipe.name}」に成功し、${RARITY[key].label}のオーブを${recipe.output.qty}個手に入れた。`, 'reward');
+    } else if(recipe.output.type === 'item'){
+      const item = recipe.output.make();
+      const grade = rollAlchemyGrade();
+      if(grade > 0) item.enhanceLevel = grade;
+      addItemToInventory(item);
+      const gradeLabel = grade > 0 ? ` 大成功！(強化値+${grade})` : '';
+      pushLog(`「${recipe.name}」に成功し、「${item.name}」を手に入れた。${gradeLabel}`, 'reward');
+    }
+
+    saveGame(); render();
+  }
+
   function rollRarity(){
     const total = Object.values(RARITY).reduce((s,r)=>s+r.weight,0);
     let roll = Math.random()*total;
@@ -2090,6 +2200,7 @@
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
       destinyTickets: 0, guaranteedTickets: 0,
       orbs: {}, // レアリティ(common/uncommon/rare/epic)ごとの所持数。合成で消費する
+      materials: {}, // 素材キーごとの所持数。錬金で消費する
       rift: null // { startedAt, partyIds } / 非アクティブならnull
     };
   }
@@ -2625,7 +2736,8 @@
         p_guaranteed_tickets: state.guaranteedTickets,
         p_rift_state: state.rift ? { startedAt: state.rift.startedAt, partyIds: state.rift.partyIds, result: state.rift.result || null } : null,
         p_tutorial_done: !!state.tutorialDone,
-        p_orbs: state.orbs || {}
+        p_orbs: state.orbs || {},
+        p_materials: state.materials || {}
       });
       if(error) console.error('save_full_state failed', error);
 
@@ -2745,6 +2857,7 @@
         destinyTickets: playerRow.destiny_tickets || 0,
         guaranteedTickets: playerRow.guaranteed_tickets || 0,
         orbs: (playerRow.orbs && typeof playerRow.orbs === 'object') ? playerRow.orbs : {},
+        materials: (playerRow.materials && typeof playerRow.materials === 'object') ? playerRow.materials : {},
         rift: (playerRow.rift_state && playerRow.rift_state.startedAt)
           ? { startedAt: playerRow.rift_state.startedAt, partyIds: playerRow.rift_state.partyIds || [], result: playerRow.rift_state.result || null }
           : null
@@ -3959,6 +4072,7 @@
         <button class="primary" id="gotoSummonBtn">召喚</button>
         <button class="primary" id="gotoExchangeBtn">交換所</button>
         <button class="primary" id="gotoEnhanceBtn">合成</button>
+        <button class="primary" id="gotoAlchemyBtn">錬金</button>
         <button class="primary" id="gotoHomeBtn">家へ帰る</button>
         <button class="primary" id="gotoRankingsBtn">ランキング</button>
         <button class="danger" id="gotoColosseumBtn">コロシアムタワー</button>
@@ -4316,6 +4430,54 @@
         <p class="section-label">防具</p>
         ${armorRows}
       </div>
+    `;
+  }
+
+  /* ---------------- 錬金: レシピ実行画面 ---------------- */
+  function renderRecipeRow(recipe){
+    const affordable = canAffordRecipe(recipe);
+    const materialsHtml = recipe.materials.map(m=>{
+      const have = materialCount(m.key);
+      const ok = have >= m.qty;
+      return `<span style="color:${ok?'var(--text-muted)':'var(--danger)'};">${esc(MATERIAL_DEFS[m.key].name)} ${have}/${m.qty}</span>`;
+    }).join(' ・ ');
+    return `
+      <div class="inv-item" title="${esc(recipe.desc)}">
+        <span class="inv-item-name">${esc(recipe.name)}<br><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${materialsHtml}</span></span>
+        <span class="inv-item-actions">
+          <button data-craft-recipe="${recipe.id}" ${affordable?'':'disabled'}>錬成する</button>
+        </span>
+      </div>`;
+  }
+
+  function renderMaterialSummary(){
+    const owned = Object.keys(MATERIAL_DEFS).filter(key => materialCount(key) > 0);
+    if(!owned.length) return '<span style="color:var(--text-muted);">素材はまだ持っていない。</span>';
+    return owned.map(key => `<span class="badge-resource" title="${esc(MATERIAL_DEFS[key].name)}">${esc(MATERIAL_DEFS[key].name)} ${materialCount(key)}</span>`).join(' ');
+  }
+
+  function renderAlchemyInner(){
+    const categories = [];
+    ALCHEMY_RECIPES.forEach(r=>{ if(!categories.includes(r.category)) categories.push(r.category); });
+    const categoryBlocksHtml = categories.map(cat=>{
+      const rows = ALCHEMY_RECIPES.filter(r=>r.category===cat).map(renderRecipeRow).join('');
+      return `
+        <div class="section-block">
+          <p class="section-label">${esc(cat)}</p>
+          ${rows}
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('錬金')}
+        <p class="log-entry system">素材を消費してレシピを実行し、新たなアイテムを作り出す。まれに大成功し、出来上がった装備に強化値が付くことがある。素材が足りているレシピだけ実行できる。</p>
+        <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--gold);">${renderMaterialSummary()}</p>
+      </div>
+      <div class="actions">
+        <button id="backTownBtn">町に戻る</button>
+      </div>
+      ${categoryBlocksHtml}
     `;
   }
 
@@ -4690,6 +4852,7 @@
     else if(state.screen === 'summon') inner = renderSummonInner();
     else if(state.screen === 'exchange') inner = renderExchangeInner();
     else if(state.screen === 'enhance') inner = renderEnhanceInner();
+    else if(state.screen === 'alchemy') inner = renderAlchemyInner();
     else if(state.screen === 'rift') inner = renderRiftInner();
     else if(state.screen === 'home') inner = renderHomeInner();
     else if(state.screen === 'rankings') inner = renderRankingsInner();
@@ -4860,6 +5023,7 @@
     on('gotoSummonBtn', ()=>gotoScreen('summon'));
     on('gotoExchangeBtn', ()=>gotoScreen('exchange'));
     on('gotoEnhanceBtn', ()=>gotoScreen('enhance'));
+    on('gotoAlchemyBtn', ()=>gotoScreen('alchemy'));
     on('gotoHomeBtn', ()=>gotoScreen('home'));
     on('pullGachaBtn', pullDestinyTicket);
     on('acceptGachaBtn', acceptDestinyGacha);
@@ -4946,6 +5110,9 @@
     });
     document.querySelectorAll('[data-enhance-item]').forEach(b=>{
       b.addEventListener('click', ()=>enhanceItem(b.getAttribute('data-enhance-item')));
+    });
+    document.querySelectorAll('[data-craft-recipe]').forEach(b=>{
+      b.addEventListener('click', ()=>craftRecipe(b.getAttribute('data-craft-recipe')));
     });
     document.querySelectorAll('[data-sell]').forEach(b=>{
       b.addEventListener('click', ()=>sellItem(b.getAttribute('data-sell')));
