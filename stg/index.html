@@ -1471,13 +1471,25 @@
   let lastRenderedScreen = null;  // render()がスクロール位置を保持すべきか(=同じ画面内の再描画か)の判定用
 
   /* 冒険の記録/チャット欄の表示行数(px)。ユーザーごとの好みで、ゲームデータ
-   * ではなくこの端末・ブラウザだけの表示設定として扱う(localStorage)。 */
+   * ではなくこの端末・ブラウザだけの表示設定として扱う(localStorage)。
+   * チャットの1メッセージ=1行(font-size 12px, line-height 1.65 + 行間4px)
+   * を基準に、行数から高さを逆算してある。0は「非表示」を表す。 */
+  const HISTORY_LOG_ROW_HEIGHT = 19.8 + 4; // line-height分 + p要素のmargin-bottom
+  const HISTORY_LOG_PRESETS = [
+    { px:0, label:'非表示' },
+    { px:Math.round(HISTORY_LOG_ROW_HEIGHT*3),  label:'小(3行)' },
+    { px:Math.round(HISTORY_LOG_ROW_HEIGHT*5),  label:'中(5行)' },
+    { px:Math.round(HISTORY_LOG_ROW_HEIGHT*10), label:'大(10行)' },
+  ];
   const HISTORY_LOG_HEIGHT_KEY = 'historyLogHeightPx';
-  const HISTORY_LOG_HEIGHT_DEFAULT = 170;
+  const HISTORY_LOG_HEIGHT_DEFAULT = HISTORY_LOG_PRESETS[2].px; // 中(5行)
   let historyLogHeightPx = HISTORY_LOG_HEIGHT_DEFAULT;
   try{
-    const saved = Number(localStorage.getItem(HISTORY_LOG_HEIGHT_KEY));
-    if(saved > 0) historyLogHeightPx = saved;
+    const raw = localStorage.getItem(HISTORY_LOG_HEIGHT_KEY);
+    if(raw !== null){
+      const saved = Number(raw);
+      if(!isNaN(saved) && saved >= 0) historyLogHeightPx = saved;
+    }
   }catch(e){}
 
   function applyHistoryLogHeight(){
@@ -5097,6 +5109,11 @@
     const historyLogHeightSelect = document.getElementById('historyLogHeightSelect');
     if(historyLogHeightSelect) historyLogHeightSelect.addEventListener('change', (e)=>{
       setHistoryLogHeight(Number(e.target.value));
+      render();
+    });
+    on('showHistoryPanelBtn', ()=>{
+      setHistoryLogHeight(HISTORY_LOG_HEIGHT_DEFAULT);
+      render();
     });
 
     const chatInput = document.getElementById('chatInput');
@@ -5264,15 +5281,20 @@
   }
 
   function renderBottomPanel(){
+    if(historyLogHeightPx <= 0){
+      return `<div class="panel history-panel" style="padding:10px 14px;">
+        <button id="showHistoryPanelBtn" style="width:100%;padding:6px 14px;font-size:12px;">▲ 冒険の記録・チャットを表示</button>
+      </div>`;
+    }
+
     const tab = (state.ui && state.ui.bottomTab) || 'log';
     const logActive = tab === 'log';
     const channelTabsHtml = CHAT_CHANNEL_DEFS.map(c=>
       `<button data-chat-channel="${c.id}" class="${(!logActive && activeChatChannel===c.id)?'primary':''}" style="padding:6px 14px;font-size:12px;">${esc(c.name)}</button>`
     ).join('');
-    const heightOptions = [
-      {px:120, label:'表示: 小'}, {px:170, label:'表示: 中'},
-      {px:260, label:'表示: 大'}, {px:380, label:'表示: 特大'}
-    ].map(o=>`<option value="${o.px}" ${historyLogHeightPx===o.px?'selected':''}>${o.label}</option>`).join('');
+    const heightOptions = HISTORY_LOG_PRESETS.map(o=>
+      `<option value="${o.px}" ${historyLogHeightPx===o.px?'selected':''}>${esc(o.label)}</option>`
+    ).join('');
     const tabsHtml = `
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
         <button data-bottom-tab="log" class="${logActive?'primary':''}" style="padding:6px 14px;font-size:12px;">冒険の記録</button>
