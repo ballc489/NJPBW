@@ -1269,10 +1269,40 @@
    * 画面だけを表示する)、経過後に結果を受け取れる。ポモドーロ限定アイテムは
    * 設けず、通常のドロップ抽選(makeItem)を使い回す。
    * --------------------------------------------------------------- */
-  const RIFT_DURATION_MS = 1 * 60 * 1000; // ← 動作確認用に1分。確認が終わったら 25 * 60 * 1000 に戻すこと
+  const RIFT_DURATION_MS = 25 * 60 * 1000;
   function riftEndTime(){ return state.rift ? state.rift.startedAt + RIFT_DURATION_MS : 0; }
   function riftRemainMs(){ return Math.max(0, riftEndTime() - Date.now()); }
   function riftReady(){ return !!state.rift && Date.now() >= riftEndTime(); }
+
+  /* ---------------------------------------------------------------
+   * スタミナ: ダンジョン探索に必要な、ライバー単位ではなくプレイヤー
+   * (アカウント)単位のリソース。上限100固定、1分に1回復。時間経過以外の
+   * 回復手段(アイテム消費・広告視聴など)は今のところ設けない。
+   *
+   * 他の資源(ゴールド・チケットなど)と同じ信頼モデルで、サーバー側の
+   * 厳密な検証はせず、state.stamina/staminaUpdatedAtをクライアント側で
+   * 計算してそのまま保存する。staminaUpdatedAtは「最後に回復を計算した
+   * 時刻」で、上限に達している間は常に現在時刻に合わせておく(上限中に
+   * 経過した分を後で一気に回収できてしまうのを防ぐため)。
+   * --------------------------------------------------------------- */
+  const STAMINA_MAX = 100;
+  const STAMINA_REGEN_MS = 60 * 1000;
+  const RIFT_STAMINA_COST = 25;
+
+  function recomputeStamina(){
+    if(!state) return false;
+    const now = Date.now();
+    if(state.stamina >= STAMINA_MAX){
+      state.staminaUpdatedAt = now;
+      return false;
+    }
+    const elapsedMs = now - (state.staminaUpdatedAt || now);
+    const ticks = Math.floor(elapsedMs / STAMINA_REGEN_MS);
+    if(ticks <= 0) return false;
+    state.stamina = Math.min(STAMINA_MAX, state.stamina + ticks);
+    state.staminaUpdatedAt += ticks * STAMINA_REGEN_MS;
+    return true;
+  }
 
   /* 突入・受け取り・撤退・結果を閉じる、いずれの直後も必ずDBへの保存が
    * 完了してからロック画面/通常画面へ切り替える(saveGameをawaitする)。
@@ -1286,6 +1316,13 @@
       render();
       return;
     }
+    recomputeStamina();
+    if(state.stamina < RIFT_STAMINA_COST){
+      pushLog(`スタミナが足りない(必要: ${RIFT_STAMINA_COST})。時間経過で回復するのを待とう。`, 'system');
+      render();
+      return;
+    }
+    state.stamina -= RIFT_STAMINA_COST;
     state.rift = { startedAt: Date.now(), partyIds: state.party.slice(), result: null };
     pushLog('次元断層ポモ・ドーロへ突入した。探索を終えるまで、他の行動は取れない。', 'system');
     await saveGame();
@@ -2245,6 +2282,7 @@
       destinyTickets: 0, guaranteedTickets: 0,
       orbs: {}, // レアリティ(common/uncommon/rare/epic)ごとの所持数。合成で消費する
       materials: {}, // 素材キーごとの所持数。錬金で消費する
+      stamina: STAMINA_MAX, staminaUpdatedAt: Date.now(),
       rift: null // { startedAt, partyIds } / 非アクティブならnull
     };
   }
@@ -2781,7 +2819,9 @@
         p_rift_state: state.rift ? { startedAt: state.rift.startedAt, partyIds: state.rift.partyIds, result: state.rift.result || null } : null,
         p_tutorial_done: !!state.tutorialDone,
         p_orbs: state.orbs || {},
-        p_materials: state.materials || {}
+        p_materials: state.materials || {},
+        p_stamina: state.stamina,
+        p_stamina_updated_at: new Date(state.staminaUpdatedAt).toISOString()
       });
       if(error) console.error('save_full_state failed', error);
 
@@ -2902,6 +2942,8 @@
         guaranteedTickets: playerRow.guaranteed_tickets || 0,
         orbs: (playerRow.orbs && typeof playerRow.orbs === 'object') ? playerRow.orbs : {},
         materials: (playerRow.materials && typeof playerRow.materials === 'object') ? playerRow.materials : {},
+        stamina: (typeof playerRow.stamina === 'number') ? playerRow.stamina : STAMINA_MAX,
+        staminaUpdatedAt: playerRow.stamina_updated_at ? new Date(playerRow.stamina_updated_at).getTime() : Date.now(),
         rift: (playerRow.rift_state && playerRow.rift_state.startedAt)
           ? { startedAt: playerRow.rift_state.startedAt, partyIds: playerRow.rift_state.partyIds || [], result: playerRow.rift_state.result || null }
           : null
@@ -3590,6 +3632,13 @@
     const ds = currentDungeonState();
     if(!dungeonDef || !ds) return;
     if(!alivePartyIds().length) return; // 全員戦闘不能では進めない
+    recomputeStamina();
+    if(state.stamina < 1){
+      pushLog('スタミナが足りない。時間経過で回復するのを待とう。', 'system');
+      render();
+      return;
+    }
+    state.stamina -= 1;
     // 踏破率が100%に達したら深度のカウントは止める。これが装備・敵の強さの
     // 上限になる(ボス撃破でprogressは0に戻るが、depthは戻さないので、
     // 一度上限に達したダンジョンはそれ以降ずっと同じ上限のまま)。
@@ -3638,6 +3687,13 @@
     const dungeonDef = currentDungeonDef();
     const ds = currentDungeonState();
     if(!dungeonDef || !ds || ds.progress < 100) return;
+    recomputeStamina();
+    if(state.stamina < 1){
+      pushLog('スタミナが足りない。時間経過で回復するのを待とう。', 'system');
+      render();
+      return;
+    }
+    state.stamina -= 1;
     const enemy = spawnEnemy(dungeonDef, ds.depth, true);
     enemy.isDungeonBoss = true;
     startCombat(enemy);
@@ -3983,6 +4039,7 @@
       <div class="depth-badge">
         <div class="badge-row badge-location">${esc(locationLabel())}</div>
         <div class="badge-resources">
+          <span class="badge-resource" title="スタミナ(1分に1回復、上限${STAMINA_MAX})">⚡${state.stamina}/${STAMINA_MAX}</span>
           <span class="badge-resource" title="所持金">💰${state.gold}</span>
           <span class="badge-resource" title="運命のチケット">🎫${state.destinyTickets}</span>
           <span class="badge-resource" title="コロシアムメダル">🏅${state.colosseum.medals}</span>
@@ -4074,8 +4131,8 @@
     const isTutorial = dungeonDef.id === 'tutorial';
     const actionsHtml = `
       <div class="actions">
-        ${(bossReady && isTutorial) ? '' : `<button class="primary" id="advBtn" ${!alivePartyIds().length?'disabled':''}>奥へ進む</button>`}
-        ${bossReady ? `<button class="danger" id="bossBtn" ${!alivePartyIds().length?'disabled':''}>${ds.cleared ? 'ボスに再挑戦' : 'ボスに挑む'}</button>` : ''}
+        ${(bossReady && isTutorial) ? '' : `<button class="primary" id="advBtn" ${(!alivePartyIds().length || state.stamina<1)?'disabled':''}>奥へ進む</button>`}
+        ${bossReady ? `<button class="danger" id="bossBtn" ${(!alivePartyIds().length || state.stamina<1)?'disabled':''}>${ds.cleared ? 'ボスに再挑戦' : 'ボスに挑む'}</button>` : ''}
         ${isTutorial ? '' : `<button id="backTownBtn">町に戻る</button>`}
       </div>`;
     return `
@@ -4125,7 +4182,7 @@
       </div>
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
-        <button class="danger" id="riftEnterBtn" ${!state.party.length?'disabled':''}>突入する(25分)</button>
+        <button class="danger" id="riftEnterBtn" ${(!state.party.length || state.stamina<RIFT_STAMINA_COST)?'disabled':''}>突入する(25分・スタミナ${RIFT_STAMINA_COST}消費)</button>
       </div>
       <div class="section-block">
         <p class="section-label">挑むパーティ</p>
@@ -5441,6 +5498,7 @@
    * 別の画面へ実際に遷移した時だけ先頭に戻す。 */
   function render(){
     if(!state){ document.body.classList.remove('playing'); renderCreate(); return; }
+    recomputeStamina();
     if(state.rift){
       document.body.classList.remove('playing');
       app.innerHTML = renderRiftLockScreen();
@@ -5499,13 +5557,16 @@
     startChatPolling();
     refreshAnnouncementUnreadCount();
     setInterval(()=>{
-      if(state && state.screen === 'colosseum' && !inCombat){
+      if(!state) return;
+      let needsRender = recomputeStamina();
+      if(state.screen === 'colosseum' && !inCombat){
         const remain = COLOSSEUM_COOLDOWN_MS - (Date.now() - (state.colosseum.lastChallengeAt||0));
-        if(remain > 0) render();
+        if(remain > 0) needsRender = true;
       }
-      if(state && state.rift){
-        render();
+      if(state.rift){
+        needsRender = true;
       }
+      if(needsRender) render();
     }, 5000);
   }
 
