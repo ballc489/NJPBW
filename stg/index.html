@@ -620,6 +620,18 @@
     epic:     {label:'エピック', cls:'epic',     mult:3.2, weight:3},
   };
 
+  /* 合成(装備強化)。強化値+1ごとに基礎値の5%を加算(5%分が1未満なら
+   * 最低+1を保証)。最大+10まで(基礎値が十分大きい装備ではおよそ+50%)。 */
+  const ENHANCE_MAX_LEVEL = 10;
+  function itemEnhanceIncrement(baseValue){
+    return Math.max(1, Math.round(baseValue * 0.05));
+  }
+  function itemEffectiveValue(item){
+    const level = item.enhanceLevel || 0;
+    if(level <= 0) return item.value;
+    return item.value + itemEnhanceIncrement(item.value) * level;
+  }
+
   function rollRarity(){
     const total = Object.values(RARITY).reduce((s,r)=>s+r.weight,0);
     let roll = Math.random()*total;
@@ -699,7 +711,8 @@
   }
 
   function itemValueLabel(item){
-    let s = `(+${item.value})`;
+    let s = `(+${itemEffectiveValue(item)})`;
+    if(item.enhanceLevel) s += ` [強化+${item.enhanceLevel}]`;
     if(item.weaponType) s += ` [${WEAPON_TYPES[item.weaponType].name}]`;
     if(item.affix && item.affix.kind==='element'){
       s += ` ${ELEMENT_LABELS[item.affix.element]}属性付与`;
@@ -714,7 +727,10 @@
   function itemDetailText(item){
     const typeLabel = item.weaponType ? WEAPON_TYPES[item.weaponType].name : (item.type==='weapon' ? '武器' : '防具');
     const rarityLabel = (RARITY[item.rarity] && RARITY[item.rarity].label) || '';
-    let text = `${item.name} / ${rarityLabel} / ${typeLabel} / 効果値 +${item.value}`;
+    let text = `${item.name} / ${rarityLabel} / ${typeLabel} / 効果値 +${itemEffectiveValue(item)}`;
+    if(item.enhanceLevel){
+      text += ` (基礎値+${item.value} / 強化値+${item.enhanceLevel})`;
+    }
     if(item.affix && item.affix.kind==='element'){
       text += ` / ${ELEMENT_LABELS[item.affix.element]}属性付与(弱点の敵に追加ダメージ)`;
     }
@@ -1930,8 +1946,8 @@
     const activeLevel = (ls.jobProgress[activeJob] || {}).level || 1;
 
     const mainStat = jobStatPotential(activeJob, activeLevel);
-    mainStat.atk += ls.equipped.weapon ? ls.equipped.weapon.value : 0;
-    mainStat.def += ls.equipped.armor ? ls.equipped.armor.value : 0;
+    mainStat.atk += ls.equipped.weapon ? itemEffectiveValue(ls.equipped.weapon) : 0;
+    mainStat.def += ls.equipped.armor ? itemEffectiveValue(ls.equipped.armor) : 0;
 
     let total = weightedStatSum(mainStat, CP_MAIN_WEIGHT);
     Object.keys(JOB_DEFS).forEach(jobId=>{
@@ -2073,6 +2089,7 @@
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
       destinyTickets: 0, guaranteedTickets: 0,
+      orbs: {}, // レアリティ(common/uncommon/rare/epic)ごとの所持数。合成で消費する
       rift: null // { startedAt, partyIds } / 非アクティブならnull
     };
   }
@@ -2080,13 +2097,13 @@
   function liverAtk(id){
     const ls = liverState(id);
     const w = ls.equipped.weapon;
-    const atk = jobBaseAtk(ls.job, jobProgressFor(id).level) + (w ? w.value : 0);
+    const atk = jobBaseAtk(ls.job, jobProgressFor(id).level) + (w ? itemEffectiveValue(w) : 0);
     return Math.round(atk * passiveStatMult(id, 'atk'));
   }
   function liverDefStat(id){
     const ls = liverState(id);
     const a = ls.equipped.armor;
-    const def = jobBaseDef(ls.job, jobProgressFor(id).level) + (a ? a.value : 0);
+    const def = jobBaseDef(ls.job, jobProgressFor(id).level) + (a ? itemEffectiveValue(a) : 0);
     const statusMult = statusStatMult(playerStatusEffects[id], 'defBuff', 'defDebuff');
     return Math.max(1, Math.round(def * passiveStatMult(id, 'def') * statusMult));
   }
@@ -2581,7 +2598,8 @@
         resist_element: i.resist ? i.resist.element : null,
         resist_value: i.resist ? i.resist.value : null,
         weapon_type: i.weaponType || null,
-        affix: i.affix || null
+        affix: i.affix || null,
+        enhance_level: i.enhanceLevel || 0
       }));
 
       const dungeonRows = DUNGEON_DEFS.map(d=>{
@@ -2606,7 +2624,8 @@
         p_destiny_tickets: state.destinyTickets,
         p_guaranteed_tickets: state.guaranteedTickets,
         p_rift_state: state.rift ? { startedAt: state.rift.startedAt, partyIds: state.rift.partyIds, result: state.rift.result || null } : null,
-        p_tutorial_done: !!state.tutorialDone
+        p_tutorial_done: !!state.tutorialDone,
+        p_orbs: state.orbs || {}
       });
       if(error) console.error('save_full_state failed', error);
 
@@ -2641,7 +2660,8 @@
           rarity: i.rarity, rarityLabel: i.rarity, value: i.value,
           resist: i.resist_element ? { element: i.resist_element, value: i.resist_value } : null,
           weaponType: i.weapon_type || null,
-          affix: i.affix || null
+          affix: i.affix || null,
+          enhanceLevel: i.enhance_level || 0
         };
         itemById[i.id] = item;
         inventory.push(item);
@@ -2724,6 +2744,7 @@
         },
         destinyTickets: playerRow.destiny_tickets || 0,
         guaranteedTickets: playerRow.guaranteed_tickets || 0,
+        orbs: (playerRow.orbs && typeof playerRow.orbs === 'object') ? playerRow.orbs : {},
         rift: (playerRow.rift_state && playerRow.rift_state.startedAt)
           ? { startedAt: playerRow.rift_state.startedAt, partyIds: playerRow.rift_state.partyIds || [], result: playerRow.rift_state.result || null }
           : null
@@ -3547,6 +3568,37 @@
     saveGame(); render();
   }
 
+  /* ---------------- 合成(装備強化) ----------------
+   * 所持品+全ライバーの装備中アイテムをまとめて対象候補にする(装備中でも
+   * ここから直接強化できるようにするため)。 */
+  function allOwnedItemsWithEquipInfo(){
+    const list = state.inventory.map(i=>({ item:i, equippedBy:null }));
+    LIVER_DEFS.forEach(def=>{
+      const ls = liverState(def.id);
+      if(!ls) return;
+      ['weapon','armor'].forEach(slot=>{
+        const it = ls.equipped[slot];
+        if(it) list.push({ item: it, equippedBy: def.id });
+      });
+    });
+    return list;
+  }
+
+  function enhanceItem(itemId){
+    if(!canManageEquipment()) return;
+    const found = allOwnedItemsWithEquipInfo().find(x=>x.item.id===itemId);
+    if(!found) return;
+    const item = found.item;
+    const level = item.enhanceLevel || 0;
+    if(level >= ENHANCE_MAX_LEVEL) return;
+    const orbCount = (state.orbs && state.orbs[item.rarity]) || 0;
+    if(orbCount < 1) return;
+    state.orbs[item.rarity] = orbCount - 1;
+    item.enhanceLevel = level + 1;
+    pushLog(`「${item.name}」を強化した(強化値+${item.enhanceLevel})。`, 'reward');
+    saveGame(); render();
+  }
+
   /* ---------------- 街・移動 ---------------- */
   function gotoScreen(name){
     if(inCombat) return;
@@ -3906,6 +3958,7 @@
         <button class="primary" id="gotoShopBtn">商店</button>
         <button class="primary" id="gotoSummonBtn">召喚</button>
         <button class="primary" id="gotoExchangeBtn">交換所</button>
+        <button class="primary" id="gotoEnhanceBtn">合成</button>
         <button class="primary" id="gotoHomeBtn">家へ帰る</button>
         <button class="primary" id="gotoRankingsBtn">ランキング</button>
         <button class="danger" id="gotoColosseumBtn">コロシアムタワー</button>
@@ -4148,6 +4201,10 @@
         rarity:'epic', rarityLabel:'epic', name:'闘技場の護符', value:15, resist:{element:'fire', value:2} }) },
     { id:'medal_gold_small', name:'勝者の金袋(小)', cost:10, desc:'+100G', gold:100 },
     { id:'medal_gold_large', name:'勝者の金袋(大)', cost:40, desc:'+500G', gold:500 },
+    { id:'medal_orb_common', name:'コモンのオーブ', cost:8, desc:'合成で使う強化素材', orb:'common' },
+    { id:'medal_orb_uncommon', name:'アンコモンのオーブ', cost:20, desc:'合成で使う強化素材', orb:'uncommon' },
+    { id:'medal_orb_rare', name:'レアのオーブ', cost:45, desc:'合成で使う強化素材', orb:'rare' },
+    { id:'medal_orb_epic', name:'エピックのオーブ', cost:90, desc:'合成で使う強化素材', orb:'epic' },
   ];
 
   function exchangeMedalsForItem(catalogId){
@@ -4159,6 +4216,14 @@
       state.colosseum.medals -= entry.cost;
       state.gold += entry.gold;
       pushLog(`メダル${entry.cost}枚を「${entry.name}」(${entry.gold}G)と交換した。`, 'reward');
+      saveGame(); render();
+      return;
+    }
+    if(entry.orb){
+      state.colosseum.medals -= entry.cost;
+      if(!state.orbs) state.orbs = {};
+      state.orbs[entry.orb] = (state.orbs[entry.orb] || 0) + 1;
+      pushLog(`メダル${entry.cost}枚を「${entry.name}」と交換した。`, 'reward');
       saveGame(); render();
       return;
     }
@@ -4198,6 +4263,58 @@
       <div class="section-block">
         <p class="section-label">交換ラインナップ(仮)</p>
         ${rows}
+      </div>
+    `;
+  }
+
+  /* ---------------- 合成: 装備強化画面 ---------------- */
+  function renderOrbSummary(){
+    return Object.keys(RARITY).map(key=>{
+      const count = (state.orbs && state.orbs[key]) || 0;
+      return `<span class="badge-resource" title="${esc(RARITY[key].label)}のオーブ">${esc(RARITY[key].label)}オーブ ${count}</span>`;
+    }).join(' ');
+  }
+
+  function renderEnhanceItemRow({item, equippedBy}){
+    const level = item.enhanceLevel || 0;
+    const rarity = RARITY[item.rarity];
+    const orbCount = (state.orbs && state.orbs[item.rarity]) || 0;
+    const maxed = level >= ENHANCE_MAX_LEVEL;
+    const canAfford = orbCount >= 1;
+    const equipLabel = equippedBy ? ` <span style="color:var(--text-muted);font-size:11px;">(装備中: ${esc(liverDef(equippedBy).name)})</span>` : '';
+    const actionLabel = maxed ? '強化上限' : `${esc(rarity.label)}のオーブ1個で強化`;
+    return `
+      <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
+        <span class="inv-item-name">${esc(item.name)}${equipLabel} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))} ・ 強化 ${level}/${ENHANCE_MAX_LEVEL}</span></span>
+        <span class="inv-item-actions">
+          <button data-enhance-item="${item.id}" ${(maxed||!canAfford)?'disabled':''}>${actionLabel}</button>
+        </span>
+      </div>`;
+  }
+
+  function renderEnhanceInner(){
+    const owned = allOwnedItemsWithEquipInfo();
+    const weapons = owned.filter(x=>x.item.type==='weapon');
+    const armors = owned.filter(x=>x.item.type==='armor');
+    const weaponRows = weapons.length ? weapons.map(renderEnhanceItemRow).join('') : '<p class="inv-empty">強化できる武器がない。</p>';
+    const armorRows = armors.length ? armors.map(renderEnhanceItemRow).join('') : '<p class="inv-empty">強化できる防具がない。</p>';
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('合成')}
+        <p class="log-entry system">レアリティに対応した「オーブ」を消費して、装備の強化値を上げる。強化値+1ごとに効果値が5%上昇し(5%分が1未満の装備は最低+1を保証)、最大+10(概ね+50%)まで強化できる。装備中の品もここから直接強化できる。</p>
+        <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--gold);">${renderOrbSummary()}</p>
+      </div>
+      <div class="actions">
+        <button id="backTownBtn">町に戻る</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">武器</p>
+        ${weaponRows}
+      </div>
+      <div class="section-block">
+        <p class="section-label">防具</p>
+        ${armorRows}
       </div>
     `;
   }
@@ -4572,6 +4689,7 @@
     else if(state.screen === 'shop') inner = renderShopInner();
     else if(state.screen === 'summon') inner = renderSummonInner();
     else if(state.screen === 'exchange') inner = renderExchangeInner();
+    else if(state.screen === 'enhance') inner = renderEnhanceInner();
     else if(state.screen === 'rift') inner = renderRiftInner();
     else if(state.screen === 'home') inner = renderHomeInner();
     else if(state.screen === 'rankings') inner = renderRankingsInner();
@@ -4741,6 +4859,7 @@
     on('gotoShopBtn', ()=>gotoScreen('shop'));
     on('gotoSummonBtn', ()=>gotoScreen('summon'));
     on('gotoExchangeBtn', ()=>gotoScreen('exchange'));
+    on('gotoEnhanceBtn', ()=>gotoScreen('enhance'));
     on('gotoHomeBtn', ()=>gotoScreen('home'));
     on('pullGachaBtn', pullDestinyTicket);
     on('acceptGachaBtn', acceptDestinyGacha);
@@ -4824,6 +4943,9 @@
     });
     document.querySelectorAll('[data-exchange-medal]').forEach(b=>{
       b.addEventListener('click', ()=>exchangeMedalsForItem(b.getAttribute('data-exchange-medal')));
+    });
+    document.querySelectorAll('[data-enhance-item]').forEach(b=>{
+      b.addEventListener('click', ()=>enhanceItem(b.getAttribute('data-enhance-item')));
     });
     document.querySelectorAll('[data-sell]').forEach(b=>{
       b.addEventListener('click', ()=>sellItem(b.getAttribute('data-sell')));
