@@ -644,11 +644,11 @@
    * エンジンとサンプルレシピのみ用意する。
    * --------------------------------------------------------------- */
   const MATERIAL_DEFS = {
-    iron_ore:      { name:'鉄鉱石' },
-    branch:        { name:'木の枝' },
-    beast_hide:    { name:'獣の皮' },
-    mana_residue:  { name:'魔力の残滓' },
-    fine_iron_ore: { name:'上質な鉄鉱石' },
+    iron_ore:      { name:'鉄鉱石',     desc:'ダンジョンで採れる、ありふれた鉱石。武具の素材になる。' },
+    branch:        { name:'木の枝',     desc:'森で拾える、どこにでもある枝。' },
+    beast_hide:    { name:'獣の皮',     desc:'倒した獣から剥いだ、丈夫な皮。' },
+    mana_residue:  { name:'魔力の残滓', desc:'魔物が残す、ほのかに魔力を帯びた欠片。' },
+    fine_iron_ore: { name:'上質な鉄鉱石', desc:'鉄鉱石を精製した、不純物の少ない鉱石。' },
   };
 
   /* 錬金の大成功: 出来上がったアイテムが装備(武器・防具)の時だけ判定する。
@@ -665,21 +665,18 @@
     {
       id:'refine_iron_ore', category:'素材',
       name:'上質な鉄鉱石',
-      desc:'鉄鉱石をまとめて精製し、上質な鉄鉱石にする。',
       materials:[{key:'iron_ore', qty:5}],
       output:{ type:'material', key:'fine_iron_ore', qty:1 }
     },
     {
       id:'refine_common_orb', category:'オーブ',
       name:'コモンオーブ',
-      desc:'魔力の残滓を凝縮し、合成で使うコモンオーブにする。',
       materials:[{key:'mana_residue', qty:5}],
       output:{ type:'orb', key:'common', qty:1 }
     },
     {
       id:'craft_iron_sword', category:'武器',
       name:'鉄の剣',
-      desc:'鉄鉱石と木の枝から、まっすぐな剣を打ち出す。',
       materials:[{key:'iron_ore', qty:3}, {key:'branch', qty:2}],
       output:{ type:'item', make: () => ({
         id:'itm_'+Math.random().toString(36).slice(2,9),
@@ -690,7 +687,6 @@
     {
       id:'craft_hide_armor', category:'防具',
       name:'獣皮の鎧',
-      desc:'鞣した獣の皮と上質な鉄鉱石で、軽い鎧を仕立てる。',
       materials:[{key:'beast_hide', qty:3}, {key:'fine_iron_ore', qty:1}],
       output:{ type:'item', make: () => ({
         id:'itm_'+Math.random().toString(36).slice(2,9),
@@ -699,6 +695,21 @@
       }) }
     },
   ];
+
+  /* カーソルを合わせた時に表示する、錬成結果アイテムの説明。装備は
+   * itemDetailText()と同じ体裁(レアリティ・種別・効果値)、素材・オーブは
+   * それぞれの説明文を表示する。 */
+  function recipeOutputDetailText(recipe){
+    const out = recipe.output;
+    if(out.type === 'material'){
+      const def = MATERIAL_DEFS[out.key];
+      return `${def.name}: ${def.desc}`;
+    }
+    if(out.type === 'orb'){
+      return `${RARITY[out.key].label}のオーブ: 合成で装備の強化値を上げるのに使う。`;
+    }
+    return itemDetailText(out.make());
+  }
 
   function materialCount(key){
     return (state.materials && state.materials[key]) || 0;
@@ -4442,7 +4453,7 @@
       return `<span style="color:${ok?'var(--text-muted)':'var(--danger)'};">${esc(MATERIAL_DEFS[m.key].name)} ${have}/${m.qty}</span>`;
     }).join('<br>');
     return `
-      <div class="inv-item" title="${esc(recipe.desc)}">
+      <div class="inv-item" title="${esc(recipeOutputDetailText(recipe))}">
         <span class="inv-item-name">${esc(recipe.name)}<br><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${materialsHtml}</span></span>
         <span class="inv-item-actions">
           <button data-craft-recipe="${recipe.id}" ${affordable?'':'disabled'}>錬成する</button>
