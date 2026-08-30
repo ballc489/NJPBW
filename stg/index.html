@@ -1462,6 +1462,7 @@
   let state = null; // character object
   let createSelectedLiver = null; // キャラ作成画面: 選択中の最初の仲間
   let createNameDraft = '';       // キャラ作成画面: 選択操作で再描画されても名前欄を保持する
+  let lastRenderedScreen = null;  // render()がスクロール位置を保持すべきか(=同じ画面内の再描画か)の判定用
   let inCombat = false;
   let combatPhase = null; // 'choice' | 'auto' | null
   let combatEnemy = null;
@@ -5318,6 +5319,12 @@
     `;
   }
 
+  /* render()はapp.innerHTMLを毎回まるごと作り直すため、何もしないと
+   * ボタンを押すたびにスクロール位置が消えて先頭に戻ってしまう
+   * (PC版はメインウィンドウ(.scene)内部のスクロール、それ以外は
+   * ウィンドウ全体のスクロールが対象)。同じ画面内での再描画(アイテム
+   * 使用・購入・強化などのアクション後)ではスクロール位置を復元し、
+   * 別の画面へ実際に遷移した時だけ先頭に戻す。 */
   function render(){
     if(!state){ document.body.classList.remove('playing'); renderCreate(); return; }
     if(state.rift){
@@ -5326,6 +5333,13 @@
       bindEvents();
       return;
     }
+
+    const keepScroll = state.screen === lastRenderedScreen;
+    const prevSceneEl = document.querySelector('.layout > div > .scene');
+    const prevSceneScrollTop = keepScroll && prevSceneEl ? prevSceneEl.scrollTop : 0;
+    const prevWindowScrollY = keepScroll ? window.scrollY : 0;
+    lastRenderedScreen = state.screen;
+
     document.body.classList.add('playing');
     app.innerHTML = `
       <header>
@@ -5347,6 +5361,10 @@
     if(historyEl) historyEl.scrollTop = historyEl.scrollHeight;
     const chatEl = document.getElementById('chatLog');
     if(chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+
+    const newSceneEl = document.querySelector('.layout > div > .scene');
+    if(newSceneEl) newSceneEl.scrollTop = prevSceneScrollTop;
+    window.scrollTo(0, prevWindowScrollY);
   }
 
   /* ---------------- Init / セーブのマイグレーション ---------------- */
