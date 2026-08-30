@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -460,14 +460,14 @@
   /* 敵の「型」。同じレベル数値でも、タイプごとに得意不得意・スキル有無・属性弱点が出る */
   const ENEMY_POOLS = {
     ashen: [
-      {key:'automaton', name:'錆びついた自動人形', hpMult:1.10, atkMult:0.90, defMult:1.25, weakness:'thunder',
-        skills:[{key:'shock', name:'帯電の一撃', everyNTurns:4,
-          announceText:'{name}の関節から放電音が響いた！',
+      {key:'automaton', name:'動く鎧', hpMult:1.10, atkMult:0.90, defMult:1.25, weakness:'thunder',
+        skills:[{key:'shock', name:'雷纏う一撃', everyNTurns:4,
+          announceText:'{name}が青白い雷光を纏った！',
           effects:[
             {type:'damage', target:'enemyRandom', amount:1.4, element:'thunder'},
             {type:'defDebuff', target:'enemyRandom', amount:0.25, duration:2}
           ]}]},
-      {key:'spider',    name:'瓦礫グモ',           hpMult:0.80, atkMult:1.20, defMult:0.75, weakness:'fire',
+      {key:'spider',    name:'坑道の大蜘蛛',       hpMult:0.80, atkMult:1.20, defMult:0.75, weakness:'fire',
         skills:[{key:'leap', name:'跳躍からの一撃', everyNTurns:3,
           announceText:'{name}が跳躍からの一撃を放った！',
           effects:[
@@ -481,13 +481,13 @@
             {type:'damage', target:'enemyRandom', amount:1.2, element:'ice'},
             {type:'atkDebuff', target:'enemyRandom', amount:0.3, duration:3}
           ]}]},
-      {key:'guardian',  name:'苔むした番人',       hpMult:1.30, atkMult:0.80, defMult:1.35, weakness:'thunder',
-        skills:[{key:'moss', name:'苔の再生', everyNTurns:4,
-          announceText:'{name}の苔むした体表がわずかに再生していく……',
+      {key:'guardian',  name:'石造りの番人',       hpMult:1.30, atkMult:0.80, defMult:1.35, weakness:'thunder',
+        skills:[{key:'moss', name:'石肌の再生', everyNTurns:4,
+          announceText:'{name}の石造りの体表がわずかに修復していく……',
           effects:[
             {type:'regen', target:'self', amount:0.12, duration:3}
           ]}]},
-      {key:'looter',    name:'廃墟の盗掘者',       hpMult:0.90, atkMult:1.00, defMult:0.95, weakness:'fire',
+      {key:'looter',    name:'坑道の盗賊',         hpMult:0.90, atkMult:1.00, defMult:0.95, weakness:'fire',
         skills:[{key:'snatch', name:'隙を突く一撃', everyNTurns:3,
           announceText:'{name}が隙を突く一撃を放った！',
           effects:[
@@ -501,10 +501,10 @@
           warnText:'{name}の掌に光が収束していく……', executeText:'収束した光弾が撃ち込まれた！'}]},
       {key:'gargoyle',    name:'浮遊するガーゴイル', hpMult:0.85, atkMult:1.15, defMult:0.80, weakness:'thunder',
         skills:[{key:'dive', name:'急降下の一撃', everyNTurns:3, kind:'trueDamage', mult:1.9}]},
-      {key:'sentinel',    name:'錆びた守衛人形',   hpMult:1.30, atkMult:0.85, defMult:1.30, weakness:'fire'},
-      {key:'geometrid',   name:'歪んだ幾何獣',     hpMult:0.90, atkMult:1.10, defMult:0.90, weakness:'ice',
-        skills:[{key:'phase', name:'位相の歪み', everyNTurns:3, kind:'telegraphed', mult:2.3,
-          warnText:'{name}の輪郭が揺らぎ始めた……', executeText:'歪んだ空間から一撃が放たれた！'}]},
+      {key:'sentinel',    name:'尖塔の守衛人形',   hpMult:1.30, atkMult:0.85, defMult:1.30, weakness:'fire'},
+      {key:'geometrid',   name:'揺らめく幻影獣',   hpMult:0.90, atkMult:1.10, defMult:0.90, weakness:'ice',
+        skills:[{key:'phase', name:'幻影の揺らぎ', everyNTurns:3, kind:'telegraphed', mult:2.3,
+          warnText:'{name}の輪郭が揺らぎ始めた……', executeText:'揺らめく幻影から一撃が放たれた！'}]},
       {key:'archive',     name:'尖塔の書架霊',     hpMult:0.95, atkMult:1.00, defMult:0.85, weakness:'thunder'},
     ],
     jungle: [
@@ -616,7 +616,7 @@
     staff:      { name:'杖',     base:'白木の杖' },
     grimoire:   { name:'魔導書', base:'古びた魔導書' },
   };
-  const ARMOR_BASES = ['苔の鎧','破れた外套','石の盾','錆びた鎧','古代の護符'];
+  const ARMOR_BASES = ['鉄の鎧','革の外套','木の盾','鎖帷子','古代の護符'];
 
   const RARITY = {
     common:   {label:'コモン',   cls:'common',   mult:1.0, weight:60},
@@ -892,16 +892,16 @@
       firstClearReward:{name:'見習いの証', type:'armor'}
     },
     {
-      id:'ashen_ruins', name:'灰燼の迷宮', pool:'ashen', requires:null,
-      group:'ashen_ruins', groupName:'灰燼の迷宮', floorLabel:null,
+      id:'ashen_ruins', name:'旧坑道', pool:'ashen', requires:null,
+      group:'ashen_ruins', groupName:'旧坑道', floorLabel:null,
       level:1, rewardMult:1.0,
       boss:{ name:'古の守護者', hpMult:1.7, atkMult:1.15, defMult:1.3, weakness:'ice',
         skills:[
           { key:'guard', name:'守護の唸り', everyNTurns:4,
             announceText:'{name}が唸り声を上げ、体表が石のように硬くなった！',
             effects:[ {type:'defBuff', target:'self', amount:0.6, duration:3} ] },
-          { key:'corrode', name:'腐食の爪', everyNTurns:3,
-            announceText:'{name}の「腐食の爪」！',
+          { key:'corrode', name:'毒爪の一撃', everyNTurns:3,
+            announceText:'{name}の「毒爪の一撃」！',
             effects:[
               {type:'damage', target:'enemyRandom', amount:1.3},
               {type:'poison', target:'enemyRandom', amount:0.08, duration:3}
@@ -3980,8 +3980,8 @@
       <div class="create-box">
         <h1>${GAME_TITLE_HTML}</h1>
         <p class="subtitle">${GAME_SUBTITLE}</p>
-        <p style="color:#000;">かつての文明が滅びてから幾星霜。地の底には、失われた時代の遺構が今も眠っている。<br>
-        あなたは再興された小さな町に降り立ち、糧となる何かを求めて迷宮へ向かおうとしている。</p>
+        <p style="color:#000;">七彩に輝くという伝説の塔、その麓に古くから栄える冒険者の町。<br>
+        あなたはギルドに足を踏み入れ、塔に眠る力と富を求めて旅立とうとしている。</p>
         <input id="nameInput" type="text" placeholder="冒険者の名を入力" maxlength="12" value="${esc(createNameDraft)}">
         <p class="section-label" style="margin-top:18px;text-align:left;color:var(--text-primary);text-shadow:1px 1px 0 var(--field-ground-dark);">最初の仲間を1人選ぼう</p>
         <p style="color:var(--text-primary);text-shadow:1px 1px 0 var(--field-ground-dark);font-size:11px;margin:0 0 10px;text-align:left;">選ばなかった仲間は、この先の迷宮の奥で出会うことになる。</p>
@@ -4008,7 +4008,7 @@
         const starterName = liverDef(createSelectedLiver).name;
         const uid = await ensureAuth();
         state = newCharacter(name, createSelectedLiver, uid);
-        pushLog(`${name}は、${starterName}と共に再興の町に降り立った。`, 'system');
+        pushLog(`${name}は、${starterName}と共に灯火の町に降り立った。`, 'system');
         await saveGame();
         // ここでplayers行が初めて作られるため、ゲート同意時点では
         // 更新できなかったtos_agreed_versionをサーバー側に反映させる
@@ -4062,7 +4062,7 @@
     if(state.screen==='shop') return '商店';
     if(state.screen==='home') return 'マイホーム';
     if(state.screen==='dead') return '……';
-    return '再興の町';
+    return '灯火の町';
   }
 
   /* 踏破済みのダンジョンはボス撃破のたびに内部の再挑戦用進捗が0%に
@@ -4191,8 +4191,8 @@
   function renderTownInner(){
     return `
       <div class="scene-text">
-        ${sceneHeadingHtml('再興の町')}
-        <p class="log-entry system">かつての瓦礫の上に、人々が再び火を灯し始めた場所。宿の煙突からは絶えず煙が上がり、市場には迷宮帰りの冒険者たちの姿がある。</p>
+        ${sceneHeadingHtml('灯火の町')}
+        <p class="log-entry system">そびえ立つ塔を仰ぎ見る、古くから冒険者たちが行き交う場所。宿の煙突からは絶えず煙が上がり、市場には迷宮帰りの冒険者たちの姿がある。</p>
       </div>
       <div class="actions">
         <button class="primary" id="gotoAnnouncementsBtn">お知らせ${announcementUnreadCount > 0 ? `<span class="notify-badge">${announcementUnreadCount}</span>` : ''}</button>
