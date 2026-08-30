@@ -4871,7 +4871,9 @@
           </div>`;
       }).join('') : `<p class="inv-empty">購入できるアイテムが無い。</p>`;
     } else if(equipActive){
-      bodyHtml = state.inventory.length ? state.inventory.map(item=>`
+      const equipSort = (state.ui && state.ui.equipSort) || INVENTORY_SORT_DEFAULT;
+      const sellList = applyInventorySort(state.inventory, equipSort, i => RARITY_SORT_ORDER[i.rarity] || 0);
+      bodyHtml = sellList.length ? sellList.map(item=>`
         <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
           <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
           <span class="inv-item-actions">
@@ -4879,7 +4881,9 @@
           </span>
         </div>`).join('') : `<p class="inv-empty">売れる装備が無い。</p>`;
     } else {
-      const keys = Object.keys(TOOL_DEFS).filter(k=>toolCount(k) > 0);
+      const itemSort = (state.ui && state.ui.itemSort) || INVENTORY_SORT_DEFAULT;
+      const keysBase = Object.keys(TOOL_DEFS).filter(k=>toolCount(k) > 0);
+      const keys = applyInventorySort(keysBase, itemSort, () => -1);
       bodyHtml = keys.length ? keys.map(key=>{
         const def = TOOL_DEFS[key];
         return `
@@ -4906,7 +4910,8 @@
       <div style="display:flex;gap:8px;margin:10px 0;">
         <button data-shop-item-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
         <button data-shop-item-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
-      </div>`}
+      </div>
+      ${renderSortSelect('shopSortSelect', (state.ui && (equipActive ? state.ui.equipSort : state.ui.itemSort)) || INVENTORY_SORT_DEFAULT)}`}
       <div class="section-block">
         ${bodyHtml}
       </div>
@@ -5143,10 +5148,11 @@
     render();
   }
 
-  function setInventorySort(mode){
+  /* kind: 'equip'|'item'。所持品パネルと商店の「売る」は同じ装備・アイテム
+   * 一覧を見ているため、ソート設定(state.ui.equipSort/itemSort)を共有する。 */
+  function setSortMode(kind, mode){
     if(!state.ui) state.ui = {expandedGroups:[]};
-    const key = (state.ui.inventoryTab === 'item') ? 'itemSort' : 'equipSort';
-    state.ui[key] = mode;
+    state.ui[kind === 'item' ? 'itemSort' : 'equipSort'] = mode;
     render();
   }
 
@@ -5181,11 +5187,11 @@
       </div>`;
   }
 
-  function renderInventorySortSelect(currentSort){
+  function renderSortSelect(id, currentSort){
     const options = INVENTORY_SORT_OPTIONS.map(o=>
       `<option value="${o.value}" ${currentSort===o.value?'selected':''}>${esc(o.label)}</option>`
     ).join('');
-    return `<select id="inventorySortSelect" style="width:100%;margin-bottom:10px;font-size:11px;padding:4px 6px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${options}</select>`;
+    return `<select id="${id}" style="width:100%;margin-bottom:10px;font-size:11px;padding:4px 6px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${options}</select>`;
   }
 
   /* 装備の変更は「編成」画面の詳細設定から行うため、このサイドパネルは
@@ -5240,7 +5246,7 @@
           <button data-inventory-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
           <button data-inventory-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
         </div>
-        ${renderInventorySortSelect(equipActive ? equipSort : itemSort)}
+        ${renderSortSelect('inventorySortSelect', equipActive ? equipSort : itemSort)}
         <div class="scrollbox inventory-scroll">${equipActive ? equipHtml : itemHtml}</div>
       </div>
     `;
@@ -5325,7 +5331,13 @@
     });
     const inventorySortSelect = document.getElementById('inventorySortSelect');
     if(inventorySortSelect) inventorySortSelect.addEventListener('change', (e)=>{
-      setInventorySort(e.target.value);
+      const kind = ((state.ui && state.ui.inventoryTab) || 'equip') === 'item' ? 'item' : 'equip';
+      setSortMode(kind, e.target.value);
+    });
+    const shopSortSelect = document.getElementById('shopSortSelect');
+    if(shopSortSelect) shopSortSelect.addEventListener('change', (e)=>{
+      const kind = ((state.ui && state.ui.shopItemTab) || 'equip') === 'item' ? 'item' : 'equip';
+      setSortMode(kind, e.target.value);
     });
     document.querySelectorAll('[data-chat-channel]').forEach(b=>{
       b.addEventListener('click', ()=>switchChatChannel(b.getAttribute('data-chat-channel')));
