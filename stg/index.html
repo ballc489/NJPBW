@@ -663,22 +663,22 @@
 
   const ALCHEMY_RECIPES = [
     {
-      id:'refine_iron_ore', category:'素材の精製',
-      name:'上質な鉄鉱石の精製',
+      id:'refine_iron_ore', category:'素材',
+      name:'上質な鉄鉱石',
       desc:'鉄鉱石をまとめて精製し、上質な鉄鉱石にする。',
       materials:[{key:'iron_ore', qty:5}],
       output:{ type:'material', key:'fine_iron_ore', qty:1 }
     },
     {
-      id:'refine_common_orb', category:'素材の精製',
-      name:'コモンオーブの精製',
+      id:'refine_common_orb', category:'オーブ',
+      name:'コモンオーブ',
       desc:'魔力の残滓を凝縮し、合成で使うコモンオーブにする。',
       materials:[{key:'mana_residue', qty:5}],
       output:{ type:'orb', key:'common', qty:1 }
     },
     {
-      id:'craft_iron_sword', category:'装備の製作',
-      name:'鉄の剣を打つ',
+      id:'craft_iron_sword', category:'武器',
+      name:'鉄の剣',
       desc:'鉄鉱石と木の枝から、まっすぐな剣を打ち出す。',
       materials:[{key:'iron_ore', qty:3}, {key:'branch', qty:2}],
       output:{ type:'item', make: () => ({
@@ -688,8 +688,8 @@
       }) }
     },
     {
-      id:'craft_hide_armor', category:'装備の製作',
-      name:'獣皮の鎧を仕立てる',
+      id:'craft_hide_armor', category:'防具',
+      name:'獣皮の鎧',
       desc:'鞣した獣の皮と上質な鉄鉱石で、軽い鎧を仕立てる。',
       materials:[{key:'beast_hide', qty:3}, {key:'fine_iron_ore', qty:1}],
       output:{ type:'item', make: () => ({
@@ -724,19 +724,19 @@
     if(recipe.output.type === 'material'){
       const key = recipe.output.key;
       state.materials[key] = materialCount(key) + recipe.output.qty;
-      pushLog(`「${recipe.name}」に成功し、${MATERIAL_DEFS[key].name}を${recipe.output.qty}個手に入れた。`, 'reward');
+      pushLog(`錬金に成功し、「${MATERIAL_DEFS[key].name}」を${recipe.output.qty}個手に入れた。`, 'reward');
     } else if(recipe.output.type === 'orb'){
       const key = recipe.output.key;
       if(!state.orbs) state.orbs = {};
       state.orbs[key] = (state.orbs[key]||0) + recipe.output.qty;
-      pushLog(`「${recipe.name}」に成功し、${RARITY[key].label}のオーブを${recipe.output.qty}個手に入れた。`, 'reward');
+      pushLog(`錬金に成功し、「${RARITY[key].label}のオーブ」を${recipe.output.qty}個手に入れた。`, 'reward');
     } else if(recipe.output.type === 'item'){
       const item = recipe.output.make();
       const grade = rollAlchemyGrade();
       if(grade > 0) item.enhanceLevel = grade;
       addItemToInventory(item);
       const gradeLabel = grade > 0 ? ` 大成功！(強化値+${grade})` : '';
-      pushLog(`「${recipe.name}」に成功し、「${item.name}」を手に入れた。${gradeLabel}`, 'reward');
+      pushLog(`錬金に成功し、「${item.name}」を手に入れた。${gradeLabel}`, 'reward');
     }
 
     saveGame(); render();
@@ -4440,7 +4440,7 @@
       const have = materialCount(m.key);
       const ok = have >= m.qty;
       return `<span style="color:${ok?'var(--text-muted)':'var(--danger)'};">${esc(MATERIAL_DEFS[m.key].name)} ${have}/${m.qty}</span>`;
-    }).join(' ・ ');
+    }).join('<br>');
     return `
       <div class="inv-item" title="${esc(recipe.desc)}">
         <span class="inv-item-name">${esc(recipe.name)}<br><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${materialsHtml}</span></span>
@@ -4448,12 +4448,6 @@
           <button data-craft-recipe="${recipe.id}" ${affordable?'':'disabled'}>錬成する</button>
         </span>
       </div>`;
-  }
-
-  function renderMaterialSummary(){
-    const owned = Object.keys(MATERIAL_DEFS).filter(key => materialCount(key) > 0);
-    if(!owned.length) return '<span style="color:var(--text-muted);">素材はまだ持っていない。</span>';
-    return owned.map(key => `<span class="badge-resource" title="${esc(MATERIAL_DEFS[key].name)}">${esc(MATERIAL_DEFS[key].name)} ${materialCount(key)}</span>`).join(' ');
   }
 
   function renderAlchemyInner(){
@@ -4471,8 +4465,6 @@
     return `
       <div class="scene-text">
         ${sceneHeadingHtml('錬金')}
-        <p class="log-entry system">素材を消費してレシピを実行し、新たなアイテムを作り出す。まれに大成功し、出来上がった装備に強化値が付くことがある。素材が足りているレシピだけ実行できる。</p>
-        <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--gold);">${renderMaterialSummary()}</p>
       </div>
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
