@@ -271,7 +271,7 @@
   .inv-item.epic{border-left-color:var(--rare-epic);}
   .inv-item button{padding:4px 10px;font-size:11px;}
   .inv-item-name{flex:1 1 auto;min-width:0;margin-right:8px;overflow-wrap:break-word;}
-  .inv-item-actions{flex:0 0 auto;display:flex;gap:6px;white-space:nowrap;}
+  .inv-item-actions{flex:0 0 auto;display:flex;align-items:center;gap:6px;white-space:nowrap;}
   .inv-empty{color:var(--text-muted);font-size:12px;font-style:italic;}
 
   .gold-line{font-family:var(--font-mono);font-size:13px;color:var(--gold);margin-top:6px;}
@@ -459,14 +459,14 @@
   /* 敵の「型」。同じレベル数値でも、タイプごとに得意不得意・スキル有無・属性弱点が出る */
   const ENEMY_POOLS = {
     ashen: [
-      {key:'automaton', name:'錆びついた自動人形', hpMult:1.10, atkMult:0.90, defMult:1.25, weakness:'thunder',
-        skills:[{key:'shock', name:'帯電の一撃', everyNTurns:4,
-          announceText:'{name}の関節から放電音が響いた！',
+      {key:'automaton', name:'動く鎧', hpMult:1.10, atkMult:0.90, defMult:1.25, weakness:'thunder',
+        skills:[{key:'shock', name:'雷纏う一撃', everyNTurns:4,
+          announceText:'{name}が青白い雷光を纏った！',
           effects:[
             {type:'damage', target:'enemyRandom', amount:1.4, element:'thunder'},
             {type:'defDebuff', target:'enemyRandom', amount:0.25, duration:2}
           ]}]},
-      {key:'spider',    name:'瓦礫グモ',           hpMult:0.80, atkMult:1.20, defMult:0.75, weakness:'fire',
+      {key:'spider',    name:'坑道の大蜘蛛',       hpMult:0.80, atkMult:1.20, defMult:0.75, weakness:'fire',
         skills:[{key:'leap', name:'跳躍からの一撃', everyNTurns:3,
           announceText:'{name}が跳躍からの一撃を放った！',
           effects:[
@@ -480,13 +480,13 @@
             {type:'damage', target:'enemyRandom', amount:1.2, element:'ice'},
             {type:'atkDebuff', target:'enemyRandom', amount:0.3, duration:3}
           ]}]},
-      {key:'guardian',  name:'苔むした番人',       hpMult:1.30, atkMult:0.80, defMult:1.35, weakness:'thunder',
-        skills:[{key:'moss', name:'苔の再生', everyNTurns:4,
-          announceText:'{name}の苔むした体表がわずかに再生していく……',
+      {key:'guardian',  name:'石造りの番人',       hpMult:1.30, atkMult:0.80, defMult:1.35, weakness:'thunder',
+        skills:[{key:'moss', name:'石肌の再生', everyNTurns:4,
+          announceText:'{name}の石造りの体表がわずかに修復していく……',
           effects:[
             {type:'regen', target:'self', amount:0.12, duration:3}
           ]}]},
-      {key:'looter',    name:'廃墟の盗掘者',       hpMult:0.90, atkMult:1.00, defMult:0.95, weakness:'fire',
+      {key:'looter',    name:'坑道の盗賊',         hpMult:0.90, atkMult:1.00, defMult:0.95, weakness:'fire',
         skills:[{key:'snatch', name:'隙を突く一撃', everyNTurns:3,
           announceText:'{name}が隙を突く一撃を放った！',
           effects:[
@@ -500,10 +500,10 @@
           warnText:'{name}の掌に光が収束していく……', executeText:'収束した光弾が撃ち込まれた！'}]},
       {key:'gargoyle',    name:'浮遊するガーゴイル', hpMult:0.85, atkMult:1.15, defMult:0.80, weakness:'thunder',
         skills:[{key:'dive', name:'急降下の一撃', everyNTurns:3, kind:'trueDamage', mult:1.9}]},
-      {key:'sentinel',    name:'錆びた守衛人形',   hpMult:1.30, atkMult:0.85, defMult:1.30, weakness:'fire'},
-      {key:'geometrid',   name:'歪んだ幾何獣',     hpMult:0.90, atkMult:1.10, defMult:0.90, weakness:'ice',
-        skills:[{key:'phase', name:'位相の歪み', everyNTurns:3, kind:'telegraphed', mult:2.3,
-          warnText:'{name}の輪郭が揺らぎ始めた……', executeText:'歪んだ空間から一撃が放たれた！'}]},
+      {key:'sentinel',    name:'尖塔の守衛人形',   hpMult:1.30, atkMult:0.85, defMult:1.30, weakness:'fire'},
+      {key:'geometrid',   name:'揺らめく幻影獣',   hpMult:0.90, atkMult:1.10, defMult:0.90, weakness:'ice',
+        skills:[{key:'phase', name:'幻影の揺らぎ', everyNTurns:3, kind:'telegraphed', mult:2.3,
+          warnText:'{name}の輪郭が揺らぎ始めた……', executeText:'揺らめく幻影から一撃が放たれた！'}]},
       {key:'archive',     name:'尖塔の書架霊',     hpMult:0.95, atkMult:1.00, defMult:0.85, weakness:'thunder'},
     ],
     jungle: [
@@ -615,7 +615,7 @@
     staff:      { name:'杖',     base:'白木の杖' },
     grimoire:   { name:'魔導書', base:'古びた魔導書' },
   };
-  const ARMOR_BASES = ['苔の鎧','破れた外套','石の盾','錆びた鎧','古代の護符'];
+  const ARMOR_BASES = ['鉄の鎧','革の外套','木の盾','鎖帷子','古代の護符'];
 
   const RARITY = {
     common:   {label:'コモン',   cls:'common',   mult:1.0, weight:60},
@@ -891,16 +891,16 @@
       firstClearReward:{name:'見習いの証', type:'armor'}
     },
     {
-      id:'ashen_ruins', name:'灰燼の迷宮', pool:'ashen', requires:null,
-      group:'ashen_ruins', groupName:'灰燼の迷宮', floorLabel:null,
+      id:'ashen_ruins', name:'旧坑道', pool:'ashen', requires:null,
+      group:'ashen_ruins', groupName:'旧坑道', floorLabel:null,
       level:1, rewardMult:1.0,
       boss:{ name:'古の守護者', hpMult:1.7, atkMult:1.15, defMult:1.3, weakness:'ice',
         skills:[
           { key:'guard', name:'守護の唸り', everyNTurns:4,
             announceText:'{name}が唸り声を上げ、体表が石のように硬くなった！',
             effects:[ {type:'defBuff', target:'self', amount:0.6, duration:3} ] },
-          { key:'corrode', name:'腐食の爪', everyNTurns:3,
-            announceText:'{name}の「腐食の爪」！',
+          { key:'corrode', name:'毒爪の一撃', everyNTurns:3,
+            announceText:'{name}の「毒爪の一撃」！',
             effects:[
               {type:'damage', target:'enemyRandom', amount:1.3},
               {type:'poison', target:'enemyRandom', amount:0.08, duration:3}
@@ -1303,6 +1303,41 @@
     return true;
   }
 
+  /* ---------------------------------------------------------------
+   * 道具: オーブ・素材と同じくスタック管理(state.tools、キー→所持数)
+   * だが、合成・錬金の材料ではなく「所持品から直接使用する」消費アイテム。
+   * purchasable: trueの道具だけが商店の「買う」に並ぶ(将来、錬金でしか
+   * 作れない道具を追加する余地を残すため)。
+   * canUse()が無い、またはtrueを返す時だけ所持品側に「使用」ボタンが出る。
+   * --------------------------------------------------------------- */
+  const TOOL_DEFS = {
+    stamina_potion_10: {
+      name:'スタミナ10回復薬',
+      desc:'使うとスタミナを10回復する。',
+      price: 500,
+      purchasable: true,
+      canUse: () => state.stamina < STAMINA_MAX,
+      use: () => {
+        recomputeStamina();
+        state.stamina = Math.min(STAMINA_MAX, state.stamina + 10);
+      }
+    },
+  };
+
+  function toolCount(key){
+    return (state.tools && state.tools[key]) || 0;
+  }
+
+  function useToolItem(key){
+    const def = TOOL_DEFS[key];
+    if(!def || toolCount(key) < 1) return;
+    if(def.canUse && !def.canUse()) return;
+    def.use();
+    state.tools[key] = toolCount(key) - 1;
+    pushLog(`「${def.name}」を使った。`, 'reward');
+    saveGame(); render();
+  }
+
   /* 突入・受け取り・撤退・結果を閉じる、いずれの直後も必ずDBへの保存が
    * 完了してからロック画面/通常画面へ切り替える(saveGameをawaitする)。
    * 先に画面だけ切り替えてしまうと、保存が終わる前にページを更新された
@@ -1480,11 +1515,6 @@
     'この宿の火だけは、何があっても絶やさないと決めているんだ。',
     '外はまだ危ないだろう。今夜はゆっくりお休み。',
   ];
-  const SHOPKEEPER_LINES = [
-    '瓦礫の中から拾い集めた掘り出し物だ、見ていきな。',
-    '値は張るが、腕は確かだ。損はさせないよ。',
-    '迷宮帰りの得物なら、こっちで下取りもするぜ。',
-  ];
   const FURNITURE_CATALOG = [
     {id:'hearth',    name:'暖炉',         price:80,  flavor:'小さな炎が部屋を暖める。長い探索の後、これを眺めるとほっとする。'},
     {id:'bookshelf', name:'古びた本棚',    price:60,  flavor:'拾い集めた古文書が並ぶ。まだ読み解けない頁も多い。'},
@@ -1538,7 +1568,6 @@
   let pendingDefBuffs = {}; // { liverId: reduceMult } その本人の次の被弾にのみ適用
   let combatPassiveFlags = {}; // { liverId: {...} } 条件付きパッシブの発動状態・ログ済みフラグ。戦闘開始時にリセット
   let playerStatusEffects = {}; // { liverId: { [effectType]: {amount, turnsLeft, freshlyGranted} } } 戦闘中のみ・保存しない
-  let shopStock = []; // セーブしない一時データ。商店に入るたび再生成
 
   /* 通常攻撃(スキルを使わなかった場合の攻撃)時、低確率で防御力を無視した
    * 大ダメージが発生する。プレイヤー側は「会心の一撃」、敵側は「痛恨の一撃」
@@ -2281,6 +2310,7 @@
       destinyTickets: 0, guaranteedTickets: 0,
       orbs: {}, // レアリティ(common/uncommon/rare/epic)ごとの所持数。合成で消費する
       materials: {}, // 素材キーごとの所持数。錬金で消費する
+      tools: {}, // 道具キーごとの所持数。所持品から直接使用する
       stamina: STAMINA_MAX, staminaUpdatedAt: Date.now(),
       rift: null // { startedAt, partyIds } / 非アクティブならnull
     };
@@ -2820,7 +2850,8 @@
         p_orbs: state.orbs || {},
         p_materials: state.materials || {},
         p_stamina: state.stamina,
-        p_stamina_updated_at: new Date(state.staminaUpdatedAt).toISOString()
+        p_stamina_updated_at: new Date(state.staminaUpdatedAt).toISOString(),
+        p_tools: state.tools || {}
       });
       if(error) console.error('save_full_state failed', error);
 
@@ -2943,6 +2974,7 @@
         materials: (playerRow.materials && typeof playerRow.materials === 'object') ? playerRow.materials : {},
         stamina: (typeof playerRow.stamina === 'number') ? playerRow.stamina : STAMINA_MAX,
         staminaUpdatedAt: playerRow.stamina_updated_at ? new Date(playerRow.stamina_updated_at).getTime() : Date.now(),
+        tools: (playerRow.tools && typeof playerRow.tools === 'object') ? playerRow.tools : {},
         rift: (playerRow.rift_state && playerRow.rift_state.startedAt)
           ? { startedAt: playerRow.rift_state.startedAt, partyIds: playerRow.rift_state.partyIds || [], result: playerRow.rift_state.result || null }
           : null
@@ -3005,8 +3037,14 @@
    * (state.history、全件保持)にのみ残す。敵の出現/撃破やキャラの
    * 戦闘不能などの「ステップの変化」はメインウィンドウにも出したいため
    * skipMainを付けない。 */
+  /* モバイル表示の「1まとまり」の判定用。render()が呼ばれるたびに区切りを
+   * 閉じるので、1回のアクション(例:戦闘勝利時の撃破・経験値・ドロップの
+   * 一連のpushLog)はrender()を挟まない限り同じbatchになる。 */
+  let historyBatchSeq = 0;
+  let historyBatchOpen = false;
   function pushLog(text, cls, skipMain){
-    const entry = {text, cls: cls||''};
+    if(!historyBatchOpen){ historyBatchSeq++; historyBatchOpen = true; }
+    const entry = {text, cls: cls||'', batch: historyBatchSeq};
     if(!skipMain){
       state.log.push(entry);
       if(state.log.length > 6) state.log = state.log.slice(-6);
@@ -3644,11 +3682,11 @@
     if(ds.progress < 100) ds.depth += 1;
     const roll = Math.random();
 
-    if(roll < 0.55){
+    if(roll < 0.70){
       const enemy = spawnEnemy(dungeonDef, ds.depth, false);
       enemy.pendingProgressOnWin = true;
       startCombat(enemy);
-    } else if(roll < 0.72){
+    } else if(roll < 0.80){
       let healText = [];
       state.party.forEach(id=>{
         const ls = liverState(id);
@@ -3661,7 +3699,7 @@
       pushLog(`静かな小部屋で一息ついた。パーティのHP・MPが少し回復した。`, 'system');
       addDungeonProgress(PROGRESS_PER_STEP);
       saveGame(); render();
-    } else if(roll < 0.90){
+    } else if(roll < 0.95){
       maybeDropItem(ds.depth);
       if(state.log.length===0 || state.log[state.log.length-1].text.indexOf('見つけ')<0){
         pushLog('崩れた棚の奥に何かが残っていた。', 'system');
@@ -3672,7 +3710,12 @@
       const target = pickRandomAliveTarget();
       if(target){
         const ls = liverState(target);
-        const dmg = Math.round(3 + ds.depth*0.4);
+        /* 罠の威力は周回で際限なく伸びるdepthではなく、そのダンジョンの
+         * レベル帯(=同レベル帯の敵の通常攻撃力)を基準にする。これにより
+         * 低レベルダンジョンでは弱く、高レベルダンジョンでは強くなる
+         * (敵の強さと同じ物差しでスケールする)。振れ幅は乱数で持たせる。 */
+        const enemyAtk = statsForLevel(dungeonDef.level).atk;
+        const dmg = Math.max(1, Math.round(enemyAtk * (0.4 + Math.random()*0.3)));
         ls.hp = Math.max(1, ls.hp - dmg);
         pushLog(`罠にかかった。${liverDef(target).name}が ${dmg} のダメージ。`, 'danger');
       }
@@ -3804,7 +3847,6 @@
   /* ---------------- 街・移動 ---------------- */
   function gotoScreen(name){
     if(inCombat) return;
-    if(name==='shop') shopStock = generateShopStock();
     state.screen = name;
     saveGame(); render();
   }
@@ -3844,28 +3886,6 @@
   }
 
   /* ---------------- 商店 ---------------- */
-  function generateShopStock(){
-    const arr = [];
-    for(let i=0;i<4;i++){
-      const type = i%2===0 ? 'weapon' : 'armor';
-      const item = makeItem(type, Math.max(1, partyLevel()*2), 0);
-      item.price = Math.max(10, Math.round(item.value*9));
-      arr.push(item);
-    }
-    return arr;
-  }
-  function buyShopItem(id){
-    const idx = shopStock.findIndex(i=>i.id===id);
-    if(idx<0) return;
-    const item = shopStock[idx];
-    if(state.gold < item.price) return;
-    state.gold -= item.price;
-    const { price, ...rest } = item;
-    state.inventory.push({...rest, id:'itm_'+Math.random().toString(36).slice(2,9)});
-    shopStock.splice(idx,1);
-    pushLog(`「${item.name}」を購入した。`, 'reward');
-    saveGame(); render();
-  }
   function sellItem(id){
     const idx = state.inventory.findIndex(i=>i.id===id);
     if(idx<0) return;
@@ -3875,6 +3895,40 @@
     state.inventory.splice(idx,1);
     pushLog(`「${item.name}」を ${price}G で売却した。`, 'system');
     saveGame(); render();
+  }
+
+  function toolSellPrice(key){
+    return Math.max(1, Math.round(TOOL_DEFS[key].price/3));
+  }
+  function buyToolItem(key){
+    const def = TOOL_DEFS[key];
+    if(!def || !def.purchasable) return;
+    if(state.gold < def.price) return;
+    state.gold -= def.price;
+    if(!state.tools) state.tools = {};
+    state.tools[key] = toolCount(key) + 1;
+    pushLog(`「${def.name}」を購入した。`, 'reward');
+    saveGame(); render();
+  }
+  function sellToolItem(key){
+    const def = TOOL_DEFS[key];
+    if(!def || toolCount(key) < 1) return;
+    const price = toolSellPrice(key);
+    state.tools[key] = toolCount(key) - 1;
+    state.gold += price;
+    pushLog(`「${def.name}」を ${price}G で売却した。`, 'system');
+    saveGame(); render();
+  }
+
+  function toggleShopTab(tab){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.shopTab = tab;
+    render();
+  }
+  function toggleShopItemTab(tab){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.shopItemTab = tab;
+    render();
   }
 
   /* ---------------- 家 ---------------- */
@@ -3936,8 +3990,8 @@
       <div class="create-box">
         <h1>${GAME_TITLE_HTML}</h1>
         <p class="subtitle">${GAME_SUBTITLE}</p>
-        <p style="color:#000;">かつての文明が滅びてから幾星霜。地の底には、失われた時代の遺構が今も眠っている。<br>
-        あなたは再興された小さな町に降り立ち、糧となる何かを求めて迷宮へ向かおうとしている。</p>
+        <p style="color:#000;">七彩に輝くという伝説の塔、その麓に古くから栄える冒険者の町。<br>
+        あなたはギルドに足を踏み入れ、塔に眠る力と富を求めて旅立とうとしている。</p>
         <input id="nameInput" type="text" placeholder="冒険者の名を入力" maxlength="12" value="${esc(createNameDraft)}">
         <p class="section-label" style="margin-top:18px;text-align:left;color:var(--text-primary);text-shadow:1px 1px 0 var(--field-ground-dark);">最初の仲間を1人選ぼう</p>
         <p style="color:var(--text-primary);text-shadow:1px 1px 0 var(--field-ground-dark);font-size:11px;margin:0 0 10px;text-align:left;">選ばなかった仲間は、この先の迷宮の奥で出会うことになる。</p>
@@ -3964,7 +4018,7 @@
         const starterName = liverDef(createSelectedLiver).name;
         const uid = await ensureAuth();
         state = newCharacter(name, createSelectedLiver, uid);
-        pushLog(`${name}は、${starterName}と共に再興の町に降り立った。`, 'system');
+        pushLog(`${name}は、${starterName}と共に灯火の町に降り立った。`, 'system');
         await saveGame();
         // ここでplayers行が初めて作られるため、ゲート同意時点では
         // 更新できなかったtos_agreed_versionをサーバー側に反映させる
@@ -3993,11 +4047,22 @@
    * 画面下部に固定されず、スクロールしないと見えないため、バトルログを
    * 含む直近の詳細(state.history、常に全件保持)をメインウィンドウ内にも
    * 表示する。どちらか一方をCSSの@mediaで出し分けるだけなので、表示側で
-   * 画面幅を見て切り替わり、プッシュ時点の画面幅には依存しない。 */
+   * 画面幅を見て切り替わり、プッシュ時点の画面幅には依存しない。
+   * モバイルは基本最大5行だが、戦闘勝利時のドロップなど1回のアクションで
+   * 5行を超えるまとまり(batch)が発生した場合はそちらを優先し、まとまり
+   * ごと表示する(直近のまとまりが5行未満なら、5行になるよう1つ前の
+   * まとまりから補って表示する)。 */
   function renderLog(emptyText){
     const emptyHtml = emptyText ? `<p class="log-entry system">${esc(emptyText)}</p>` : '';
     const desktopEntries = state.log;
-    const mobileEntries = (state.history||[]).slice(-8);
+    const history = state.history || [];
+    let latestBatchEntries = [];
+    if(history.length){
+      const latestBatch = history[history.length-1].batch;
+      let i = history.length-1;
+      while(i>=0 && history[i].batch===latestBatch){ latestBatchEntries.unshift(history[i]); i--; }
+    }
+    const mobileEntries = latestBatchEntries.length >= 5 ? latestBatchEntries : history.slice(-5);
     const desktopHtml = desktopEntries.length
       ? desktopEntries.map(l=>`<p class="log-entry ${l.cls}">${esc(l.text)}</p>`).join('')
       : emptyHtml;
@@ -4018,7 +4083,7 @@
     if(state.screen==='shop') return '商店';
     if(state.screen==='home') return 'マイホーム';
     if(state.screen==='dead') return '……';
-    return '再興の町';
+    return '灯火の町';
   }
 
   /* 踏破済みのダンジョンはボス撃破のたびに内部の再挑戦用進捗が0%に
@@ -4147,8 +4212,8 @@
   function renderTownInner(){
     return `
       <div class="scene-text">
-        ${sceneHeadingHtml('再興の町')}
-        <p class="log-entry system">かつての瓦礫の上に、人々が再び火を灯し始めた場所。宿の煙突からは絶えず煙が上がり、市場には迷宮帰りの冒険者たちの姿がある。</p>
+        ${sceneHeadingHtml('灯火の町')}
+        <p class="log-entry system">そびえ立つ塔を仰ぎ見る、古くから冒険者たちが行き交う場所。宿の煙突からは絶えず煙が上がり、市場には迷宮帰りの冒険者たちの姿がある。</p>
       </div>
       <div class="actions">
         <button class="primary" id="gotoAnnouncementsBtn">お知らせ${announcementUnreadCount > 0 ? `<span class="notify-badge">${announcementUnreadCount}</span>` : ''}</button>
@@ -4804,36 +4869,65 @@
   }
 
   function renderShopInner(){
-    const line = SHOPKEEPER_LINES[Math.floor(Math.random()*SHOPKEEPER_LINES.length)];
-    const buyHtml = shopStock.length ? shopStock.map(item=>`
-      <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
-        <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
-        <span class="inv-item-actions">
-          <button data-buy-shop="${item.id}" ${(state.gold<item.price)?'disabled':''}>${item.price}G 購入</button>
-        </span>
-      </div>`).join('') : `<p class="inv-empty">今日の品はもう出払っている。</p>`;
+    const buyActive = ((state.ui && state.ui.shopTab) || 'buy') === 'buy';
+    const equipActive = ((state.ui && state.ui.shopItemTab) || 'equip') === 'equip';
 
-    const sellHtml = state.inventory.length ? state.inventory.map(item=>`
-      <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
-        <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
-        <span class="inv-item-actions">
-          <button data-sell="${item.id}">${Math.max(1,Math.round(item.value*3))}G で売る</button>
-        </span>
-      </div>`).join('') : `<p class="inv-empty">売れる物がない。</p>`;
+    let bodyHtml;
+    if(buyActive){
+      const keys = Object.keys(TOOL_DEFS).filter(k=>TOOL_DEFS[k].purchasable);
+      bodyHtml = keys.length ? keys.map(key=>{
+        const def = TOOL_DEFS[key];
+        return `
+          <div class="inv-item" title="${esc(def.desc)}">
+            <span class="inv-item-name">${esc(def.name)}</span>
+            <span class="inv-item-actions">
+              <button data-buy-tool="${key}" ${(state.gold<def.price)?'disabled':''}>${def.price}G 購入</button>
+            </span>
+          </div>`;
+      }).join('') : `<p class="inv-empty">購入できるアイテムが無い。</p>`;
+    } else if(equipActive){
+      const equipSort = (state.ui && state.ui.equipSort) || INVENTORY_SORT_DEFAULT;
+      const sellList = applyInventorySort(state.inventory, equipSort, i => RARITY_SORT_ORDER[i.rarity] || 0);
+      bodyHtml = sellList.length ? sellList.map(item=>`
+        <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
+          <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
+          <span class="inv-item-actions">
+            <button data-sell="${item.id}">${Math.max(1,Math.round(item.value*3))}G で売る</button>
+          </span>
+        </div>`).join('') : `<p class="inv-empty">売れる装備が無い。</p>`;
+    } else {
+      const itemSort = (state.ui && state.ui.itemSort) || INVENTORY_SORT_DEFAULT;
+      const keysBase = Object.keys(TOOL_DEFS).filter(k=>toolCount(k) > 0);
+      const keys = applyInventorySort(keysBase, itemSort, () => -1);
+      bodyHtml = keys.length ? keys.map(key=>{
+        const def = TOOL_DEFS[key];
+        return `
+          <div class="inv-item" title="${esc(def.desc)}">
+            <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">所持: ${toolCount(key)}</span></span>
+            <span class="inv-item-actions">
+              <button data-sell-tool="${key}">${toolSellPrice(key)}G で売る</button>
+            </span>
+          </div>`;
+      }).join('') : `<p class="inv-empty">売れるアイテムが無い。</p>`;
+    }
 
     return `
       <div class="scene-text">
         ${sceneHeadingHtml('商店')}
-        <p class="log-entry system">商人オーレンス:「${esc(line)}」</p>
       </div>
       <div class="actions"><button id="backTownBtn">町に戻る</button></div>
-      <div class="section-block">
-        <p class="section-label">購入</p>
-        ${buyHtml}
+      <div style="display:flex;gap:8px;margin:14px 0 10px;">
+        <button data-shop-tab="buy" class="${buyActive?'primary':''}" style="padding:6px 14px;font-size:12px;">買う</button>
+        <button data-shop-tab="sell" class="${!buyActive?'primary':''}" style="padding:6px 14px;font-size:12px;">売る</button>
       </div>
+      ${buyActive ? '' : `
+      <div style="display:flex;gap:8px;align-items:center;margin:10px 0;">
+        <button data-shop-item-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
+        <button data-shop-item-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
+        ${renderSortSelect('shopSortSelect', (state.ui && (equipActive ? state.ui.equipSort : state.ui.itemSort)) || INVENTORY_SORT_DEFAULT)}
+      </div>`}
       <div class="section-block">
-        <p class="section-label">売却</p>
-        ${sellHtml}
+        ${bodyHtml}
       </div>
     `;
   }
@@ -5068,10 +5162,11 @@
     render();
   }
 
-  function setInventorySort(mode){
+  /* kind: 'equip'|'item'。所持品パネルと商店の「売る」は同じ装備・アイテム
+   * 一覧を見ているため、ソート設定(state.ui.equipSort/itemSort)を共有する。 */
+  function setSortMode(kind, mode){
     if(!state.ui) state.ui = {expandedGroups:[]};
-    const key = (state.ui.inventoryTab === 'item') ? 'itemSort' : 'equipSort';
-    state.ui[key] = mode;
+    state.ui[kind === 'item' ? 'itemSort' : 'equipSort'] = mode;
     render();
   }
 
@@ -5095,19 +5190,22 @@
     return list; // new_asc
   }
 
-  function renderItemStackRow(name, count, rarityLabel){
+  function renderItemStackRow(name, count, rarityLabel, actionHtml, desc){
     return `
-      <div class="inv-item ${rarityLabel||''}">
+      <div class="inv-item ${rarityLabel||''}" ${desc?`title="${esc(desc)}"`:''}>
         <span class="inv-item-name">${esc(name)}</span>
-        <span class="inv-item-actions"><span style="color:var(--gold);font-family:var(--font-mono);">${count}</span></span>
+        <span class="inv-item-actions">
+          <span style="color:var(--gold);font-family:var(--font-mono);">${count}</span>
+          ${actionHtml||''}
+        </span>
       </div>`;
   }
 
-  function renderInventorySortSelect(currentSort){
+  function renderSortSelect(id, currentSort){
     const options = INVENTORY_SORT_OPTIONS.map(o=>
       `<option value="${o.value}" ${currentSort===o.value?'selected':''}>${esc(o.label)}</option>`
     ).join('');
-    return `<select id="inventorySortSelect" style="width:100%;margin-bottom:10px;font-size:11px;padding:4px 6px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${options}</select>`;
+    return `<select id="${id}" style="margin-left:auto;min-width:0;flex:0 1 auto;font-size:11px;padding:4px 4px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${options}</select>`;
   }
 
   /* 装備の変更は「編成」画面の詳細設定から行うため、このサイドパネルは
@@ -5139,20 +5237,30 @@
     const materialStacks = Object.keys(MATERIAL_DEFS)
       .filter(key => materialCount(key) > 0)
       .map(key => ({ name: MATERIAL_DEFS[key].name, count: materialCount(key), rarity: null }));
-    const itemStacksBase = [...orbStacks, ...materialStacks]; // 新着順の代わり(素材に取得順の記録が無いため、オーブ→素材の固定順)
+    const toolStacks = Object.keys(TOOL_DEFS)
+      .filter(key => toolCount(key) > 0)
+      .map(key => {
+        const def = TOOL_DEFS[key];
+        const usable = !def.canUse || def.canUse();
+        return {
+          name: def.name, count: toolCount(key), rarity: null, desc: def.desc,
+          actionHtml: usable ? `<button data-use-tool="${key}">使用</button>` : ''
+        };
+      });
+    const itemStacksBase = [...orbStacks, ...materialStacks, ...toolStacks]; // 新着順の代わり(取得順の記録が無いため、オーブ→素材→道具の固定順)
     const itemStacks = applyInventorySort(itemStacksBase, itemSort, s => s.rarity ? RARITY_SORT_ORDER[s.rarity] : -1);
     const itemHtml = itemStacks.length
-      ? itemStacks.map(s=>renderItemStackRow(s.name, s.count, s.rarity)).join('')
+      ? itemStacks.map(s=>renderItemStackRow(s.name, s.count, s.rarity, s.actionHtml, s.desc)).join('')
       : `<p class="inv-empty">アイテムはまだない。</p>`;
 
     return `
       <div class="panel">
         <h2>所持品</h2>
-        <div style="display:flex;gap:8px;margin-bottom:10px;">
-          <button data-inventory-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
-          <button data-inventory-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
+        <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;margin-bottom:10px;">
+          <button data-inventory-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 10px;font-size:12px;flex:0 0 auto;">装備</button>
+          <button data-inventory-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 10px;font-size:12px;flex:0 0 auto;">アイテム</button>
+          ${renderSortSelect('inventorySortSelect', equipActive ? equipSort : itemSort)}
         </div>
-        ${renderInventorySortSelect(equipActive ? equipSort : itemSort)}
         <div class="scrollbox inventory-scroll">${equipActive ? equipHtml : itemHtml}</div>
       </div>
     `;
@@ -5232,9 +5340,18 @@
     document.querySelectorAll('[data-inventory-tab]').forEach(b=>{
       b.addEventListener('click', ()=>toggleInventoryTab(b.getAttribute('data-inventory-tab')));
     });
+    document.querySelectorAll('[data-use-tool]').forEach(b=>{
+      b.addEventListener('click', ()=>useToolItem(b.getAttribute('data-use-tool')));
+    });
     const inventorySortSelect = document.getElementById('inventorySortSelect');
     if(inventorySortSelect) inventorySortSelect.addEventListener('change', (e)=>{
-      setInventorySort(e.target.value);
+      const kind = ((state.ui && state.ui.inventoryTab) || 'equip') === 'item' ? 'item' : 'equip';
+      setSortMode(kind, e.target.value);
+    });
+    const shopSortSelect = document.getElementById('shopSortSelect');
+    if(shopSortSelect) shopSortSelect.addEventListener('change', (e)=>{
+      const kind = ((state.ui && state.ui.shopItemTab) || 'equip') === 'item' ? 'item' : 'equip';
+      setSortMode(kind, e.target.value);
     });
     document.querySelectorAll('[data-chat-channel]').forEach(b=>{
       b.addEventListener('click', ()=>switchChatChannel(b.getAttribute('data-chat-channel')));
@@ -5263,8 +5380,17 @@
     document.querySelectorAll('[data-unequip]').forEach(b=>{
       b.addEventListener('click', ()=>unequipSlot(b.getAttribute('data-unequip'), b.getAttribute('data-unequip-for')));
     });
-    document.querySelectorAll('[data-buy-shop]').forEach(b=>{
-      b.addEventListener('click', ()=>buyShopItem(b.getAttribute('data-buy-shop')));
+    document.querySelectorAll('[data-buy-tool]').forEach(b=>{
+      b.addEventListener('click', ()=>buyToolItem(b.getAttribute('data-buy-tool')));
+    });
+    document.querySelectorAll('[data-sell-tool]').forEach(b=>{
+      b.addEventListener('click', ()=>sellToolItem(b.getAttribute('data-sell-tool')));
+    });
+    document.querySelectorAll('[data-shop-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>toggleShopTab(b.getAttribute('data-shop-tab')));
+    });
+    document.querySelectorAll('[data-shop-item-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>toggleShopItemTab(b.getAttribute('data-shop-item-tab')));
     });
     document.querySelectorAll('[data-use-guaranteed]').forEach(b=>{
       b.addEventListener('click', ()=>useGuaranteedTicket(b.getAttribute('data-use-guaranteed')));
@@ -5536,6 +5662,7 @@
     const newSceneEl = document.querySelector('.layout > div > .scene');
     if(newSceneEl) newSceneEl.scrollTop = prevSceneScrollTop;
     window.scrollTo(0, prevWindowScrollY);
+    historyBatchOpen = false; // 次のpushLogから新しいひとまとまりとして扱う
   }
 
   /* ---------------- Init / セーブのマイグレーション ---------------- */
