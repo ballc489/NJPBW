@@ -3677,11 +3677,11 @@
     if(ds.progress < 100) ds.depth += 1;
     const roll = Math.random();
 
-    if(roll < 0.55){
+    if(roll < 0.70){
       const enemy = spawnEnemy(dungeonDef, ds.depth, false);
       enemy.pendingProgressOnWin = true;
       startCombat(enemy);
-    } else if(roll < 0.72){
+    } else if(roll < 0.80){
       let healText = [];
       state.party.forEach(id=>{
         const ls = liverState(id);
@@ -3694,7 +3694,7 @@
       pushLog(`静かな小部屋で一息ついた。パーティのHP・MPが少し回復した。`, 'system');
       addDungeonProgress(PROGRESS_PER_STEP);
       saveGame(); render();
-    } else if(roll < 0.90){
+    } else if(roll < 0.95){
       maybeDropItem(ds.depth);
       if(state.log.length===0 || state.log[state.log.length-1].text.indexOf('見つけ')<0){
         pushLog('崩れた棚の奥に何かが残っていた。', 'system');
@@ -3705,7 +3705,12 @@
       const target = pickRandomAliveTarget();
       if(target){
         const ls = liverState(target);
-        const dmg = Math.round(3 + ds.depth*0.4);
+        /* 罠の威力は周回で際限なく伸びるdepthではなく、そのダンジョンの
+         * レベル帯(=同レベル帯の敵の通常攻撃力)を基準にする。これにより
+         * 低レベルダンジョンでは弱く、高レベルダンジョンでは強くなる
+         * (敵の強さと同じ物差しでスケールする)。振れ幅は乱数で持たせる。 */
+        const enemyAtk = statsForLevel(dungeonDef.level).atk;
+        const dmg = Math.max(1, Math.round(enemyAtk * (0.4 + Math.random()*0.3)));
         ls.hp = Math.max(1, ls.hp - dmg);
         pushLog(`罠にかかった。${liverDef(target).name}が ${dmg} のダメージ。`, 'danger');
       }
