@@ -3038,8 +3038,14 @@
    * (state.history、全件保持)にのみ残す。敵の出現/撃破やキャラの
    * 戦闘不能などの「ステップの変化」はメインウィンドウにも出したいため
    * skipMainを付けない。 */
+  /* モバイル表示の「1まとまり」の判定用。render()が呼ばれるたびに区切りを
+   * 閉じるので、1回のアクション(例:戦闘勝利時の撃破・経験値・ドロップの
+   * 一連のpushLog)はrender()を挟まない限り同じbatchになる。 */
+  let historyBatchSeq = 0;
+  let historyBatchOpen = false;
   function pushLog(text, cls, skipMain){
-    const entry = {text, cls: cls||''};
+    if(!historyBatchOpen){ historyBatchSeq++; historyBatchOpen = true; }
+    const entry = {text, cls: cls||'', batch: historyBatchSeq};
     if(!skipMain){
       state.log.push(entry);
       if(state.log.length > 6) state.log = state.log.slice(-6);
@@ -4042,11 +4048,22 @@
    * 画面下部に固定されず、スクロールしないと見えないため、バトルログを
    * 含む直近の詳細(state.history、常に全件保持)をメインウィンドウ内にも
    * 表示する。どちらか一方をCSSの@mediaで出し分けるだけなので、表示側で
-   * 画面幅を見て切り替わり、プッシュ時点の画面幅には依存しない。 */
+   * 画面幅を見て切り替わり、プッシュ時点の画面幅には依存しない。
+   * モバイルは基本最大5行だが、戦闘勝利時のドロップなど1回のアクションで
+   * 5行を超えるまとまり(batch)が発生した場合はそちらを優先し、まとまり
+   * ごと表示する(直近のまとまりが5行未満なら、5行になるよう1つ前の
+   * まとまりから補って表示する)。 */
   function renderLog(emptyText){
     const emptyHtml = emptyText ? `<p class="log-entry system">${esc(emptyText)}</p>` : '';
     const desktopEntries = state.log;
-    const mobileEntries = (state.history||[]).slice(-8);
+    const history = state.history || [];
+    let latestBatchEntries = [];
+    if(history.length){
+      const latestBatch = history[history.length-1].batch;
+      let i = history.length-1;
+      while(i>=0 && history[i].batch===latestBatch){ latestBatchEntries.unshift(history[i]); i--; }
+    }
+    const mobileEntries = latestBatchEntries.length >= 5 ? latestBatchEntries : history.slice(-5);
     const desktopHtml = desktopEntries.length
       ? desktopEntries.map(l=>`<p class="log-entry ${l.cls}">${esc(l.text)}</p>`).join('')
       : emptyHtml;
@@ -5646,6 +5663,7 @@
     const newSceneEl = document.querySelector('.layout > div > .scene');
     if(newSceneEl) newSceneEl.scrollTop = prevSceneScrollTop;
     window.scrollTo(0, prevWindowScrollY);
+    historyBatchOpen = false; // 次のpushLogから新しいひとまとまりとして扱う
   }
 
   /* ---------------- Init / セーブのマイグレーション ---------------- */
