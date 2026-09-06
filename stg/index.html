@@ -1436,7 +1436,8 @@
       const sign = item.resist.value > 0 ? '+' : '';
       s += ` ${ELEMENT_LABELS[item.resist.element]}耐性${sign}${item.resist.value}`;
     }
-    if(item.weaponType) s += ` [${WEAPON_TYPES[item.weaponType].name}]`;
+    const typeLabel = item.weaponType ? WEAPON_TYPES[item.weaponType].name : '防具';
+    s += ` [${typeLabel}]`;
     return s;
   }
 
@@ -5203,10 +5204,21 @@
     return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   }
   function marketNotificationText(n){
-    if(n.kind === 'equipment'){
-      return `「${n.item_name}」が${n.total_price}Gで売れた。`;
+    const name = n.kind === 'equipment' ? n.item_name : marketStackName(n.bucket, n.material_key);
+    const countLabel = n.kind === 'equipment' ? '' : `×${n.quantity}`;
+    if(n.event === 'listed'){
+      return `「${name}」${countLabel}を単価${n.price_per_unit}Gで出品した。`;
     }
-    return `「${marketStackName(n.bucket, n.material_key)}」×${n.quantity}が単価${n.price_per_unit}Gで売れた(合計${n.total_price}G)。`;
+    if(n.event === 'expired'){
+      return `「${name}」${countLabel}の出品が72時間経過で失効し、手元に返却された。`;
+    }
+    if(n.kind === 'equipment') return `「${name}」が${n.total_price}Gで売れた。`;
+    return `「${name}」${countLabel}が単価${n.price_per_unit}Gで売れた(合計${n.total_price}G)。`;
+  }
+  function marketNotificationLogClass(n){
+    if(n.event === 'listed') return 'system';
+    if(n.event === 'expired') return 'danger';
+    return 'reward';
   }
 
   /* ログイン直後に1度だけ取得してバッジ件数をキャッシュしておく
@@ -5219,7 +5231,7 @@
       const lastSeen = (playerRow && playerRow.market_last_seen_at) || '1970-01-01T00:00:00Z';
       const { count, error: e2 } = await sb.from('market_sale_notifications')
         .select('*', { count:'exact', head:true })
-        .eq('seller_id', uid).gt('created_at', lastSeen);
+        .eq('seller_id', uid).neq('event', 'listed').gt('created_at', lastSeen);
       if(e2) throw e2;
       marketUnseenCount = count || 0;
       render();
@@ -6888,7 +6900,7 @@
       const rows = (!marketNotifications || marketNotifications.loading)
         ? '<p style="color:var(--text-muted);">読み込み中……</p>'
         : marketNotifications.items.length
-          ? marketNotifications.items.map(n=>`<p class="reward">${formatNotificationDateTime(n.created_at)} ${esc(marketNotificationText(n))}</p>`).join('')
+          ? marketNotifications.items.map(n=>`<p class="${marketNotificationLogClass(n)}">${formatNotificationDateTime(n.created_at)} ${esc(marketNotificationText(n))}</p>`).join('')
           : '<p style="color:var(--text-muted);">まだ売却の記録は無い。</p>';
       body = `<div class="scrollbox history-log" id="marketNotificationLog">${rows}</div>`;
     } else {
