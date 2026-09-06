@@ -315,13 +315,22 @@
   /* UI全体の小アイコン(絵文字は使わず自作のインラインSVG) */
   .ui-icon{width:1em;height:1em;display:inline-block;vertical-align:-0.15em;margin-right:2px;flex:0 0 auto;}
 
-  /* 見出し横のヘルプボタンと、そのコンテンツ説明のポップアップ */
+  /* 見出し横のヘルプボタンと、そのコンテンツ説明のポップアップ。
+   * アイコン自体(uiIcon('help'))が既に丸+「?」の形をしているため、
+   * ボタン側は枠・背景・角丸を持たない「文字だけ押せる」形にする
+   * (通常のbuttonにあるホバー時のpadding-left拡張アニメーションも
+   * このボタンだけは無効化し、カーソルを合わせても動かないようにする)。 */
   .help-btn{
-    padding:0;width:22px;height:22px;min-width:0;
-    border-radius:50%;flex:0 0 auto;
+    padding:0;width:auto;height:auto;min-width:0;
+    background:none;border:none;box-shadow:none;
+    flex:0 0 auto;cursor:pointer;
     display:inline-flex;align-items:center;justify-content:center;
+    color:var(--gold);
   }
-  .help-btn .ui-icon{width:14px;height:14px;margin:0;}
+  .help-btn:hover:not(:disabled){
+    background:none;border:none;padding:0;padding-left:0;color:#fff;
+  }
+  .help-btn .ui-icon{width:16px;height:16px;margin:0;}
   .help-popup-backdrop{
     position:fixed;inset:0;background:rgba(10,18,48,0.72);
     display:flex;align-items:center;justify-content:center;
