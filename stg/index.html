@@ -1530,6 +1530,11 @@
   const TOWER_ENTRY_STAMINA_COST = 50;
   const TOWER_BOSS_LEVEL_PREMIUM = 4;                         // 通常の10階ごとの中ボス
   const TOWER_MILESTONE_LEVEL_PREMIUM = { 50:10, 100:16 };    // 50F・100Fの大ボスはさらに格上げ
+  /* 七彩の塔そのものの解放条件。チュートリアルを除いた「大枠としての
+   * ダンジョン」5個目(灰燼→尖塔→樹海→墓所→蒼氷、の5番目=蒼氷の霊峰)の
+   * 最上階をクリアすると全体が解放される(複数フロアあるダンジョンは
+   * まとめて1個としてカウント)。 */
+  const TOWER_UNLOCK_DUNGEON_ID = 'icepeak_f6';
 
   /* 報酬装備セット(全武器種8+防具1=9点)。防具は種類による効果差が
    * 無いため1種類に絞り、武器はジョブ間の有利不利が出ないよう全種用意する。
@@ -1553,7 +1558,7 @@
 
   const TOWER_DEFS = [
     {
-      id:'crimson_tower', name:'紅蓮の塔', color:'赤', element:'fire', unlocked:true,
+      id:'crimson_tower', name:'紅蓮の塔', color:'赤', element:'fire', requires:null,
       enemyWeakness:'ice',
       crystalKey:'crimson_crystal', exclusiveMaterialKey:'crimson_ember',
       equipmentSet: towerEquipTemplates('紅蓮', 'fire'),
@@ -1569,7 +1574,7 @@
       bossName:'紅蓮の守護獣', milestoneBossNames:{50:'紅蓮の大守護獣', 100:'紅蓮の塔主'}
     },
     {
-      id:'azure_tower', name:'紺碧の塔', color:'青', element:'ice', unlocked:true,
+      id:'azure_tower', name:'紺碧の塔', color:'青', element:'ice', requires:{towerId:'crimson_tower', floor:50},
       enemyWeakness:'fire',
       crystalKey:'azure_crystal', exclusiveMaterialKey:'azure_frost',
       equipmentSet: towerEquipTemplates('紺碧', 'ice'),
@@ -1588,6 +1593,22 @@
 
   function towerDefById(id){ return TOWER_DEFS.find(t=>t.id===id); }
   function currentTowerDef(){ return state.towerRun ? towerDefById(state.towerRun.towerId) : null; }
+
+  /* 七彩の塔全体の解放判定(チュートリアルを除く5番目のダンジョン=
+   * 蒼氷の霊峰の最上階クリア)。個別の塔はさらにdef.requiresで、
+   * 他の塔の到達フロアを条件にできる(紺碧の塔は紅蓮の塔50F踏破が必要)。 */
+  function towersGloballyUnlocked(){
+    const ds = state.dungeons[TOWER_UNLOCK_DUNGEON_ID];
+    return !!(ds && ds.cleared);
+  }
+  function towerBestFloor(towerId){
+    return (state.towerBestFloor && state.towerBestFloor[towerId]) || 0;
+  }
+  function isTowerAccessible(def){
+    if(!towersGloballyUnlocked()) return false;
+    if(!def.requires) return true;
+    return towerBestFloor(def.requires.towerId) >= def.requires.floor;
+  }
 
   /* フロアを実効レベルに変換する。既存のstatsForLevel()カーブをそのまま
    * 延長して使うことで、既存ダンジョンの敵と地続きの強さになるようにする
@@ -1629,7 +1650,7 @@
   function enterTower(id){
     if(inCombat || state.towerRun) return;
     const def = towerDefById(id);
-    if(!def || !def.unlocked) return;
+    if(!def || !isTowerAccessible(def)) return;
     if(!state.party.length){
       pushLog('パーティが編成されていない。町で編成してから向かおう。', 'system');
       render();
@@ -1692,6 +1713,9 @@
     const floor = state.towerRun.floor;
     const endReason = floor >= TOWER_MAX_FLOOR ? 'clear' : (reason || 'defeat');
     const chance = Math.min(100, floor*0.2 + (floor>=50?5:0) + (floor>=100?5:0));
+
+    if(!state.towerBestFloor) state.towerBestFloor = {};
+    state.towerBestFloor[def.id] = Math.max(towerBestFloor(def.id), floor);
 
     const rewards = { equipment:null, exclusiveMaterialCount:0, crystalCount:floor };
 
@@ -2534,6 +2558,7 @@
       stamina: STAMINA_MAX, staminaUpdatedAt: Date.now(),
       rift: null, // { startedAt, partyIds } / 非アクティブならnull
       towerRun: null, // { towerId, floor } / 非アクティブならnull
+      towerBestFloor: {}, // 塔ごとの過去最高到達フロア(他の塔の解放条件に使う)
       lastTowerResult: null // リザルト画面表示用。永続化はしない
     };
   }
@@ -3074,7 +3099,8 @@
         p_stamina: state.stamina,
         p_stamina_updated_at: new Date(state.staminaUpdatedAt).toISOString(),
         p_tools: state.tools || {},
-        p_tower_run: state.towerRun || null
+        p_tower_run: state.towerRun || null,
+        p_tower_best_floor: state.towerBestFloor || {}
       });
       if(error) console.error('save_full_state failed', error);
 
@@ -3203,6 +3229,7 @@
           ? { startedAt: playerRow.rift_state.startedAt, partyIds: playerRow.rift_state.partyIds || [], result: playerRow.rift_state.result || null }
           : null,
         towerRun: towerRun ? { towerId: towerRun.towerId, floor: towerRun.floor || 0 } : null,
+        towerBestFloor: (playerRow.tower_best_floor && typeof playerRow.tower_best_floor === 'object') ? playerRow.tower_best_floor : {},
         lastTowerResult: null
       };
     }catch(e){
@@ -4503,11 +4530,25 @@
   }
 
   function renderTowerSelectInner(){
-    const unlockedRows = TOWER_DEFS.map(def=>`
-      <div class="inv-item">
+    const globallyUnlocked = towersGloballyUnlocked();
+    const gateDungeonName = dungeonDefById(TOWER_UNLOCK_DUNGEON_ID).groupName;
+    const towerRows = TOWER_DEFS.map(def=>{
+      const accessible = isTowerAccessible(def);
+      let actionHtml;
+      if(!globallyUnlocked){
+        actionHtml = `<span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">🔒 「${esc(gateDungeonName)}」踏破で解放</span>`;
+      } else if(!accessible){
+        const reqDef = towerDefById(def.requires.towerId);
+        actionHtml = `<span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">🔒 ${esc(reqDef.name)} ${def.requires.floor}F踏破で解放</span>`;
+      } else {
+        actionHtml = `<button data-enter-tower="${def.id}" ${(!state.party.length || state.stamina<TOWER_ENTRY_STAMINA_COST)?'disabled':''}>挑む(スタミナ${TOWER_ENTRY_STAMINA_COST}消費)</button>`;
+      }
+      return `
+      <div class="inv-item" style="${accessible?'':'opacity:.65;'}">
         <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${esc(def.color)}・${ELEMENT_LABELS[def.element]}属性)</span></span>
-        <span class="inv-item-actions"><button data-enter-tower="${def.id}" ${(!state.party.length || state.stamina<TOWER_ENTRY_STAMINA_COST)?'disabled':''}>挑む(スタミナ${TOWER_ENTRY_STAMINA_COST}消費)</button></span>
-      </div>`).join('');
+        <span class="inv-item-actions">${actionHtml}</span>
+      </div>`;
+    }).join('');
     const lockedRows = Array.from({length: Math.max(0, 7 - TOWER_DEFS.length)}).map(()=>`
       <div class="inv-item" style="opacity:.55;">
         <span class="inv-item-name">？？？の塔 <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">近日追加予定</span></span>
@@ -4516,12 +4557,13 @@
       <div class="scene-text">
         ${sceneHeadingHtml('七彩の塔')}
         <p class="log-entry system">七色に輝くという伝説の塔。全部で7つあるとされ、最奥を目指すほど強大な力が眠っているという。突入にはスタミナ${TOWER_ENTRY_STAMINA_COST}を消費するが、以降フロアを進む分の追加消費は無い。街に戻る・全滅のどちらでも、その時点の到達フロアに応じた報酬は必ず持ち帰れる。</p>
+        ${!globallyUnlocked ? `<p class="log-entry danger" style="margin-top:8px;">「${esc(gateDungeonName)}」を踏破すると、この場所そのものが解放される。</p>` : ''}
       </div>
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
       </div>
       <div class="section-block">
-        ${unlockedRows}
+        ${towerRows}
         ${lockedRows}
       </div>
     `;
