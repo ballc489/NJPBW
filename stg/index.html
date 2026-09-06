@@ -5212,8 +5212,9 @@
     if(n.event === 'expired'){
       return `「${name}」${countLabel}の出品が72時間経過で失効し、手元に返却された。`;
     }
-    if(n.kind === 'equipment') return `「${name}」が${n.total_price}Gで売れた。`;
-    return `「${name}」${countLabel}が単価${n.price_per_unit}Gで売れた(合計${n.total_price}G)。`;
+    const receivedLabel = (typeof n.received_amount === 'number') ? n.received_amount : n.total_price;
+    if(n.kind === 'equipment') return `「${name}」が${n.total_price}Gで売れ、${receivedLabel}Gを受け取った。`;
+    return `「${name}」${countLabel}が単価${n.price_per_unit}Gで売れた(合計${n.total_price}G、受取${receivedLabel}G)。`;
   }
   function marketNotificationLogClass(n){
     if(n.event === 'listed') return 'system';
