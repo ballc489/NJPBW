@@ -84,6 +84,11 @@
   .layout{display:grid;grid-template-columns:minmax(0,1fr) 300px 300px;gap:22px;align-items:start;}
   @media (max-width:1180px){.layout{grid-template-columns:minmax(0,1fr) 250px 250px;gap:16px;}}
   @media (max-width:900px){.layout{grid-template-columns:1fr;}}
+  /* マーケット画面: 商品を一覧しやすいよう、右2枠(パーティ/所持品)を
+   * 隠して全幅表示にする。 */
+  .layout.layout-full{grid-template-columns:minmax(0,1fr);}
+  .layout.layout-full > div:nth-child(2),
+  .layout.layout-full > div:nth-child(3){display:none;}
 
   /* モバイルでは冒険の記録が画面下部に固定されないため、バトルログを
    * 含む詳細ログをメインウィンドウ内にも出す(PCでは逆に隠す)。 */
@@ -343,6 +348,11 @@
     padding:22px;max-width:440px;width:100%;
   }
   .help-popup .log-entry{font-size:14px;line-height:1.8;}
+  .market-popup-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px dashed rgba(255,255,255,0.2);}
+  .market-qty-input{
+    width:100%;background:#0e1a45;border:1.6px solid var(--win-border);color:var(--text-primary);
+    font-family:var(--font-mono);font-size:14px;padding:7px 9px;text-align:right;margin-top:4px;
+  }
 
   /* お知らせのタグ・未読バッジ */
   .tag-chip{
@@ -1372,6 +1382,63 @@
     state.tools[key] = toolCount(key) - 1;
     pushLog(`「${def.name}」を使った。`, 'reward');
     saveGame(); render();
+  }
+
+  /* ---------------------------------------------------------------
+   * マーケット: どの装備・素材・道具が出品可能かはすべてクライアント側の
+   * 定義のみで決める(DB側は所有権・個数の整合性だけを見る)。
+   * 装備は一定レアリティ以上、素材・道具はレアリティの概念が無いため
+   * 個別の許可リストで管理する。
+   * --------------------------------------------------------------- */
+  const MARKET_LISTING_SLOTS = 3;
+  const MARKET_MIN_PRICE = 10; // これ未満の単価では出品不可(サーバー側のRPCでも同じ下限を強制する)
+  const MARKET_MIN_EQUIP_RARITY_RANK = 2; // 0:common 1:uncommon 2:rare 3:epic (レア未満は出品不可)
+  const MARKET_EXCLUDED_EQUIPMENT_NAMES = new Set(); // 個別除外(将来の調整用、現状は無し)
+  const MARKET_TRADABLE_MATERIALS = ['fine_iron_ore', 'crimson_ember', 'crimson_crystal', 'azure_frost', 'azure_crystal'];
+  const MARKET_TRADABLE_TOOLS = Object.keys(TOOL_DEFS);
+  const MARKET_EQUIP_RARITY_RANK = { common:0, uncommon:1, rare:2, epic:3 };
+
+  function marketEquipEligible(item){
+    if(!item) return false;
+    if(MARKET_EXCLUDED_EQUIPMENT_NAMES.has(item.name)) return false;
+    return (MARKET_EQUIP_RARITY_RANK[item.rarity] || 0) >= MARKET_MIN_EQUIP_RARITY_RANK;
+  }
+  function marketStackDefFor(bucket, key){
+    return bucket === 'tools' ? TOOL_DEFS[key] : MATERIAL_DEFS[key];
+  }
+  function marketStackName(bucket, key){
+    const def = marketStackDefFor(bucket, key);
+    return def ? def.name : key;
+  }
+  function marketTradableStacks(){
+    // { bucket, key, name, owned } の配列。所持数が0でも出品タブの選択肢としては出さない。
+    const list = [];
+    MARKET_TRADABLE_MATERIALS.forEach(key=>{
+      if(materialCount(key) > 0) list.push({ bucket:'materials', key, name: marketStackName('materials', key), owned: materialCount(key) });
+    });
+    MARKET_TRADABLE_TOOLS.forEach(key=>{
+      if(toolCount(key) > 0) list.push({ bucket:'tools', key, name: marketStackName('tools', key), owned: toolCount(key) });
+    });
+    return list;
+  }
+
+  /* マーケット上の装備の性能表記だけ、通常のitemValueLabel(所持品一覧・
+   * 強化画面などで共通利用)と表記順を変える。強化値・属性付与・耐性を
+   * 優先して左側に、装備種別(武器種別)は最右に置く。他画面の表記には
+   * 影響させないよう、あえて別関数として持つ。 */
+  function marketEquipMetaLabel(item){
+    let s = `効果値 +${itemEffectiveValue(item)}`;
+    if(item.enhanceLevel) s += ` [強化+${item.enhanceLevel}]`;
+    if(item.affix && item.affix.kind==='element'){
+      s += ` ${ELEMENT_LABELS[item.affix.element]}属性付与`;
+    }
+    if(item.resist){
+      const sign = item.resist.value > 0 ? '+' : '';
+      s += ` ${ELEMENT_LABELS[item.resist.element]}耐性${sign}${item.resist.value}`;
+    }
+    const typeLabel = item.weaponType ? WEAPON_TYPES[item.weaponType].name : '防具';
+    s += ` [${typeLabel}]`;
+    return s;
   }
 
   /* 突入・受け取り・撤退・結果を閉じる、いずれの直後も必ずDBへの保存が
@@ -2595,7 +2662,9 @@
       activeDungeonId: 'tutorial',
       tutorialDone: false,
       home: { furniture: [] },
-      ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null },
+      ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
+        marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
+        marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null },
       pendingDefeatGoldLoss: 0,
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
@@ -3258,7 +3327,9 @@
         activeDungeonId: tutorialDone ? null : 'tutorial',
         tutorialDone,
         home: { furniture: playerRow.home_furniture || [] },
-        ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null },
+        ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
+        marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
+        marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null },
         pendingDefeatGoldLoss: 0,
         dungeons,
         colosseum: {
@@ -4347,6 +4418,7 @@
           console.error('agree_to_tos resync failed', e);
         }
         refreshAnnouncementUnreadCount();
+        refreshMarketUnseenCount();
         render();
       }catch(e){
         console.error('character creation failed', e);
@@ -4458,6 +4530,12 @@
       '※強力な装備・素材を入手することのできるエンドコンテンツです。'
     ],
     rankings: ['キャラごとの戦闘力を他のユーザーと競おう'],
+    market: [
+      '他のプレイヤーと装備・素材・道具を売買できる。',
+      '出品は最大3枠まで。出品してから72時間で自動的に失効するが、その間は「出品中リスト」の空き枠を圧迫し続ける。',
+      '素材・道具は「1個あたりの単価」を指定して個数分まとめて出品でき、同じ単価の出品の中から古いものから順に購入される。指定した数量分の在庫が無い場合、購入自体が失敗する。',
+      '売上のうち10%は手数料として引かれ、出品者には渡らず消滅する。'
+    ],
     summon: [
       '新たなライバーを顕現させることができる。',
       '未入手のライバーの中からランダムで選ばれる。',
@@ -4624,6 +4702,7 @@
         <button class="primary" id="gotoPartyBtn">編成</button>
         <button class="primary" id="gotoInnBtn">宿屋</button>
         <button class="primary" id="gotoShopBtn">商店</button>
+        <button class="primary" id="gotoMarketBtn">マーケット${marketUnseenCount > 0 ? `<span class="notify-badge">${marketUnseenCount}</span>` : ''}</button>
         <button class="primary" id="gotoSummonBtn">召喚</button>
         <button class="primary" id="gotoExchangeBtn">交換所</button>
         <button class="primary" id="gotoEnhanceBtn">合成</button>
@@ -4781,6 +4860,663 @@
           <span style="float:right;color:var(--gold);font-family:var(--font-mono);">戦闘力 ${row.combat_power}</span>
         </span>
       </div>`;
+  }
+
+  /* ---------------------------------------------------------------
+   * マーケット: ユーザー間でのアイテム売買。出品・購入自体はサーバー側
+   * (SECURITY DEFINERのRPC)で他プレイヤーとの整合性を取るため、
+   * 通常の所持品操作と違いRPCの戻り値(処理後の権威ある値)をそのまま
+   * state.gold/materials/tools/inventoryに反映する(差分加算はしない)。
+   * こうしないと、この直後に走る通常のsaveGame(state全体を上書き保存)
+   * が、他プレイヤーの購入で増えた分・出品で減った分を古いローカル値で
+   * 巻き戻してしまう恐れがあるため。
+   *
+   * 出品中の一覧・購入可能な一覧はプレイヤー自身のstateの一部ではない
+   * (他プレイヤーの出品も見えるサーバー側の共有データ)ため、
+   * ランキングと同様にstate外のモジュール変数(marketData)で持ち、
+   * 画面を開くたび・操作するたびに読み直す。
+   * --------------------------------------------------------------- */
+  const MARKET_EQUIP_SORT_OPTIONS = [
+    { value:'rarity_desc', label:'レアリティ順(降順)' },
+    { value:'rarity_asc',  label:'レアリティ順(昇順)' },
+    { value:'listed_desc', label:'出品順(新しい順)' },
+    { value:'listed_asc',  label:'出品順(古い順)' },
+  ];
+  function sortMarketEquipListings(list, mode){
+    const sorted = [...list];
+    if(mode === 'rarity_asc') sorted.sort((a,b)=>(MARKET_EQUIP_RARITY_RANK[a.item_snapshot.rarity]||0)-(MARKET_EQUIP_RARITY_RANK[b.item_snapshot.rarity]||0));
+    else if(mode === 'rarity_desc') sorted.sort((a,b)=>(MARKET_EQUIP_RARITY_RANK[b.item_snapshot.rarity]||0)-(MARKET_EQUIP_RARITY_RANK[a.item_snapshot.rarity]||0));
+    else if(mode === 'listed_asc') sorted.sort((a,b)=>new Date(a.listed_at)-new Date(b.listed_at));
+    else sorted.sort((a,b)=>new Date(b.listed_at)-new Date(a.listed_at));
+    return sorted;
+  }
+
+  /* market_listings行のitem_snapshot(DBの列名そのまま)を、既存の
+   * itemDetailText/itemValueLabelがそのまま使えるクライアント側の
+   * アイテム形(loadGame()での変換と同じ形)に直す。 */
+  function marketItemFromSnapshot(snap){
+    return {
+      id: snap.id, type: snap.item_type, name: snap.name,
+      rarity: snap.rarity, rarityLabel: snap.rarity, value: snap.value,
+      resist: snap.resist_element ? { element: snap.resist_element, value: snap.resist_value } : null,
+      weaponType: snap.weapon_type || null,
+      affix: snap.affix || null,
+      enhanceLevel: snap.enhance_level || 0
+    };
+  }
+  function applyMarketItemSnapshotToInventory(snap){
+    state.inventory.push(marketItemFromSnapshot(snap));
+  }
+  function formatMarketRemaining(expiresAtIso){
+    const remainMs = new Date(expiresAtIso).getTime() - Date.now();
+    if(remainMs <= 0) return '受け取り待ち';
+    return `残り${Math.ceil(remainMs / 3600000)}時間`;
+  }
+  function aggregateStackListings(listings){
+    const map = new Map();
+    listings.forEach(row=>{
+      const k = row.bucket + ':' + row.material_key;
+      if(!map.has(k)) map.set(k, { bucket: row.bucket, key: row.material_key, name: marketStackName(row.bucket, row.material_key), totalQty:0, minPrice: Infinity });
+      const agg = map.get(k);
+      agg.totalQty += row.quantity;
+      agg.minPrice = Math.min(agg.minPrice, row.price_per_unit);
+    });
+    return Array.from(map.values());
+  }
+
+  let marketData = null; // { loading, stackListings, equipListings, myListings, error } | null
+
+  async function refreshMarketData(){
+    marketData = { loading:true, stackListings:[], equipListings:[], myListings:[], error:false };
+    render();
+    try{
+      const uid = await ensureAuth();
+      const nowIso = new Date().toISOString();
+      const [stackRes, equipRes, mineRes] = await Promise.all([
+        sb.from('market_listings').select('*').eq('kind','stack').eq('status','active').gt('expires_at', nowIso),
+        sb.from('market_listings').select('*').eq('kind','equipment').eq('status','active').gt('expires_at', nowIso),
+        sb.from('market_listings').select('*').eq('seller_id', uid).eq('status','active')
+      ]);
+      if(stackRes.error) throw stackRes.error;
+      if(equipRes.error) throw equipRes.error;
+      if(mineRes.error) throw mineRes.error;
+      marketData = {
+        loading:false,
+        stackListings: stackRes.data || [],
+        equipListings: equipRes.data || [],
+        myListings: mineRes.data || [],
+        error:false
+      };
+    }catch(e){
+      console.error('market fetch failed', e);
+      marketData = { loading:false, stackListings:[], equipListings:[], myListings:[], error:true };
+    }
+    render();
+  }
+
+  async function claimMarketGold(){
+    try{
+      const { data, error } = await sb.rpc('claim_market_mailbox');
+      if(error){ console.error('claim market mailbox failed', error); return; }
+      const newGold = data;
+      if(typeof newGold === 'number' && newGold !== state.gold){
+        const gained = newGold - state.gold;
+        state.gold = newGold;
+        if(gained > 0) pushLog(`マーケットでの売上として、ゴールドを${gained}枚受け取った。`, 'reward');
+        saveGame(); render();
+      }
+    }catch(e){ console.error('claim market mailbox failed', e); }
+  }
+
+  async function claimExpiredMarketListings(){
+    try{
+      const { data, error } = await sb.rpc('market_claim_expired');
+      if(error){ console.error('claim expired listings failed', error); return; }
+      const results = data || [];
+      if(!results.length) return;
+      results.forEach(r=>{
+        if(r.kind === 'equipment'){
+          applyMarketItemSnapshotToInventory(r.item);
+          pushLog(`出品期限切れの「${r.item.name}」が戻ってきた。`, 'system');
+        } else {
+          if(r.bucket === 'materials') state.materials[r.material_key] = r.new_qty;
+          else state.tools[r.material_key] = r.new_qty;
+          pushLog(`出品期限切れの「${marketStackName(r.bucket, r.material_key)}」が戻ってきた。`, 'system');
+        }
+      });
+      saveGame(); render();
+    }catch(e){ console.error('claim expired listings failed', e); }
+  }
+
+  async function gotoMarket(){
+    if(inCombat) return;
+    state.screen = 'market';
+    if(!state.ui) state.ui = {};
+    state.ui.marketStackBookOpen = false;
+    state.ui.marketSelectedStackKey = null;
+    state.ui.marketPopup = null;
+    saveGame(); render();
+    await claimMarketGold();
+    await claimExpiredMarketListings();
+    await refreshMarketData();
+  }
+
+  function openMarketPopup(popup){
+    if(!state.ui) state.ui = {};
+    state.ui.marketPopup = popup;
+    render();
+  }
+  function closeMarketPopup(){
+    if(!state.ui) return;
+    state.ui.marketPopup = null;
+    render();
+  }
+  function openMarketStackBook(bucket, key){
+    if(!state.ui) state.ui = {};
+    state.ui.marketSelectedStackKey = bucket + ':' + key;
+    state.ui.marketStackBookOpen = true;
+    render();
+  }
+  function backMarketStackList(){
+    if(!state.ui) return;
+    state.ui.marketStackBookOpen = false;
+    state.ui.marketSelectedStackKey = null;
+    render();
+  }
+  function switchMarketTab(tab){
+    if(!state.ui) state.ui = {};
+    state.ui.marketTab = tab;
+    state.ui.marketPopup = null;
+    if(tab !== 'buy') state.ui.marketStackBookOpen = false;
+    render();
+  }
+  function switchMarketBuySubTab(tab){
+    if(!state.ui) state.ui = {};
+    state.ui.marketBuySubTab = tab;
+    state.ui.marketStackBookOpen = false;
+    render();
+  }
+  function switchMarketSellSubTab(tab){
+    if(!state.ui) state.ui = {};
+    state.ui.marketSellSubTab = tab;
+    render();
+  }
+  function setMarketEquipSort(mode){
+    if(!state.ui) state.ui = {};
+    state.ui.marketEquipSort = mode;
+    render();
+  }
+
+  function openMarketBuyStackPopup(bucket, key, price, stock){
+    openMarketPopup({ type:'buyStack', bucket, key, name: marketStackName(bucket, key), price, stock });
+  }
+  function openMarketBuyEquipPopup(listingId){
+    const row = marketData && marketData.equipListings.find(r=>String(r.id)===String(listingId));
+    if(!row) return;
+    openMarketPopup({ type:'buyEquip', listingId: row.id, snapshot: row.item_snapshot, price: row.price_per_unit });
+  }
+  function openMarketSellStackPopup(bucket, key){
+    const owned = bucket === 'materials' ? materialCount(key) : toolCount(key);
+    if(owned <= 0) return;
+    const rows = marketData ? marketData.stackListings.filter(r=>r.bucket===bucket && r.material_key===key) : [];
+    const lowest = rows.length ? Math.min(...rows.map(r=>r.price_per_unit)) : null;
+    openMarketPopup({ type:'sellStack', bucket, key, name: marketStackName(bucket, key), owned, lowest });
+  }
+  function openMarketSellEquipPopup(itemId){
+    const item = state.inventory.find(i=>i.id===itemId);
+    if(!item || !marketEquipEligible(item)) return;
+    openMarketPopup({ type:'sellEquip', item });
+  }
+
+  async function confirmMarketBuyStack(){
+    const popup = state.ui && state.ui.marketPopup;
+    if(!popup || popup.type !== 'buyStack') return;
+    const qtyInput = document.getElementById('marketPopupQty');
+    const qty = qtyInput ? Math.max(1, Math.min(popup.stock, Math.floor(Number(qtyInput.value)||0))) : 0;
+    if(qty <= 0) return;
+    const total = qty * popup.price;
+    if(total > state.gold) return;
+    try{
+      const { data, error } = await sb.rpc('market_buy_stack', {
+        p_material_key: popup.key, p_bucket: popup.bucket, p_price_per_unit: popup.price, p_quantity: qty
+      });
+      if(error){
+        pushLog(`購入に失敗した(出品状況が変わった可能性がある): ${error.message}`, 'danger');
+        closeMarketPopup(); await refreshMarketData(); return;
+      }
+      state.gold = data.new_gold;
+      if(popup.bucket === 'materials') state.materials[popup.key] = data.new_qty;
+      else state.tools[popup.key] = data.new_qty;
+      pushLog(`「${popup.name}」を${qty}個購入した(${total}G)。`, 'reward');
+      closeMarketPopup();
+      saveGame();
+      await refreshMarketData();
+    }catch(e){
+      console.error('buy stack failed', e);
+      pushLog('購入に失敗した。時間をおいて試してみてほしい。', 'danger');
+    }
+  }
+  async function confirmMarketBuyEquip(){
+    const popup = state.ui && state.ui.marketPopup;
+    if(!popup || popup.type !== 'buyEquip') return;
+    if(popup.price > state.gold) return;
+    try{
+      const { data, error } = await sb.rpc('market_buy_item', { p_listing_id: popup.listingId });
+      if(error){
+        pushLog(`購入に失敗した(先に売れてしまった可能性がある): ${error.message}`, 'danger');
+        closeMarketPopup(); await refreshMarketData(); return;
+      }
+      state.gold = data.new_gold;
+      applyMarketItemSnapshotToInventory(data.item);
+      pushLog(`「${data.item.name}」を購入した(${popup.price}G)。`, 'reward');
+      closeMarketPopup();
+      saveGame();
+      await refreshMarketData();
+    }catch(e){
+      console.error('buy item failed', e);
+      pushLog('購入に失敗した。時間をおいて試してみてほしい。', 'danger');
+    }
+  }
+  async function confirmMarketSellStack(){
+    const popup = state.ui && state.ui.marketPopup;
+    if(!popup || popup.type !== 'sellStack') return;
+    const priceInput = document.getElementById('marketSellStackPrice');
+    const qtyInput = document.getElementById('marketSellStackQty');
+    const price = priceInput ? Math.floor(Number(priceInput.value)||0) : 0;
+    const qty = qtyInput ? Math.max(1, Math.min(popup.owned, Math.floor(Number(qtyInput.value)||0))) : 0;
+    if(qty <= 0) return;
+    if(price < MARKET_MIN_PRICE){
+      pushLog(`単価は${MARKET_MIN_PRICE}G以上にしてほしい。`, 'danger');
+      render();
+      return;
+    }
+    try{
+      const { data, error } = await sb.rpc('market_list_stack', {
+        p_material_key: popup.key, p_bucket: popup.bucket, p_quantity: qty, p_price_per_unit: price
+      });
+      if(error){ pushLog(`出品に失敗した: ${error.message}`, 'danger'); return; }
+      if(popup.bucket === 'materials') state.materials[popup.key] = data;
+      else state.tools[popup.key] = data;
+      pushLog(`「${popup.name}」を${qty}個(単価${price}G)出品した。`, 'system');
+      closeMarketPopup();
+      saveGame();
+      await refreshMarketData();
+    }catch(e){
+      console.error('list stack failed', e);
+      pushLog('出品に失敗した。時間をおいて試してみてほしい。', 'danger');
+    }
+  }
+  async function confirmMarketSellEquip(){
+    const popup = state.ui && state.ui.marketPopup;
+    if(!popup || popup.type !== 'sellEquip') return;
+    const priceInput = document.getElementById('marketSellEquipPrice');
+    const price = priceInput ? Math.floor(Number(priceInput.value)||0) : 0;
+    if(price < MARKET_MIN_PRICE){
+      pushLog(`単価は${MARKET_MIN_PRICE}G以上にしてほしい。`, 'danger');
+      render();
+      return;
+    }
+    try{
+      const { error } = await sb.rpc('market_list_item', { p_item_id: popup.item.id, p_price: price });
+      if(error){ pushLog(`出品に失敗した: ${error.message}`, 'danger'); return; }
+      state.inventory = state.inventory.filter(i=>i.id !== popup.item.id);
+      pushLog(`「${popup.item.name}」を${price}Gで出品した。`, 'system');
+      closeMarketPopup();
+      saveGame();
+      await refreshMarketData();
+    }catch(e){
+      console.error('list item failed', e);
+      pushLog('出品に失敗した。時間をおいて試してみてほしい。', 'danger');
+    }
+  }
+  async function cancelMarketListing(listingId){
+    try{
+      const { data, error } = await sb.rpc('market_cancel_listing', { p_listing_id: listingId });
+      if(error){ pushLog(`出品の取り消しに失敗した: ${error.message}`, 'danger'); return; }
+      if(data.kind === 'equipment'){
+        applyMarketItemSnapshotToInventory(data.item);
+        pushLog(`「${data.item.name}」の出品を取り消した。`, 'system');
+      } else {
+        if(data.bucket === 'materials') state.materials[data.material_key] = data.new_qty;
+        else state.tools[data.material_key] = data.new_qty;
+        pushLog(`「${marketStackName(data.bucket, data.material_key)}」の出品を取り消した。`, 'system');
+      }
+      saveGame();
+      await refreshMarketData();
+    }catch(e){
+      console.error('cancel listing failed', e);
+      pushLog('出品の取り消しに失敗した。時間をおいて試してみてほしい。', 'danger');
+    }
+  }
+
+  /* ---------------------------------------------------------------
+   * マーケットの売却通知。ログに流れて消えると気付けないため、
+   * 「冒険の記録」欄に総合チャットなどと並ぶ専用タブ(マーケット)を
+   * 用意し、そこに売却履歴を残す。町のマーケットボタン・このタブ両方に
+   * 未読件数バッジを出す(お知らせのバッジと同じ考え方)。
+   * バッジの基準はplayers.market_last_seen_at(最後にタブを開いた時刻)。
+   * --------------------------------------------------------------- */
+  let marketNotifications = null; // { loading, items } | null
+  let marketUnseenCount = 0;
+
+  function formatNotificationDateTime(iso){
+    const d = new Date(iso);
+    return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
+  function marketNotificationText(n){
+    const name = n.kind === 'equipment' ? n.item_name : marketStackName(n.bucket, n.material_key);
+    const countLabel = n.kind === 'equipment' ? '' : `×${n.quantity}`;
+    if(n.event === 'listed'){
+      return `「${name}」${countLabel}を単価${n.price_per_unit}Gで出品した。`;
+    }
+    if(n.event === 'expired'){
+      return `「${name}」${countLabel}の出品が72時間経過で失効し、手元に返却された。`;
+    }
+    const receivedLabel = (typeof n.received_amount === 'number') ? n.received_amount : n.total_price;
+    if(n.kind === 'equipment') return `「${name}」が${n.total_price}Gで売れ、${receivedLabel}Gを受け取った。`;
+    return `「${name}」${countLabel}が単価${n.price_per_unit}Gで売れた(合計${n.total_price}G、受取${receivedLabel}G)。`;
+  }
+  function marketNotificationLogClass(n){
+    if(n.event === 'listed') return 'system';
+    if(n.event === 'expired') return 'danger';
+    return 'reward';
+  }
+
+  /* ログイン直後に1度だけ取得してバッジ件数をキャッシュしておく
+   * (お知らせの未読数キャッシュと同じ方針)。 */
+  async function refreshMarketUnseenCount(){
+    try{
+      const uid = await ensureAuth();
+      const { data: playerRow, error: e1 } = await sb.from('players').select('market_last_seen_at').eq('id', uid).maybeSingle();
+      if(e1) throw e1;
+      const lastSeen = (playerRow && playerRow.market_last_seen_at) || '1970-01-01T00:00:00Z';
+      const { count, error: e2 } = await sb.from('market_sale_notifications')
+        .select('*', { count:'exact', head:true })
+        .eq('seller_id', uid).neq('event', 'listed').gt('created_at', lastSeen);
+      if(e2) throw e2;
+      marketUnseenCount = count || 0;
+      render();
+    }catch(e){
+      console.error('market unseen count fetch failed', e);
+    }
+  }
+
+  async function refreshMarketNotifications(){
+    marketNotifications = { loading:true, items:[] };
+    render();
+    try{
+      const uid = await ensureAuth();
+      const { data, error } = await sb.from('market_sale_notifications')
+        .select('*').eq('seller_id', uid).order('created_at', {ascending:false}).limit(50);
+      if(error) throw error;
+      marketNotifications = { loading:false, items: data || [] };
+      marketUnseenCount = 0;
+      const { error: markError } = await sb.rpc('mark_market_notifications_seen');
+      if(markError) console.error('mark market notifications seen failed', markError);
+    }catch(e){
+      console.error('market notifications fetch failed', e);
+      marketNotifications = { loading:false, items:[] };
+    }
+    render();
+  }
+
+  function renderMarketEquipSortSelect(current){
+    const options = MARKET_EQUIP_SORT_OPTIONS.map(o=>
+      `<option value="${o.value}" ${current===o.value?'selected':''}>${esc(o.label)}</option>`
+    ).join('');
+    return `<select id="marketEquipSortSelect" style="margin-left:auto;min-width:0;flex:0 1 auto;font-size:11px;padding:4px 4px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${options}</select>`;
+  }
+
+  function renderMarketBuyStackList(){
+    const aggregates = aggregateStackListings(marketData.stackListings);
+    if(!aggregates.length) return `<p class="inv-empty">現在出品されている素材・アイテムは無い。</p>`;
+    return aggregates.map(a=>`
+      <div class="inv-item" data-market-open-book="${a.bucket}:${a.key}" style="cursor:pointer;">
+        <span class="inv-item-name">${esc(a.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">出品数 ${a.totalQty}個</span></span>
+        <span class="inv-item-actions">
+          <span style="color:var(--gold);font-family:var(--font-mono);">最安値 ${a.minPrice}G〜</span>
+          <span style="color:var(--text-muted);">▶</span>
+        </span>
+      </div>`).join('');
+  }
+  function renderMarketStackBook(){
+    const sel = state.ui.marketSelectedStackKey;
+    if(!sel) return '';
+    const [bucket, key] = sel.split(':');
+    const rows = marketData.stackListings.filter(r=>r.bucket===bucket && r.material_key===key);
+    const byPrice = new Map();
+    rows.forEach(r=>{
+      if(!byPrice.has(r.price_per_unit)) byPrice.set(r.price_per_unit, { price:r.price_per_unit, stock:0, count:0 });
+      const g = byPrice.get(r.price_per_unit);
+      g.stock += r.quantity;
+      g.count += 1;
+    });
+    const priceRows = Array.from(byPrice.values()).sort((a,b)=>a.price-b.price);
+    const name = marketStackName(bucket, key);
+    const rowsHtml = priceRows.length ? priceRows.map(p=>`
+      <div class="inv-item" data-market-buy-stack="${bucket}:${key}:${p.price}:${p.stock}" style="cursor:pointer;">
+        <span class="inv-item-name" style="color:var(--gold);font-family:var(--font-mono);font-weight:700;">${p.price}G</span>
+        <span class="inv-item-actions" style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted);">在庫 ${p.stock} ・ ${p.count}件</span>
+      </div>`).join('') : `<p class="inv-empty">この商品は現在出品されていない。</p>`;
+    return `
+      <button id="marketStackBackBtn">← 一覧に戻る</button>
+      <p class="section-label">${esc(name)}</p>
+      ${rowsHtml}
+    `;
+  }
+  function renderMarketBuyEquipList(){
+    const sortMode = (state.ui && state.ui.marketEquipSort) || 'rarity_desc';
+    const sorted = sortMarketEquipListings(marketData.equipListings, sortMode);
+    const selectHtml = renderMarketEquipSortSelect(sortMode);
+    const rowsHtml = sorted.length ? sorted.map(row=>{
+      const snap = row.item_snapshot;
+      const item = marketItemFromSnapshot(snap);
+      return `
+      <div class="inv-item ${snap.rarity}" data-market-open-buy-equip="${row.id}" style="cursor:pointer;" title="${esc(itemDetailText(item))}">
+        <span class="inv-item-name">${esc(snap.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(marketEquipMetaLabel(item))}</span></span>
+        <span class="inv-item-actions" style="color:var(--gold);font-family:var(--font-mono);font-weight:700;">${row.price_per_unit}G</span>
+      </div>`;
+    }).join('') : `<p class="inv-empty">現在出品されている装備は無い。</p>`;
+    return `
+      <div class="actions" style="margin-top:0;margin-bottom:14px;">${selectHtml}</div>
+      ${rowsHtml}
+    `;
+  }
+  function renderMarketBuyPanel(){
+    if(!marketData || marketData.loading){
+      return `<div class="section-block"><p class="log-entry system">読み込み中……</p></div>`;
+    }
+    if(marketData.error){
+      return `<div class="section-block"><p class="log-entry danger">読み込みに失敗した。時間をおいて開き直してみてほしい。</p></div>`;
+    }
+    const subTab = (state.ui && state.ui.marketBuySubTab) || 'stack';
+    const bookOpen = !!(state.ui && state.ui.marketStackBookOpen);
+    const subTabHtml = (subTab === 'stack' && bookOpen) ? '' : `
+      <div class="actions" style="margin-top:0;margin-bottom:14px;">
+        <button data-market-buy-sub="stack" class="${subTab==='stack'?'primary':''}">素材・アイテム</button>
+        <button data-market-buy-sub="equip" class="${subTab==='equip'?'primary':''}">装備</button>
+        <button data-market-refresh style="margin-left:auto;">更新</button>
+      </div>`;
+    let contentHtml;
+    if(subTab === 'equip') contentHtml = renderMarketBuyEquipList();
+    else if(bookOpen) contentHtml = renderMarketStackBook();
+    else contentHtml = renderMarketBuyStackList();
+    return `<div class="section-block">${subTabHtml}${contentHtml}</div>`;
+  }
+
+  function renderMarketSellStackList(){
+    const stacks = marketTradableStacks();
+    if(!stacks.length) return `<p class="inv-empty">出品できる素材・道具を所持していない。</p>`;
+    return stacks.map(s=>{
+      const rows = marketData ? marketData.stackListings.filter(r=>r.bucket===s.bucket && r.material_key===s.key) : [];
+      const lowest = rows.length ? Math.min(...rows.map(r=>r.price_per_unit)) : null;
+      return `
+      <div class="inv-item" data-market-open-sell-stack="${s.bucket}:${s.key}" style="cursor:pointer;">
+        <span class="inv-item-name">${esc(s.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">所持 ${s.owned}個</span></span>
+        <span class="inv-item-actions" style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted);">${lowest!==null ? `市場最安値 ${lowest}G〜` : '市場に出品なし'}</span>
+      </div>`;
+    }).join('');
+  }
+  function renderMarketSellEquipList(){
+    const eligible = state.inventory.filter(marketEquipEligible);
+    if(!eligible.length) return `<p class="inv-empty">出品可能な装備を所持していない(レア未満は出品できない)。</p>`;
+    return eligible.map(i=>`
+      <div class="inv-item ${i.rarityLabel}" data-market-open-sell-equip="${i.id}" style="cursor:pointer;" title="${esc(itemDetailText(i))}">
+        <span class="inv-item-name">${esc(i.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(marketEquipMetaLabel(i))}</span></span>
+      </div>`).join('');
+  }
+  function renderMarketSellPanel(){
+    const subTab = (state.ui && state.ui.marketSellSubTab) || 'stack';
+    const subTabHtml = `
+      <div class="actions" style="margin-top:0;margin-bottom:14px;">
+        <button data-market-sell-sub="stack" class="${subTab==='stack'?'primary':''}">素材・アイテム</button>
+        <button data-market-sell-sub="equip" class="${subTab==='equip'?'primary':''}">装備</button>
+      </div>`;
+    const contentHtml = subTab === 'equip' ? renderMarketSellEquipList() : renderMarketSellStackList();
+    return `<div class="section-block">${subTabHtml}${contentHtml}</div>`;
+  }
+
+  function renderMarketListPanel(){
+    if(!marketData || marketData.loading){
+      return `<div class="section-block"><p class="log-entry system">読み込み中……</p></div>`;
+    }
+    const mine = marketData.myListings || [];
+    const rowsHtml = mine.map(row=>{
+      const remaining = formatMarketRemaining(row.expires_at);
+      const mainHtml = row.kind === 'equipment'
+        ? `${esc(row.item_snapshot.name)} <span style="color:var(--text-muted);">(単価${row.price_per_unit}G)</span>`
+        : `${esc(marketStackName(row.bucket, row.material_key))} ×${row.quantity} <span style="color:var(--text-muted);">(単価${row.price_per_unit}G)</span>`;
+      return `
+      <div class="inv-item">
+        <span class="inv-item-name">${mainHtml}</span>
+        <span class="inv-item-actions">
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">${remaining}</span>
+          <button data-market-cancel-listing="${row.id}">取り消す</button>
+        </span>
+      </div>`;
+    }).join('');
+    const emptySlots = Math.max(0, MARKET_LISTING_SLOTS - mine.length);
+    const emptyHtml = Array.from({length: emptySlots}).map(()=>`
+      <div class="inv-item" data-market-open-empty-slot style="cursor:pointer;opacity:.65;">
+        <span class="inv-item-name">空き枠 ・ クリックして新しく出品する</span>
+      </div>`).join('');
+    return `
+      <div class="section-block">
+        <p class="section-label">あなたの出品 <span style="color:var(--gold);font-family:var(--font-mono);font-size:12px;">(${mine.length}/${MARKET_LISTING_SLOTS}枠 使用中)</span></p>
+        ${rowsHtml}${emptyHtml}
+      </div>
+    `;
+  }
+
+  function renderMarketBuyStackPopup(popup){
+    const initialQty = Math.min(1, popup.stock);
+    const initialTotal = initialQty * popup.price;
+    const insufficient = initialTotal > state.gold;
+    return `
+    <div class="help-popup-backdrop" id="marketPopupBackdrop">
+      <div class="help-popup">
+        <p class="section-label" style="margin-top:0;">${esc(popup.name)}を購入</p>
+        <div class="market-popup-row"><span>単価</span><span>${popup.price}G</span></div>
+        <div class="market-popup-row"><span>在庫合計</span><span>${popup.stock}個</span></div>
+        <label style="display:block;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:10px;">購入個数</label>
+        <input class="market-qty-input" id="marketPopupQty" type="number" value="${initialQty}" min="1" max="${popup.stock}">
+        <div class="market-popup-row" style="margin-top:6px;"><span>合計金額</span><span id="marketPopupTotal" style="color:var(--gold);font-weight:700;">${initialTotal}G</span></div>
+        <div class="market-popup-row" style="border-bottom:none;"><span>現在の所持金</span><span style="color:var(--gold);">${state.gold}G</span></div>
+        <p class="log-entry danger" id="marketPopupInsufficient" style="${insufficient?'':'display:none;'}margin-top:6px;">所持金が不足している。</p>
+        <div class="actions" style="justify-content:flex-end;margin-top:14px;">
+          <button id="marketPopupCancelBtn">キャンセル</button>
+          <button class="primary" id="marketPopupConfirmBtn" ${insufficient?'disabled':''}>購入する</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  function renderMarketBuyEquipPopup(popup){
+    const snap = popup.snapshot;
+    const item = marketItemFromSnapshot(snap);
+    const insufficient = popup.price > state.gold;
+    return `
+    <div class="help-popup-backdrop" id="marketPopupBackdrop">
+      <div class="help-popup">
+        <p class="section-label" style="margin-top:0;">${esc(snap.name)}を購入</p>
+        <div class="market-popup-row"><span>レアリティ</span><span>${esc((RARITY[snap.rarity]||{label:''}).label)}</span></div>
+        <div class="market-popup-row"><span>性能</span><span style="text-align:right;">${esc(marketEquipMetaLabel(item))}</span></div>
+        <div class="market-popup-row"><span>価格</span><span style="color:var(--gold);font-weight:700;">${popup.price}G</span></div>
+        <div class="market-popup-row" style="border-bottom:none;"><span>現在の所持金</span><span style="color:var(--gold);">${state.gold}G</span></div>
+        <p class="log-entry danger" id="marketPopupInsufficient" style="${insufficient?'':'display:none;'}margin-top:6px;">所持金が不足している。</p>
+        <div class="actions" style="justify-content:flex-end;margin-top:14px;">
+          <button id="marketPopupCancelBtn">キャンセル</button>
+          <button class="primary" id="marketPopupConfirmBtn" ${insufficient?'disabled':''}>購入する</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  function renderMarketSellStackPopup(popup){
+    const defaultPrice = popup.lowest !== null ? Math.max(MARKET_MIN_PRICE, popup.lowest) : MARKET_MIN_PRICE;
+    const defaultQty = Math.min(1, popup.owned);
+    return `
+    <div class="help-popup-backdrop" id="marketPopupBackdrop">
+      <div class="help-popup">
+        <p class="section-label" style="margin-top:0;">${esc(popup.name)}を出品</p>
+        <div class="market-popup-row"><span>所持数</span><span>${popup.owned}個</span></div>
+        <div class="market-popup-row" style="border-bottom:none;"><span>市場最安値</span><span style="color:var(--gold);">${popup.lowest !== null ? popup.lowest+'G' : 'なし'}</span></div>
+        <label style="display:block;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:10px;">単価(最低${MARKET_MIN_PRICE}G)</label>
+        <input class="market-qty-input" id="marketSellStackPrice" type="number" value="${defaultPrice}" min="${MARKET_MIN_PRICE}">
+        <label style="display:block;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:8px;">個数</label>
+        <input class="market-qty-input" id="marketSellStackQty" type="number" value="${defaultQty}" min="1" max="${popup.owned}">
+        <div class="market-popup-row" style="margin-top:6px;border-bottom:none;"><span>合計</span><span id="marketSellStackTotal" style="color:var(--gold);font-weight:700;">${defaultPrice*defaultQty}G</span></div>
+        <div class="actions" style="justify-content:flex-end;margin-top:14px;">
+          <button id="marketPopupCancelBtn">キャンセル</button>
+          <button class="primary" id="marketPopupConfirmBtn">出品する</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  function renderMarketSellEquipPopup(popup){
+    const item = popup.item;
+    return `
+    <div class="help-popup-backdrop" id="marketPopupBackdrop">
+      <div class="help-popup">
+        <p class="section-label" style="margin-top:0;">${esc(item.name)}を出品</p>
+        <div class="market-popup-row"><span>レアリティ</span><span>${esc((RARITY[item.rarity]||{label:''}).label)}</span></div>
+        <div class="market-popup-row" style="border-bottom:none;"><span>性能</span><span style="text-align:right;">${esc(marketEquipMetaLabel(item))}</span></div>
+        <label style="display:block;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:10px;">単価(最低${MARKET_MIN_PRICE}G)</label>
+        <input class="market-qty-input" id="marketSellEquipPrice" type="number" value="100" min="${MARKET_MIN_PRICE}">
+        <div class="actions" style="justify-content:flex-end;margin-top:14px;">
+          <button id="marketPopupCancelBtn">キャンセル</button>
+          <button class="primary" id="marketPopupConfirmBtn">出品する</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  function renderMarketPopup(){
+    const popup = state && state.ui ? state.ui.marketPopup : null;
+    if(!popup) return '';
+    if(popup.type === 'buyStack') return renderMarketBuyStackPopup(popup);
+    if(popup.type === 'buyEquip') return renderMarketBuyEquipPopup(popup);
+    if(popup.type === 'sellStack') return renderMarketSellStackPopup(popup);
+    if(popup.type === 'sellEquip') return renderMarketSellEquipPopup(popup);
+    return '';
+  }
+
+  function renderMarketInner(){
+    const tab = (state.ui && state.ui.marketTab) || 'buy';
+    const tabBtn = (key, label) => `<button data-market-tab="${key}" class="${tab===key?'primary':''}">${label}</button>`;
+    let bodyHtml;
+    if(tab === 'sell') bodyHtml = renderMarketSellPanel();
+    else if(tab === 'list') bodyHtml = renderMarketListPanel();
+    else bodyHtml = renderMarketBuyPanel();
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('マーケット', helpButtonHtml('market'))}
+      </div>
+      <div class="actions">
+        <button id="backTownBtn">町に戻る</button>
+        ${tabBtn('buy','購入する')}
+        ${tabBtn('sell','出品する')}
+        ${tabBtn('list','出品中リスト')}
+      </div>
+      ${bodyHtml}
+    `;
   }
 
   function renderRankingsInner(){
@@ -5535,6 +6271,7 @@
     else if(state.screen === 'towerRun') inner = renderTowerRunInner();
     else if(state.screen === 'towerResult') inner = renderTowerResultInner();
     else if(state.screen === 'home') inner = renderHomeInner();
+    else if(state.screen === 'market') inner = renderMarketInner();
     else if(state.screen === 'rankings') inner = renderRankingsInner();
     else if(state.screen === 'rankingDetail') inner = renderRankingDetailInner();
     else if(state.screen === 'announcements') inner = renderAnnouncementsInner();
@@ -5958,6 +6695,92 @@
     document.querySelectorAll('[data-toggle-party]').forEach(b=>{
       b.addEventListener('click', ()=>togglePartyMember(b.getAttribute('data-toggle-party')));
     });
+
+    on('gotoMarketBtn', gotoMarket);
+    document.querySelectorAll('[data-market-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>switchMarketTab(b.getAttribute('data-market-tab')));
+    });
+    document.querySelectorAll('[data-market-buy-sub]').forEach(b=>{
+      b.addEventListener('click', ()=>switchMarketBuySubTab(b.getAttribute('data-market-buy-sub')));
+    });
+    document.querySelectorAll('[data-market-sell-sub]').forEach(b=>{
+      b.addEventListener('click', ()=>switchMarketSellSubTab(b.getAttribute('data-market-sell-sub')));
+    });
+    document.querySelectorAll('[data-market-refresh]').forEach(b=>{
+      b.addEventListener('click', refreshMarketData);
+    });
+    document.querySelectorAll('[data-market-open-book]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const [bucket, key] = b.getAttribute('data-market-open-book').split(':');
+        openMarketStackBook(bucket, key);
+      });
+    });
+    on('marketStackBackBtn', backMarketStackList);
+    document.querySelectorAll('[data-market-buy-stack]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const [bucket, key, price, stock] = b.getAttribute('data-market-buy-stack').split(':');
+        openMarketBuyStackPopup(bucket, key, Number(price), Number(stock));
+      });
+    });
+    document.querySelectorAll('[data-market-open-buy-equip]').forEach(b=>{
+      b.addEventListener('click', ()=>openMarketBuyEquipPopup(b.getAttribute('data-market-open-buy-equip')));
+    });
+    document.querySelectorAll('[data-market-open-sell-stack]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const [bucket, key] = b.getAttribute('data-market-open-sell-stack').split(':');
+        openMarketSellStackPopup(bucket, key);
+      });
+    });
+    document.querySelectorAll('[data-market-open-sell-equip]').forEach(b=>{
+      b.addEventListener('click', ()=>openMarketSellEquipPopup(b.getAttribute('data-market-open-sell-equip')));
+    });
+    document.querySelectorAll('[data-market-cancel-listing]').forEach(b=>{
+      b.addEventListener('click', ()=>cancelMarketListing(Number(b.getAttribute('data-market-cancel-listing'))));
+    });
+    document.querySelectorAll('[data-market-open-empty-slot]').forEach(b=>{
+      b.addEventListener('click', ()=>switchMarketTab('sell'));
+    });
+    const marketEquipSortSelect = document.getElementById('marketEquipSortSelect');
+    if(marketEquipSortSelect) marketEquipSortSelect.addEventListener('change', (e)=>setMarketEquipSort(e.target.value));
+
+    /* マーケットのポップアップ内の個数・単価入力は、フル再描画(render())
+     * だとカーソル位置が飛んで打ちづらくなるため、合計金額の再計算・
+     * 所持金不足の判定は直接DOM操作で行う(確定/キャンセル/開閉のみ
+     * render()を使う既存の他のポップアップと同じ方針)。 */
+    const marketPopupBackdrop = document.getElementById('marketPopupBackdrop');
+    if(marketPopupBackdrop){
+      marketPopupBackdrop.addEventListener('click', (e)=>{ if(e.target === marketPopupBackdrop) closeMarketPopup(); });
+    }
+    on('marketPopupCancelBtn', closeMarketPopup);
+    const marketPopup = state.ui && state.ui.marketPopup;
+    if(marketPopup && marketPopup.type === 'buyStack'){
+      const qtyInput = document.getElementById('marketPopupQty');
+      const updateTotal = ()=>{
+        const qty = Math.max(1, Math.min(marketPopup.stock, Math.floor(Number(qtyInput.value)||0)));
+        const total = qty * marketPopup.price;
+        document.getElementById('marketPopupTotal').textContent = total + 'G';
+        const insufficient = total > state.gold;
+        document.getElementById('marketPopupInsufficient').style.display = insufficient ? '' : 'none';
+        document.getElementById('marketPopupConfirmBtn').disabled = insufficient;
+      };
+      if(qtyInput) qtyInput.addEventListener('input', updateTotal);
+      on('marketPopupConfirmBtn', confirmMarketBuyStack);
+    } else if(marketPopup && marketPopup.type === 'buyEquip'){
+      on('marketPopupConfirmBtn', confirmMarketBuyEquip);
+    } else if(marketPopup && marketPopup.type === 'sellStack'){
+      const priceInput = document.getElementById('marketSellStackPrice');
+      const qtyInput = document.getElementById('marketSellStackQty');
+      const updateTotal = ()=>{
+        const price = Math.max(1, Math.floor(Number(priceInput.value)||0));
+        const qty = Math.max(1, Math.min(marketPopup.owned, Math.floor(Number(qtyInput.value)||0)));
+        document.getElementById('marketSellStackTotal').textContent = (price*qty) + 'G';
+      };
+      if(priceInput) priceInput.addEventListener('input', updateTotal);
+      if(qtyInput) qtyInput.addEventListener('input', updateTotal);
+      on('marketPopupConfirmBtn', confirmMarketSellStack);
+    } else if(marketPopup && marketPopup.type === 'sellEquip'){
+      on('marketPopupConfirmBtn', confirmMarketSellEquip);
+    }
   }
 
   /* ---------------- チャット(全ユーザー共有、Supabase Realtime) ---------------- */
@@ -6024,6 +6847,7 @@
     state.ui.bottomTab = tab;
     saveGame(); render();
     if(tab === 'chat') refreshChatDOM();
+    if(tab === 'market') refreshMarketNotifications();
   }
 
   /* ポーリングではなく、Supabase Realtimeで新着メッセージをプッシュ受信する。
@@ -6054,8 +6878,9 @@
 
     const tab = (state.ui && state.ui.bottomTab) || 'log';
     const logActive = tab === 'log';
+    const marketActive = tab === 'market';
     const channelTabsHtml = CHAT_CHANNEL_DEFS.map(c=>
-      `<button data-chat-channel="${c.id}" class="${(!logActive && activeChatChannel===c.id)?'primary':''}" style="padding:6px 14px;font-size:12px;">${esc(c.name)}</button>`
+      `<button data-chat-channel="${c.id}" class="${(!logActive && !marketActive && activeChatChannel===c.id)?'primary':''}" style="padding:6px 14px;font-size:12px;">${esc(c.name)}</button>`
     ).join('');
     const heightOptions = HISTORY_LOG_PRESETS.map(o=>
       `<option value="${o.px}" ${historyLogHeightPx===o.px?'selected':''}>${esc(o.label)}</option>`
@@ -6063,6 +6888,7 @@
     const tabsHtml = `
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
         <button data-bottom-tab="log" class="${logActive?'primary':''}" style="padding:6px 14px;font-size:12px;">冒険の記録</button>
+        <button data-bottom-tab="market" class="${marketActive?'primary':''}" style="padding:6px 14px;font-size:12px;">マーケット${marketUnseenCount > 0 ? `<span class="notify-badge">${marketUnseenCount}</span>` : ''}</button>
         ${channelTabsHtml}
         <select id="historyLogHeightSelect" title="この欄の表示行数(この端末だけの設定)" style="margin-left:auto;font-size:11px;padding:4px 6px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${heightOptions}</select>
       </div>`;
@@ -6071,6 +6897,13 @@
       const rows = (state.history||[]).map(l=>`<p class="${l.cls}">${esc(l.text)}</p>`).join('')
         || '<p style="color:var(--text-muted);">まだ記録はない。</p>';
       body = `<div class="scrollbox history-log" id="historyLog">${rows}</div>`;
+    } else if(marketActive){
+      const rows = (!marketNotifications || marketNotifications.loading)
+        ? '<p style="color:var(--text-muted);">読み込み中……</p>'
+        : marketNotifications.items.length
+          ? marketNotifications.items.map(n=>`<p class="${marketNotificationLogClass(n)}">${formatNotificationDateTime(n.created_at)} ${esc(marketNotificationText(n))}</p>`).join('')
+          : '<p style="color:var(--text-muted);">まだ売却の記録は無い。</p>';
+      body = `<div class="scrollbox history-log" id="marketNotificationLog">${rows}</div>`;
     } else {
       const activeChannelDef = CHAT_CHANNEL_DEFS.find(c=>c.id === activeChatChannel) || CHAT_CHANNEL_DEFS[0];
       body = `
@@ -6173,13 +7006,14 @@
         </div>
         <div class="depth-badge-slot">${renderHeaderBadge()}</div>
       </header>
-      <div class="layout">
+      <div class="layout${state.screen === 'market' ? ' layout-full' : ''}">
         <div>${renderMainArea()}</div>
         <div>${renderCharacterLane()}</div>
         <div>${renderInventoryLane()}</div>
       </div>
       ${renderBottomPanel()}
       ${renderHelpPopup()}
+      ${renderMarketPopup()}
     `;
     bindEvents();
     const historyEl = document.getElementById('historyLog');
@@ -6210,6 +7044,7 @@
     render();
     startChatPolling();
     refreshAnnouncementUnreadCount();
+    refreshMarketUnseenCount();
     setInterval(()=>{
       if(!state) return;
       let needsRender = recomputeStamina();
