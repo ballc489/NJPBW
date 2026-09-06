@@ -3647,7 +3647,6 @@
         }
         if(combatEnemy.isTowerFight){
           pushLog(`${combatEnemy.name}を倒した。`, 'reward');
-          grantExpToParty(combatEnemy.exp);
           state.towerRun.floor += 1;
           inCombat = false; combatPhase = null; combatEnemy = null;
           if(state.towerRun.floor >= TOWER_MAX_FLOOR){
@@ -4575,10 +4574,10 @@
     const r = result.rewards;
     const equipLine = r.equipment
       ? `<p class="log-entry reward">限定装備「${esc(r.equipment.name)}」を手に入れた！</p>`
-      : `<p class="log-entry system">限定装備は手に入らなかった。</p>`;
+      : '';
     const materialLine = r.exclusiveMaterialCount>0
       ? `<p class="log-entry reward">「${esc(MATERIAL_DEFS[def.exclusiveMaterialKey].name)}」を${r.exclusiveMaterialCount}個手に入れた！</p>`
-      : `<p class="log-entry system">限定素材は手に入らなかった。</p>`;
+      : '';
     const crystalLine = `<p class="log-entry reward">「${esc(MATERIAL_DEFS[def.crystalKey].name)}」を${r.crystalCount}個手に入れた。</p>`;
     const titleText = result.reason === 'clear'
       ? `${def.name}を完全踏破した！`
