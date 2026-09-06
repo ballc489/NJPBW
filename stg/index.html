@@ -312,6 +312,9 @@
   .icon-chip.ailment .turns{background:var(--ailment);}
   .icon-chip[title]:hover{outline:1px solid var(--gold);outline-offset:1px;}
 
+  /* UI全体の小アイコン(絵文字は使わず自作のインラインSVG) */
+  .ui-icon{width:1em;height:1em;display:inline-block;vertical-align:-0.15em;margin-right:2px;flex:0 0 auto;}
+
   /* お知らせのタグ・未読バッジ */
   .tag-chip{
     display:inline-block;
@@ -1856,6 +1859,22 @@
       </span>`;
     }).join('');
     return `<span class="icon-row">${chips}</span>`;
+  }
+
+  /* UI全体で使う小アイコン(絵文字は一切使わず、状態異常アイコンと同じ
+   * 自作インラインSVG方式に統一する)。テキストに埋め込みやすいよう
+   * 1文字分のサイズで返す。 */
+  const UI_ICONS = {
+    stamina: '<path d="M11 2 L3 13 H10 L9 22 L21 10 H13 Z"/>',
+    gold:    '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.5"/>',
+    ticket:  '<rect x="2" y="6" width="20" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><line x1="15.5" y1="6" x2="15.5" y2="18" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.2,2.2"/>',
+    medal:   '<circle cx="12" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 14 L6 22 L12 19 L18 22 L15 14 Z"/>',
+    lock:    '<rect x="5" y="11" width="14" height="10" rx="1.5"/><path fill="none" stroke="currentColor" stroke-width="2" d="M8 11 V7 a4 4 0 0 1 8 0 v4"/>'
+  };
+  function uiIcon(key){
+    const svg = UI_ICONS[key];
+    if(!svg) return '';
+    return `<svg class="ui-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${svg}</svg>`;
   }
 
   /* ---------------------------------------------------------------
@@ -4376,10 +4395,10 @@
       <div class="depth-badge">
         <div class="badge-row badge-location">${esc(locationLabel())}</div>
         <div class="badge-resources">
-          <span class="badge-resource" title="スタミナ(1分に1回復、上限${STAMINA_MAX})">⚡${state.stamina}/${STAMINA_MAX}</span>
-          <span class="badge-resource" title="所持金">💰${state.gold}</span>
-          <span class="badge-resource" title="運命のチケット">🎫${state.destinyTickets}</span>
-          <span class="badge-resource" title="コロシアムメダル">🏅${state.colosseum.medals}</span>
+          <span class="badge-resource" title="スタミナ(1分に1回復、上限${STAMINA_MAX})">${uiIcon('stamina')}${state.stamina}/${STAMINA_MAX}</span>
+          <span class="badge-resource" title="所持金">${uiIcon('gold')}${state.gold}</span>
+          <span class="badge-resource" title="運命のチケット">${uiIcon('ticket')}${state.destinyTickets}</span>
+          <span class="badge-resource" title="コロシアムメダル">${uiIcon('medal')}${state.colosseum.medals}</span>
         </div>
       </div>`;
   }
@@ -4415,7 +4434,7 @@
         const unlocked = isDungeonUnlocked(def.id);
         const ds = state.dungeons[def.id];
         const status = !unlocked
-          ? '🔒 未解放'
+          ? `${uiIcon('lock')} 未解放`
           : ds.cleared
             ? '踏破済み'
             : `踏破率 ${ds.progress}%`;
@@ -4536,10 +4555,10 @@
       const accessible = isTowerAccessible(def);
       let actionHtml;
       if(!globallyUnlocked){
-        actionHtml = `<span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">🔒 「${esc(gateDungeonName)}」踏破で解放</span>`;
+        actionHtml = `<span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${uiIcon('lock')} 「${esc(gateDungeonName)}」踏破で解放</span>`;
       } else if(!accessible){
         const reqDef = towerDefById(def.requires.towerId);
-        actionHtml = `<span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">🔒 ${esc(reqDef.name)} ${def.requires.floor}F踏破で解放</span>`;
+        actionHtml = `<span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${uiIcon('lock')} ${esc(reqDef.name)} ${def.requires.floor}F踏破で解放</span>`;
       } else {
         actionHtml = `<button data-enter-tower="${def.id}" ${(!state.party.length || state.stamina<TOWER_ENTRY_STAMINA_COST)?'disabled':''}>挑む(スタミナ${TOWER_ENTRY_STAMINA_COST}消費)</button>`;
       }
@@ -5047,7 +5066,7 @@
       const isCurrent = c.key === currentCostumeKey;
       const isUnlocked = unlockedCostumeKeys.includes(c.key);
       if(!isUnlocked){
-        return `<button disabled style="padding:3px 9px;font-size:11px;opacity:.45;">🔒 ${esc(c.name)}</button>`;
+        return `<button disabled style="padding:3px 9px;font-size:11px;opacity:.45;">${uiIcon('lock')} ${esc(c.name)}</button>`;
       }
       return `<button data-switch-liver-costume="${id}:${c.key}" ${isCurrent?'disabled':''} style="padding:3px 9px;font-size:11px;">${isCurrent?'◆ ':''}${esc(c.name)}</button>`;
     }).join('');
@@ -5075,7 +5094,7 @@
         return `
           <div class="inv-item" style="opacity:.4;">
             <span class="inv-item-name">
-              🔒 ${esc(s.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${s.unlockLevel}で習得</span><br>
+              ${uiIcon('lock')} ${esc(s.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${s.unlockLevel}で習得</span><br>
               <span style="color:var(--text-muted);font-size:11px;">${esc(s.desc)}</span>
             </span>
           </div>`;
@@ -5203,7 +5222,7 @@
       const hint = '「召喚」で運命のチケットを使うと仲間になる';
       return `
         <div class="inv-item" style="opacity:.5;">
-          <span class="inv-item-name">🔒 ${esc(def.name)}<br><span style="color:var(--text-muted);font-size:11px;">${esc(hint)}</span></span>
+          <span class="inv-item-name">${uiIcon('lock')} ${esc(def.name)}<br><span style="color:var(--text-muted);font-size:11px;">${esc(hint)}</span></span>
         </div>`;
     }).join('');
 
