@@ -91,7 +91,10 @@
   let playerListLoading = false;
   let announcementList = [];
   let announcementListLoading = false;
-  let editingAnnouncement = null; // null=フォーム非表示 / {id,title,body,tags,published_at}
+  let targetPlayerNames = {}; // 個別宛てお知らせの宛先表示用: player_id -> name
+  // null=非表示 / {id,title,body,tags,published_at,target_player_id,sender_name,editable}
+  // editable=falseで詳細(読み取り専用)表示、trueで編集フォーム表示。新規作成時は最初からeditable=true。
+  let announcementDetail = null;
   let reportList = [];
   let reportListLoading = false;
   let reportFilter = 'open'; // 'open' | 'resolved' | 'all'
@@ -198,9 +201,19 @@
         .order('published_at', {ascending:false}).limit(200);
       if(error) throw error;
       announcementList = data || [];
+
+      const targetIds = [...new Set(announcementList.map(a=>a.target_player_id).filter(Boolean))];
+      if(targetIds.length){
+        const { data: players, error: pErr } = await sb.from('players').select('id,name').in('id', targetIds);
+        if(pErr) throw pErr;
+        targetPlayerNames = Object.fromEntries((players||[]).map(p=>[p.id, p.name]));
+      } else {
+        targetPlayerNames = {};
+      }
     }catch(e){
       console.error('load announcements failed', e);
       announcementList = [];
+      targetPlayerNames = {};
     }
     announcementListLoading = false; render();
   }
@@ -214,7 +227,7 @@
         p_tags: tags, p_published_at: publishedIso
       });
       if(error) throw error;
-      editingAnnouncement = null;
+      announcementDetail = null;
       await loadAnnouncements();
     }catch(e){
       alert('保存に失敗しました: ' + e.message);
@@ -226,6 +239,7 @@
     try{
       const { error } = await sb.rpc('admin_delete_announcement', { p_id: id });
       if(error) throw error;
+      if(announcementDetail && announcementDetail.id === id) announcementDetail = null;
       await loadAnnouncements();
     }catch(e){
       alert('削除に失敗しました: ' + e.message);
@@ -380,15 +394,37 @@
     `;
   }
 
-  function renderAnnouncementForm(a){
-    const isNew = !a.id;
-    const publishedLocal = toLocalInputValue(a.published_at || new Date().toISOString());
+  function renderAnnouncementDetailPanel(d){
+    const isNew = !d.id;
+
+    if(!d.editable){
+      const tagsHtml = (Array.isArray(d.tags) ? d.tags : []).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
+      const targetName = d.target_player_id ? (targetPlayerNames[d.target_player_id] || '(不明なユーザー)') : null;
+      return `
+        <div class="panel">
+          <h3>お知らせ詳細${d.target_player_id ? '(個別宛て)' : '(全体宛て)'}</h3>
+          ${d.target_player_id ? `<p style="font-size:12px;">宛先: ${esc(targetName)} <span class="mono muted">#${esc(d.target_player_id.slice(0,8))}</span></p>` : ''}
+          ${d.sender_name ? `<p style="font-size:12px;">送信元: ${esc(d.sender_name)}</p>` : ''}
+          <p class="muted mono" style="font-size:11px;margin-top:8px;">${new Date(d.published_at).toLocaleString('ja-JP')}</p>
+          <p style="font-weight:600;font-size:15px;margin-top:6px;">${esc(d.title)}</p>
+          ${tagsHtml ? `<div style="margin-top:6px;">${tagsHtml}</div>` : ''}
+          <p style="white-space:pre-wrap;margin-top:10px;">${esc(d.body)}</p>
+          <div class="actions">
+            <button id="annEditBtn" class="primary">編集する</button>
+            <button id="annDetailCloseBtn">閉じる</button>
+          </div>
+        </div>
+      `;
+    }
+
+    const publishedLocal = toLocalInputValue(d.published_at || new Date().toISOString());
     return `
       <div class="panel">
         <h3>${isNew ? '新規お知らせ' : 'お知らせを編集'}</h3>
-        <label>タイトル<input id="annTitle" type="text" value="${esc(a.title||'')}"></label>
-        <label>本文<textarea id="annBody" rows="6">${esc(a.body||'')}</textarea></label>
-        <label>タグ(カンマ区切り)<input id="annTags" type="text" value="${esc((a.tags||[]).join(', '))}"></label>
+        ${d.target_player_id ? `<p class="muted" style="font-size:12px;">宛先(個別・変更不可): ${esc(targetPlayerNames[d.target_player_id]||'-')} <span class="mono">#${esc(d.target_player_id.slice(0,8))}</span></p>` : ''}
+        <label>タイトル<input id="annTitle" type="text" value="${esc(d.title||'')}"></label>
+        <label>本文<textarea id="annBody" rows="6">${esc(d.body||'')}</textarea></label>
+        <label>タグ(カンマ区切り)<input id="annTags" type="text" value="${esc((d.tags||[]).join(', '))}"></label>
         <label>掲載日時(未来の日時にすると予約投稿になる)<input id="annPublishedAt" type="datetime-local" value="${publishedLocal}"></label>
         <div class="actions">
           <button id="annSaveBtn" class="primary">保存</button>
@@ -398,36 +434,47 @@
     `;
   }
 
-  function renderAnnouncementsTab(){
-    const listHtml = announcementListLoading
-      ? '<p class="muted">読み込み中……</p>'
-      : announcementList.length
-        ? announcementList.map(a=>{
-            const scheduled = new Date(a.published_at) > new Date();
-            const tagsHtml = (Array.isArray(a.tags) ? a.tags : []).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
-            return `
-              <div class="ann-row">
-                <div>
-                  <strong>${esc(a.title)}</strong>${scheduled ? '<span class="badge gold">予約</span>' : ''}
-                  <div class="muted mono">${new Date(a.published_at).toLocaleString('ja-JP')}</div>
-                  <div>${tagsHtml}</div>
-                </div>
-                <div class="actions">
-                  <button data-edit-ann="${a.id}">編集</button>
-                  <button data-delete-ann="${a.id}" class="danger">削除</button>
-                </div>
-              </div>`;
-          }).join('')
-        : '<p class="muted">お知らせはまだありません。</p>';
+  function renderAnnouncementRow(a){
+    const scheduled = new Date(a.published_at) > new Date();
+    const tagsHtml = (Array.isArray(a.tags) ? a.tags : []).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
+    const targetName = a.target_player_id ? (targetPlayerNames[a.target_player_id] || '(不明なユーザー)') : null;
+    return `
+      <div class="ann-row">
+        <div>
+          <strong>${esc(a.title)}</strong>${scheduled ? '<span class="badge gold">予約</span>' : ''}
+          <div class="muted mono">${new Date(a.published_at).toLocaleString('ja-JP')}</div>
+          ${a.target_player_id ? `<div style="font-size:12px;margin-top:2px;">宛先: ${esc(targetName)} <span class="mono muted">#${esc(a.target_player_id.slice(0,8))}</span></div>` : ''}
+          <div>${tagsHtml}</div>
+        </div>
+        <div class="actions">
+          <button data-view-ann="${a.id}">詳細</button>
+          <button data-delete-ann="${a.id}" class="danger">削除</button>
+        </div>
+      </div>`;
+  }
 
-    const formHtml = editingAnnouncement ? renderAnnouncementForm(editingAnnouncement) : '';
+  function renderAnnouncementsTab(){
+    const globalItems = announcementList.filter(a=>!a.target_player_id);
+    const personalItems = announcementList.filter(a=>!!a.target_player_id);
+
+    const globalHtml = announcementListLoading
+      ? '<p class="muted">読み込み中……</p>'
+      : globalItems.length ? globalItems.map(renderAnnouncementRow).join('') : '<p class="muted">全体宛てのお知らせはまだありません。</p>';
+    const personalHtml = announcementListLoading
+      ? ''
+      : personalItems.length ? personalItems.map(renderAnnouncementRow).join('') : '<p class="muted">個別宛てのお知らせはまだありません。</p>';
+
+    const detailHtml = announcementDetail ? renderAnnouncementDetailPanel(announcementDetail) : '';
 
     return `
       <div class="actions" style="margin-bottom:16px;">
         <button id="annNewBtn" class="primary">新規作成</button>
       </div>
-      ${formHtml}
-      <div class="ann-list">${listHtml}</div>
+      ${detailHtml}
+      <h3>全体宛て</h3>
+      <div class="ann-list">${globalHtml}</div>
+      <h3 style="margin-top:20px;">個別宛て</h3>
+      <div class="ann-list">${personalHtml}</div>
     `;
   }
 
@@ -576,19 +623,31 @@
 
     const newBtn = document.getElementById('annNewBtn');
     if(newBtn) newBtn.addEventListener('click', ()=>{
-      editingAnnouncement = { id:null, title:'', body:'', tags:[], published_at:new Date().toISOString() };
+      announcementDetail = { id:null, title:'', body:'', tags:[], published_at:new Date().toISOString(), target_player_id:null, sender_name:null, editable:true };
       render();
     });
 
-    document.querySelectorAll('[data-edit-ann]').forEach(b=>{
+    document.querySelectorAll('[data-view-ann]').forEach(b=>{
       b.addEventListener('click', ()=>{
-        const id = Number(b.getAttribute('data-edit-ann'));
-        editingAnnouncement = announcementList.find(a=>a.id===id) || null;
+        const id = Number(b.getAttribute('data-view-ann'));
+        const a = announcementList.find(a=>a.id===id);
+        announcementDetail = a ? { ...a, editable:false } : null;
         render();
       });
     });
     document.querySelectorAll('[data-delete-ann]').forEach(b=>{
       b.addEventListener('click', ()=>{ deleteAnnouncement(Number(b.getAttribute('data-delete-ann'))); });
+    });
+
+    const annEditBtn = document.getElementById('annEditBtn');
+    if(annEditBtn) annEditBtn.addEventListener('click', ()=>{
+      announcementDetail.editable = true;
+      render();
+    });
+    const annDetailCloseBtn = document.getElementById('annDetailCloseBtn');
+    if(annDetailCloseBtn) annDetailCloseBtn.addEventListener('click', ()=>{
+      announcementDetail = null;
+      render();
     });
 
     document.querySelectorAll('[data-report-filter]').forEach(b=>{
@@ -623,10 +682,10 @@
       const tags = document.getElementById('annTags').value;
       const publishedAt = document.getElementById('annPublishedAt').value;
       if(!title || !body){ alert('タイトルと本文は必須です。'); return; }
-      saveAnnouncement({ id: editingAnnouncement.id || null, title, body, tags, publishedAt });
+      saveAnnouncement({ id: announcementDetail.id || null, title, body, tags, publishedAt });
     });
     const cancelBtn = document.getElementById('annCancelBtn');
-    if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ editingAnnouncement = null; render(); });
+    if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ announcementDetail = null; render(); });
   }
 
   init();
