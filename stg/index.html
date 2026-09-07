@@ -263,6 +263,14 @@
   .equip-slot{color:var(--text-muted);font-family:var(--font-mono);font-size:11px;}
   .equip-row button{padding:3px 9px;font-size:11px;margin-left:8px;}
 
+  /* ライバー詳細画面などのステータス欄。項目ごとに小さなタイルで区切る
+   * (単なる横並びテキストや、端から端まで伸びるバー状の行より
+   * 「項目感」が出るデザインとして採用)。 */
+  .stat-tile-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .stat-tile{background:rgba(255,255,255,0.05);border-left:3px solid var(--gold);padding:7px 10px;}
+  .stat-tile .stat-tile-label{display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);letter-spacing:.04em;}
+  .stat-tile .stat-tile-value{display:block;font-family:var(--font-mono);font-size:16px;color:var(--text-primary);margin-top:2px;}
+
   .inv-item{
     display:flex;justify-content:space-between;align-items:center;
     padding:7px 8px;margin-bottom:6px;
@@ -2895,19 +2903,25 @@
     const ls = liverState(id);
     if(!JOB_DEFS[jobId] || ls.job === jobId || !ls.unlocked) return;
     const weapon = ls.equipped.weapon;
+    let willUnequip = false;
     if(weapon){
       const currentlyAllowed = allowedWeaponTypes(id);
       const def = liverDef(id);
       const futureAllowed = new Set([...(JOB_DEFS[jobId].weaponTypes||[]), ...(def.weaponAptitude||[])]);
       if(currentlyAllowed.has(weapon.weaponType) && !futureAllowed.has(weapon.weaponType)){
-        const ok = confirm(`ジョブを「${JOB_DEFS[jobId].name}」に変更すると、装備中の武器「${weapon.name}」(${WEAPON_TYPES[weapon.weaponType].name})が装備条件を満たさなくなります。変更しますか？`);
+        const ok = confirm(`ジョブを「${JOB_DEFS[jobId].name}」に変更すると、装備中の武器「${weapon.name}」(${WEAPON_TYPES[weapon.weaponType].name})が装備条件を満たさなくなるため、自動的に外れます。変更しますか？`);
         if(!ok) return;
+        willUnequip = true;
       }
     }
     if(!ls.jobProgress[jobId]) ls.jobProgress[jobId] = newJobProgress(jobId);
     ls.job = jobId;
+    if(willUnequip){
+      ls.equipped.weapon = null;
+      state.inventory.push(weapon);
+    }
     recomputeLiverMaxStats(id, true);
-    pushLog(`${liverDef(id).name}のジョブを「${JOB_DEFS[jobId].name}」に切り替えた。`, 'system');
+    pushLog(`${liverDef(id).name}のジョブを「${JOB_DEFS[jobId].name}」に切り替えた。${willUnequip ? `「${weapon.name}」が外れた。` : ''}`, 'system');
     saveGame(); render();
   }
 
@@ -6090,24 +6104,42 @@
 
     const allowedWeaponLabel = Array.from(allowedWeaponTypes(id)).map(t=>WEAPON_TYPES[t].name).join('・') || 'なし';
 
+    const resistances = liverResistances(id);
+    const resistanceTilesHtml = Object.keys(ELEMENT_LABELS).map(el=>{
+      const value = resistances[el] || 0;
+      const pct = value * 3;
+      const pctLabel = pct === 0 ? '±0%' : (pct > 0 ? `-${pct}%` : `+${Math.abs(pct)}%`);
+      const color = value > 0 ? 'var(--rare-uncommon)' : (value < 0 ? 'var(--danger)' : 'var(--text-primary)');
+      return `
+        <div class="stat-tile">
+          <span class="stat-tile-label">${ELEMENT_LABELS[el]}属性耐性</span>
+          <span class="stat-tile-value" style="color:${color};">${pctLabel}</span>
+        </div>`;
+    }).join('');
+    const statTilesHtml = `
+      <div class="stat-tile-grid">
+        <div class="stat-tile"><span class="stat-tile-label">戦闘力</span><span class="stat-tile-value" style="color:var(--gold);">${combatPower(id)}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">HP</span><span class="stat-tile-value">${ls.maxHp}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">MP</span><span class="stat-tile-value">${ls.maxMp}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">攻撃力</span><span class="stat-tile-value">${liverAtk(id)}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">防御力</span><span class="stat-tile-value">${liverDefStat(id)}</span></div>
+        ${resistanceTilesHtml}
+      </div>`;
+
     return `
-      <div class="actions">
-        <button id="backFromLiverDetailBtn">${state.ui.rosterDetailFrom === 'party' ? '編成画面に戻る' : 'ライバー一覧に戻る'}</button>
-      </div>
       <div class="scene-text">
         ${sceneHeadingHtml(def.name, helpButtonHtml('roster'))}
         <p class="log-entry" style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">Lv.${jp.level} ・ ${esc(job.name)}${inParty ? ' ・ 編成中' : ''}</p>
         ${lockedBanner}
       </div>
+      <div class="actions">
+        <button id="backFromLiverDetailBtn">${state.ui.rosterDetailFrom === 'party' ? '編成画面に戻る' : 'ライバー一覧に戻る'}</button>
+      </div>
       <div class="section-block">
         <p class="section-label">ステータス</p>
-        <p style="color:var(--text-muted);font-size:12px;margin:0 0 6px;">EXP ${jp.exp}/${expToNext(jp.level)}</p>
-        <p style="font-family:var(--font-mono);font-size:12px;line-height:1.8;">
-          戦闘力 <span style="color:var(--gold);">${combatPower(id)}</span><br>
-          HP ${ls.maxHp} ・ MP ${ls.maxMp}<br>
-          攻撃力 ${liverAtk(id)} ・ 防御力 ${liverDefStat(id)}
-        </p>
-        ${renderResistancePanel(id)}
+        <p style="color:var(--text-muted);font-size:12px;margin:0 0 8px;">EXP ${jp.exp}/${expToNext(jp.level)}</p>
+        ${statTilesHtml}
+        <p style="color:var(--text-muted);font-size:11px;margin:8px 0 0;">属性耐性はレベルアップでは変化しません。装備品(主に防具)に付く耐性値によってのみ増減します。</p>
       </div>
       <div class="section-block">
         <p class="section-label">装備</p>
@@ -6319,24 +6351,6 @@
         ${bodyHtml}
       </div>
     `;
-  }
-
-  function renderResistancePanel(liverId){
-    const res = liverResistances(liverId);
-    const rows = Object.keys(ELEMENT_LABELS).map(el=>{
-      const value = res[el] || 0;
-      const pct = value * 3;
-      const pctLabel = pct === 0 ? '±0%' : (pct > 0 ? `-${pct}%` : `+${Math.abs(pct)}%`);
-      const color = value > 0 ? 'var(--rare-uncommon)' : (value < 0 ? 'var(--danger)' : 'var(--text-muted)');
-      return `
-        <div class="inv-item">
-          <span class="inv-item-name">${ELEMENT_LABELS[el]}属性</span>
-          <span class="inv-item-actions" style="font-family:var(--font-mono);font-size:12px;color:${color};">
-            ${value>0?'+':''}${value} <span style="color:var(--text-muted);">(被ダメージ ${pctLabel})</span>
-          </span>
-        </div>`;
-    }).join('');
-    return rows + `<p style="color:var(--text-muted);font-size:11px;margin:6px 0 0;">レベルアップでは変化しません。装備品(主に防具)に付く耐性値によってのみ増減します。</p>`;
   }
 
   function renderHomeInner(){
