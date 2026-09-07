@@ -60,6 +60,8 @@
   .login-box{max-width:340px;margin:120px auto;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:28px;text-align:center;}
   .login-box h1{margin-bottom:20px;font-size:18px;}
   .login-box input{margin-bottom:12px;}
+  .recipient-option{padding:6px 8px;border-radius:4px;cursor:pointer;font-size:13px;}
+  .recipient-option:hover{background:rgba(255,255,255,0.06);}
 </style>
 </head>
 <body>
@@ -88,9 +90,39 @@
   let playerQuery = '';
   let playerList = [];
   let playerListLoading = false;
+  let banList = [];
+  let banListLoading = false;
+  let penaltyList = [];
+  let penaltyListLoading = false;
   let announcementList = [];
   let announcementListLoading = false;
-  let editingAnnouncement = null; // null=フォーム非表示 / {id,title,body,tags,published_at}
+  let announcementSubTab = 'global'; // 'global' | 'personal' — お知らせ一覧のタブ
+  let targetPlayerNames = {}; // 個別宛てお知らせの宛先表示用: player_id -> name
+  const DEFAULT_SENDER_NAME = '七彩の塔運営';
+  // null=非表示 / {id,title,body,tags,published_at,target_player_id,sender_name,editable,isPersonalNew,recipients}
+  // editable=falseで詳細(読み取り専用)表示、trueで編集フォーム表示。新規作成時は最初からeditable=true。
+  // isPersonalNew=trueの間だけrecipients([{id,name}])を複数選択できる(個別の新規作成のみ)。
+  let announcementDetail = null;
+  let recipientSearchQuery = '';
+  let recipientSearchResults = [];
+  let recipientSearchTimer = null;
+  let reportList = [];
+  let reportListLoading = false;
+  let reportFilter = 'open'; // 'open' | 'resolved' | 'all'
+  let openReportCount = 0;
+
+  const REPORT_REASON_LABELS = {
+    spam: 'スパム・広告',
+    harassment: '誹謗中傷・嫌がらせ',
+    inappropriate: '不適切な内容',
+    impersonation: 'なりすまし',
+    other: 'その他',
+  };
+  const REPORT_ACTION_LABELS = {
+    ban: 'BAN',
+    penalty: 'ペナルティ',
+    warn: '警告',
+  };
 
   async function init(){
     const { data: { session: s } } = await sb.auth.getSession();
@@ -98,7 +130,7 @@
     if(session){
       const ok = await checkAdmin();
       if(ok){
-        await Promise.all([loadPlayers(), loadAnnouncements()]);
+        await Promise.all([loadPlayers(), loadAnnouncements(), loadReports(), loadBanList(), loadPenaltyList()]);
       }
     }
     render();
@@ -132,7 +164,7 @@
       session = data.session;
       const ok = await checkAdmin();
       if(ok){
-        await Promise.all([loadPlayers(), loadAnnouncements()]);
+        await Promise.all([loadPlayers(), loadAnnouncements(), loadReports(), loadBanList(), loadPenaltyList()]);
       }
     }catch(e){
       alert('ログインに失敗しました: ' + e.message);
@@ -167,9 +199,51 @@
     try{
       const { error } = await sb.rpc('admin_set_ban', { p_target_id: id, p_banned: banned, p_reason: reason || null });
       if(error) throw error;
-      await loadPlayers();
+      await refreshModerationLists();
     }catch(e){
       alert('BAN処理に失敗しました: ' + e.message);
+    }
+  }
+
+  async function loadBanList(){
+    banListLoading = true; render();
+    try{
+      const { data, error } = await sb.from('players').select('id,name,gold,banned_at,ban_reason')
+        .not('banned_at', 'is', null).order('banned_at', {ascending:false}).limit(200);
+      if(error) throw error;
+      banList = data || [];
+    }catch(e){
+      console.error('load ban list failed', e);
+      banList = [];
+    }
+    banListLoading = false; render();
+  }
+
+  async function loadPenaltyList(){
+    penaltyListLoading = true; render();
+    try{
+      const { data, error } = await sb.from('players').select('id,name,penalty_until,penalty_reason')
+        .not('penalty_until', 'is', null).order('penalty_until', {ascending:false}).limit(200);
+      if(error) throw error;
+      penaltyList = data || [];
+    }catch(e){
+      console.error('load penalty list failed', e);
+      penaltyList = [];
+    }
+    penaltyListLoading = false; render();
+  }
+
+  async function refreshModerationLists(){
+    await Promise.all([loadPlayers(), loadBanList(), loadPenaltyList()]);
+  }
+
+  async function setPenalty(id, hours, reason){
+    try{
+      const { error } = await sb.rpc('admin_set_penalty', { p_target_id: id, p_hours: hours || null, p_reason: reason || null });
+      if(error) throw error;
+      await refreshModerationLists();
+    }catch(e){
+      alert('利用制限の更新に失敗しました: ' + e.message);
     }
   }
 
@@ -180,9 +254,19 @@
         .order('published_at', {ascending:false}).limit(200);
       if(error) throw error;
       announcementList = data || [];
+
+      const targetIds = [...new Set(announcementList.map(a=>a.target_player_id).filter(Boolean))];
+      if(targetIds.length){
+        const { data: players, error: pErr } = await sb.from('players').select('id,name').in('id', targetIds);
+        if(pErr) throw pErr;
+        targetPlayerNames = Object.fromEntries((players||[]).map(p=>[p.id, p.name]));
+      } else {
+        targetPlayerNames = {};
+      }
     }catch(e){
       console.error('load announcements failed', e);
       announcementList = [];
+      targetPlayerNames = {};
     }
     announcementListLoading = false; render();
   }
@@ -193,14 +277,35 @@
       const publishedIso = form.publishedAt ? new Date(form.publishedAt).toISOString() : new Date().toISOString();
       const { error } = await sb.rpc('admin_upsert_announcement', {
         p_title: form.title, p_body: form.body, p_id: form.id || null,
-        p_tags: tags, p_published_at: publishedIso
+        p_tags: tags, p_published_at: publishedIso,
+        p_sender_name: form.senderName || null,
+        p_target_player_ids: form.targetPlayerIds && form.targetPlayerIds.length ? form.targetPlayerIds : null
       });
       if(error) throw error;
-      editingAnnouncement = null;
+      announcementDetail = null;
       await loadAnnouncements();
     }catch(e){
       alert('保存に失敗しました: ' + e.message);
     }
+  }
+
+  async function searchRecipientCandidates(query){
+    const q = query.trim();
+    if(!q){ recipientSearchResults = []; render(); return; }
+    try{
+      const { data, error } = await sb.rpc('search_players_by_id_prefix', { p_query: q });
+      if(error) throw error;
+      recipientSearchResults = data || [];
+    }catch(e){
+      console.error('search recipients failed', e);
+      recipientSearchResults = [];
+    }
+    render();
+    // render()はinnerHTMLをまるごと作り直すため入力欄のフォーカスが切れる。
+    // 検索は入力停止から250ms後にしか走らないとはいえ、続けて入力したい
+    // 場合のためにフォーカスとカーソル位置を戻しておく。
+    const input = document.getElementById('annRecipientInput');
+    if(input){ input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
   }
 
   async function deleteAnnouncement(id){
@@ -208,10 +313,97 @@
     try{
       const { error } = await sb.rpc('admin_delete_announcement', { p_id: id });
       if(error) throw error;
+      if(announcementDetail && announcementDetail.id === id) announcementDetail = null;
       await loadAnnouncements();
     }catch(e){
       alert('削除に失敗しました: ' + e.message);
     }
+  }
+
+  async function loadReports(){
+    reportListLoading = true; render();
+    try{
+      let q = sb.from('chat_reports').select('*').order('created_at', {ascending:false}).limit(200);
+      if(reportFilter !== 'all') q = q.eq('status', reportFilter);
+      const [{ data, error }, { count, error: countError }] = await Promise.all([
+        q,
+        sb.from('chat_reports').select('id', {count:'exact', head:true}).eq('status', 'open')
+      ]);
+      if(error) throw error;
+      if(countError) throw countError;
+      reportList = data || [];
+      openReportCount = count || 0;
+    }catch(e){
+      console.error('load reports failed', e);
+      reportList = [];
+    }
+    reportListLoading = false; render();
+  }
+
+  async function reportAction(id, side, action, deleteMessage, penaltyHours, note){
+    try{
+      const { error } = await sb.rpc('admin_report_action', {
+        p_report_id: id, p_side: side, p_action: action, p_delete_message: !!deleteMessage,
+        p_penalty_hours: penaltyHours || null, p_note: note || null
+      });
+      if(error) throw error;
+      await loadReports();
+    }catch(e){
+      alert('処理に失敗しました: ' + e.message);
+    }
+  }
+
+  async function closeReport(id, deleteMessage){
+    try{
+      const { error } = await sb.rpc('admin_close_report', {
+        p_report_id: id, p_delete_message: !!deleteMessage
+      });
+      if(error) throw error;
+      await loadReports();
+    }catch(e){
+      alert('クローズに失敗しました: ' + e.message);
+    }
+  }
+
+  // side: 'reported'(通報された側) | 'reporter'(通報した側)。
+  // それぞれ独立して1回だけ選べる(クローズはしない、別ボタンで行う)。
+  function handleReportSideAction(id, side, action, deleteMessage){
+    const sideLabel = side === 'reported' ? '対象ユーザー' : '通報者';
+    const label = REPORT_ACTION_LABELS[action] || action;
+    const deleteNote = deleteMessage ? '対象の投稿も削除されます。' : '';
+
+    if(action === 'penalty'){
+      const hoursStr = prompt('利用を制限する時間を入力してください(時間単位):', '24');
+      if(hoursStr === null) return;
+      const hours = parseInt(hoursStr, 10);
+      if(!hours || hours <= 0){ alert('有効な時間を入力してください。'); return; }
+      const note = prompt('制限理由を入力してください(空欄可):', '');
+      if(note === null) return;
+      if(!confirm(`${sideLabel}に${label}(${hours}時間)を実行します。${deleteNote}よろしいですか？`)) return;
+      reportAction(id, side, action, deleteMessage, hours, note);
+      return;
+    }
+    if(action === 'ban'){
+      const note = prompt('BAN理由を入力してください:', 'チャットでの通報対応によるBAN');
+      if(note === null) return;
+      if(!confirm(`${sideLabel}に${label}を実行します。${deleteNote}よろしいですか？`)) return;
+      reportAction(id, side, action, deleteMessage, null, note);
+      return;
+    }
+    // warn
+    const defaultMsg = side === 'reported'
+      ? 'チャットへの投稿内容について、運営より警告いたします。利用規約に違反する投稿を繰り返した場合、アカウントの利用を制限することがあります。'
+      : 'いただいた通報を運営で確認しましたが、妥当性が認められず、悪意のある通報(嫌がらせ)であると判断いたしました。今後このような通報を繰り返した場合、アカウントの利用を制限することがあります。';
+    const note = prompt('お知らせに表示する警告文を確認・編集してください:', defaultMsg);
+    if(note === null) return;
+    if(!confirm(`${sideLabel}に${label}を実行します。${deleteNote}よろしいですか？`)) return;
+    reportAction(id, side, action, deleteMessage, null, note);
+  }
+
+  function handleCloseReport(id, deleteMessage){
+    const deleteNote = deleteMessage ? '対象の投稿も削除されます。' : '';
+    if(!confirm(`この通報をクローズします。${deleteNote}よろしいですか？`)) return;
+    closeReport(id, deleteMessage);
   }
 
   function toLocalInputValue(iso){
@@ -276,15 +468,117 @@
     `;
   }
 
-  function renderAnnouncementForm(a){
-    const isNew = !a.id;
-    const publishedLocal = toLocalInputValue(a.published_at || new Date().toISOString());
+  function renderBanRow(p){
+    return `
+      <tr>
+        <td class="mono">${esc(p.id.slice(0,8))}</td>
+        <td>${esc(p.name)}</td>
+        <td class="mono">${p.gold}</td>
+        <td class="mono">${new Date(p.banned_at).toLocaleString('ja-JP')}</td>
+        <td>${esc(p.ban_reason||'')}</td>
+      </tr>
+    `;
+  }
+
+  function renderBanListTab(){
+    const rows = banListLoading
+      ? `<tr><td colspan="5">読み込み中……</td></tr>`
+      : banList.length
+        ? banList.map(renderBanRow).join('')
+        : `<tr><td colspan="5">BAN中のプレイヤーはいません。</td></tr>`;
+    return `
+      <p class="muted" style="margin-bottom:12px;">閲覧専用です。BANの解除は「プレイヤー」タブから行ってください。</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>ID</th><th>名前</th><th>ゴールド</th><th>BAN日時</th><th>BAN理由</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderPenaltyRow(p){
+    const active = p.penalty_until && new Date(p.penalty_until) > new Date();
+    return `
+      <div class="ann-row">
+        <div>
+          <strong>${esc(p.name)}</strong>
+          <span class="mono muted">#${esc(p.id.slice(0,8))}</span>
+          ${active ? '<span class="badge gold">制限中</span>' : '<span class="badge danger">期限切れ</span>'}
+          <div class="muted mono" style="margin-top:4px;">解除予定: ${new Date(p.penalty_until).toLocaleString('ja-JP')}</div>
+          ${p.penalty_reason ? `<div style="font-size:12px;margin-top:2px;">理由: ${esc(p.penalty_reason)}</div>` : ''}
+        </div>
+        <div class="actions">
+          <button data-penalty-change="${p.id}">時間を変更</button>
+          <button data-penalty-lift="${p.id}">解除</button>
+          <button data-penalty-ban="${p.id}" class="danger">BAN</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderPenaltyListTab(){
+    const rows = penaltyListLoading
+      ? '<p class="muted">読み込み中……</p>'
+      : penaltyList.length
+        ? penaltyList.map(renderPenaltyRow).join('')
+        : '<p class="muted">利用制限中(または制限履歴のある)プレイヤーはいません。</p>';
+    return `<div class="ann-list">${rows}</div>`;
+  }
+
+  function renderRecipientPicker(d){
+    const chips = d.recipients.map(r=>
+      `<span class="tag" data-remove-recipient="${r.id}" style="cursor:pointer;">${esc(r.name)} #${esc(r.id.slice(0,8))} ×</span>`
+    ).join('');
+    const resultsHtml = recipientSearchResults.length
+      ? `<div class="panel" style="margin-top:4px;padding:6px;">${recipientSearchResults.map(p=>
+          `<div class="recipient-option" data-pick-recipient="${p.id}" data-pick-name="${esc(p.name)}">${esc(p.name)} <span class="mono muted">#${esc(p.id.slice(0,8))}</span></div>`
+        ).join('')}</div>`
+      : (recipientSearchQuery.trim() ? '<p class="muted" style="font-size:12px;margin-top:4px;">該当するユーザーが見つかりません。</p>' : '');
+    return `
+      <label>宛先ユーザー(IDの一部を入力して検索・複数選択可)
+        <input id="annRecipientInput" type="text" value="${esc(recipientSearchQuery)}" placeholder="ユーザーIDの一部を入力" autocomplete="off">
+      </label>
+      ${resultsHtml}
+      <div style="margin:8px 0 12px;">${chips || '<span class="muted" style="font-size:12px;">まだ宛先が選択されていません。</span>'}</div>
+    `;
+  }
+
+  function renderAnnouncementDetailPanel(d){
+    const isNew = !d.id;
+
+    if(!d.editable){
+      const tagsHtml = (Array.isArray(d.tags) ? d.tags : []).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
+      const targetName = d.target_player_id ? (targetPlayerNames[d.target_player_id] || '(不明なユーザー)') : null;
+      return `
+        <div class="panel">
+          <h3>お知らせ詳細${d.target_player_id ? '(個別宛て)' : '(全体宛て)'}</h3>
+          ${d.target_player_id ? `<p style="font-size:12px;">宛先: ${esc(targetName)} <span class="mono muted">#${esc(d.target_player_id.slice(0,8))}</span></p>` : ''}
+          ${d.sender_name ? `<p style="font-size:12px;">送信元: ${esc(d.sender_name)}</p>` : ''}
+          <p class="muted mono" style="font-size:11px;margin-top:8px;">${new Date(d.published_at).toLocaleString('ja-JP')}</p>
+          <p style="font-weight:600;font-size:15px;margin-top:6px;">${esc(d.title)}</p>
+          ${tagsHtml ? `<div style="margin-top:6px;">${tagsHtml}</div>` : ''}
+          <p style="white-space:pre-wrap;margin-top:10px;">${esc(d.body)}</p>
+          <div class="actions">
+            <button id="annEditBtn" class="primary">編集する</button>
+            <button id="annDetailCloseBtn">閉じる</button>
+          </div>
+        </div>
+      `;
+    }
+
+    const publishedLocal = toLocalInputValue(d.published_at || new Date().toISOString());
+    const recipientHtml = d.isPersonalNew
+      ? renderRecipientPicker(d)
+      : (d.target_player_id ? `<p class="muted" style="font-size:12px;">宛先(個別・変更不可): ${esc(targetPlayerNames[d.target_player_id]||'-')} <span class="mono">#${esc(d.target_player_id.slice(0,8))}</span></p>` : '');
     return `
       <div class="panel">
-        <h3>${isNew ? '新規お知らせ' : 'お知らせを編集'}</h3>
-        <label>タイトル<input id="annTitle" type="text" value="${esc(a.title||'')}"></label>
-        <label>本文<textarea id="annBody" rows="6">${esc(a.body||'')}</textarea></label>
-        <label>タグ(カンマ区切り)<input id="annTags" type="text" value="${esc((a.tags||[]).join(', '))}"></label>
+        <h3>${isNew ? (d.isPersonalNew ? '新規お知らせ(個別宛て)' : '新規お知らせ(全体宛て)') : 'お知らせを編集'}</h3>
+        ${recipientHtml}
+        <label>送信元<input id="annSender" type="text" value="${esc(d.sender_name||'')}" placeholder="${esc(DEFAULT_SENDER_NAME)}"></label>
+        <label>タイトル<input id="annTitle" type="text" value="${esc(d.title||'')}"></label>
+        <label>本文<textarea id="annBody" rows="6">${esc(d.body||'')}</textarea></label>
+        <label>タグ(カンマ区切り)<input id="annTags" type="text" value="${esc((d.tags||[]).join(', '))}"></label>
         <label>掲載日時(未来の日時にすると予約投稿になる)<input id="annPublishedAt" type="datetime-local" value="${publishedLocal}"></label>
         <div class="actions">
           <button id="annSaveBtn" class="primary">保存</button>
@@ -294,37 +588,154 @@
     `;
   }
 
+  function renderAnnouncementRow(a){
+    const scheduled = new Date(a.published_at) > new Date();
+    const tagsHtml = (Array.isArray(a.tags) ? a.tags : []).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
+    const targetName = a.target_player_id ? (targetPlayerNames[a.target_player_id] || '(不明なユーザー)') : null;
+    return `
+      <div class="ann-row">
+        <div>
+          <strong>${esc(a.title)}</strong>${scheduled ? '<span class="badge gold">予約</span>' : ''}
+          <div class="muted mono">${new Date(a.published_at).toLocaleString('ja-JP')}</div>
+          ${a.target_player_id ? `<div style="font-size:12px;margin-top:2px;">宛先: ${esc(targetName)} <span class="mono muted">#${esc(a.target_player_id.slice(0,8))}</span></div>` : ''}
+          <div>${tagsHtml}</div>
+        </div>
+        <div class="actions">
+          <button data-view-ann="${a.id}">詳細</button>
+          <button data-delete-ann="${a.id}" class="danger">削除</button>
+        </div>
+      </div>`;
+  }
+
   function renderAnnouncementsTab(){
+    const items = announcementSubTab === 'personal'
+      ? announcementList.filter(a=>!!a.target_player_id)
+      : announcementList.filter(a=>!a.target_player_id);
+
     const listHtml = announcementListLoading
       ? '<p class="muted">読み込み中……</p>'
-      : announcementList.length
-        ? announcementList.map(a=>{
-            const scheduled = new Date(a.published_at) > new Date();
-            const tagsHtml = (Array.isArray(a.tags) ? a.tags : []).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
-            return `
-              <div class="ann-row">
-                <div>
-                  <strong>${esc(a.title)}</strong>${scheduled ? '<span class="badge gold">予約</span>' : ''}
-                  <div class="muted mono">${new Date(a.published_at).toLocaleString('ja-JP')}</div>
-                  <div>${tagsHtml}</div>
-                </div>
-                <div class="actions">
-                  <button data-edit-ann="${a.id}">編集</button>
-                  <button data-delete-ann="${a.id}" class="danger">削除</button>
-                </div>
-              </div>`;
-          }).join('')
-        : '<p class="muted">お知らせはまだありません。</p>';
+      : items.length ? items.map(renderAnnouncementRow).join('')
+        : `<p class="muted">${announcementSubTab === 'personal' ? '個別宛て' : '全体宛て'}のお知らせはまだありません。</p>`;
 
-    const formHtml = editingAnnouncement ? renderAnnouncementForm(editingAnnouncement) : '';
+    const detailHtml = announcementDetail ? renderAnnouncementDetailPanel(announcementDetail) : '';
 
     return `
       <div class="actions" style="margin-bottom:16px;">
-        <button id="annNewBtn" class="primary">新規作成</button>
+        <button data-ann-tab="global" class="${announcementSubTab==='global'?'primary':''}">全体宛て</button>
+        <button data-ann-tab="personal" class="${announcementSubTab==='personal'?'primary':''}">個別宛て</button>
+        <button id="annNewBtn" class="primary" style="margin-left:auto;">新規作成</button>
       </div>
-      ${formHtml}
+      ${detailHtml}
       <div class="ann-list">${listHtml}</div>
     `;
+  }
+
+  function renderReportContext(label, items){
+    if(!Array.isArray(items) || !items.length) return '';
+    const rows = items.map(it=>`
+      <div class="mono" style="font-size:11px;padding:2px 0;${it.is_target?'color:var(--gold);font-weight:600;':'color:var(--muted);'}">
+        [${new Date(it.created_at).toLocaleString('ja-JP')}] ${esc(it.player_name)}: ${esc(it.body)}
+      </div>`).join('');
+    return `<details style="margin-top:8px;"><summary class="muted" style="cursor:pointer;">${esc(label)}</summary><div style="margin-top:6px;">${rows}</div></details>`;
+  }
+
+  function renderReportSideStatus(label, action, at){
+    if(!action){
+      return `<p class="muted" style="font-size:12px;">${esc(label)}: 未対応</p>`;
+    }
+    return `<p style="font-size:12px;">${esc(label)}: <strong>${esc(REPORT_ACTION_LABELS[action]||action)}</strong> 実行済み${at ? ' / ' + new Date(at).toLocaleString('ja-JP') : ''}</p>`;
+  }
+
+  function renderReportRow(r){
+    const resolved = r.status === 'resolved';
+    const catLabel = REPORT_REASON_LABELS[r.reason_category] || r.reason_category;
+    const reportedDone = !!r.reported_action;
+    const reporterDone = !!r.reporter_action;
+
+    const reportedActionsHtml = reportedDone
+      ? renderReportSideStatus('対象ユーザーへの対応', r.reported_action, r.reported_action_at)
+      : `
+        <p class="muted" style="font-size:12px;margin-bottom:4px;">対象ユーザーへの対応(いずれか1つ):</p>
+        <div class="actions" style="margin-top:0;">
+          <button data-report-action="${r.id}" data-side="reported" data-action="ban" class="danger">BAN</button>
+          <button data-report-action="${r.id}" data-side="reported" data-action="penalty">ペナルティ</button>
+          <button data-report-action="${r.id}" data-side="reported" data-action="warn">警告</button>
+        </div>`;
+
+    const reporterActionsHtml = reporterDone
+      ? renderReportSideStatus('通報者への対応', r.reporter_action, r.reporter_action_at)
+      : `
+        <p class="muted" style="font-size:12px;margin-bottom:4px;">通報者への対応(いずれか1つ。通報が悪質だった場合など):</p>
+        <div class="actions" style="margin-top:0;">
+          <button data-report-action="${r.id}" data-side="reporter" data-action="warn">警告</button>
+          <button data-report-action="${r.id}" data-side="reporter" data-action="penalty">ペナルティ</button>
+          <button data-report-action="${r.id}" data-side="reporter" data-action="ban" class="danger">BAN</button>
+        </div>`;
+
+    return `
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <div>
+            <strong>${esc(r.reported_player_name)}</strong>
+            <span class="mono muted">#${esc(r.reported_player_id ? r.reported_player_id.slice(0,8) : '-')}</span>
+            <span class="badge gold">${esc(catLabel)}</span>
+            ${resolved ? `<span class="badge danger">クローズ済み</span>` : ''}
+          </div>
+          <div class="muted mono" style="font-size:11px;">${new Date(r.created_at).toLocaleString('ja-JP')} / ${esc(r.channel)}</div>
+        </div>
+        <p style="margin:10px 0 4px;">${esc(r.reported_body)}${r.message_deleted?' <span class="muted">(投稿は削除済み)</span>':''}</p>
+        ${r.reason_text ? `<p class="muted" style="font-size:12px;">通報理由の詳細: ${esc(r.reason_text)}</p>` : ''}
+        <p class="muted" style="font-size:11px;">通報者ID: ${esc(r.reporter_id ? r.reporter_id.slice(0,8) : '-')}</p>
+        ${renderReportContext('チャンネル全体の前後文脈', r.channel_context)}
+        ${renderReportContext('この投稿者の前後の発言', r.author_context)}
+
+        ${!r.message_deleted ? `
+          <label style="margin-top:10px;display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" data-delete-msg="${r.id}" style="width:auto;">対象の投稿を削除する
+          </label>` : ''}
+
+        <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">
+          ${reportedActionsHtml}
+        </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">
+          ${reporterActionsHtml}
+        </div>
+
+        ${resolved
+          ? `<p class="muted" style="margin-top:10px;">クローズ済み${r.resolved_at ? ' / ' + new Date(r.resolved_at).toLocaleString('ja-JP') : ''}</p>`
+          : `<div class="actions" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">
+              <button data-close-report="${r.id}">クローズ(この通報への対応を終了する)</button>
+            </div>`
+        }
+      </div>
+    `;
+  }
+
+  function renderReportsTab(){
+    const rows = reportListLoading
+      ? '<p class="muted">読み込み中……</p>'
+      : reportList.length
+        ? reportList.map(renderReportRow).join('')
+        : '<p class="muted">該当する通報はありません。</p>';
+    return `
+      <div class="actions" style="margin-bottom:16px;">
+        <button data-report-filter="open" class="${reportFilter==='open'?'primary':''}">未処理</button>
+        <button data-report-filter="resolved" class="${reportFilter==='resolved'?'primary':''}">対応済み</button>
+        <button data-report-filter="all" class="${reportFilter==='all'?'primary':''}">すべて</button>
+      </div>
+      ${rows}
+    `;
+  }
+
+  function renderTabContent(){
+    switch(tab){
+      case 'players': return renderPlayersTab();
+      case 'announcements': return renderAnnouncementsTab();
+      case 'reports': return renderReportsTab();
+      case 'banlist': return renderBanListTab();
+      case 'penaltylist': return renderPenaltyListTab();
+      default: return '';
+    }
   }
 
   function render(){
@@ -337,8 +748,11 @@
       <nav>
         <button data-tab="players" class="${tab==='players'?'primary':''}">プレイヤー</button>
         <button data-tab="announcements" class="${tab==='announcements'?'primary':''}">お知らせ</button>
+        <button data-tab="reports" class="${tab==='reports'?'primary':''}">通報${openReportCount>0 ? `<span class="badge danger">${openReportCount}</span>` : ''}</button>
+        <button data-tab="banlist" class="${tab==='banlist'?'primary':''}">BANリスト</button>
+        <button data-tab="penaltylist" class="${tab==='penaltylist'?'primary':''}">利用制限リスト</button>
       </nav>
-      <main>${tab==='players' ? renderPlayersTab() : renderAnnouncementsTab()}</main>
+      <main>${renderTabContent()}</main>
     `;
     bindEvents();
   }
@@ -372,21 +786,131 @@
       });
     });
 
+    document.querySelectorAll('[data-penalty-change]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.getAttribute('data-penalty-change');
+        const hoursStr = prompt('新しい制限時間を入力してください(時間単位。今からこの時間後が新しい解除予定になります):', '24');
+        if(hoursStr === null) return;
+        const hours = parseInt(hoursStr, 10);
+        if(!hours || hours <= 0){ alert('有効な時間を入力してください。'); return; }
+        const reason = prompt('制限理由を入力してください(空欄可):', '');
+        if(reason === null) return;
+        if(!confirm(`${hours}時間後を新しい解除予定として設定します。よろしいですか？`)) return;
+        setPenalty(id, hours, reason);
+      });
+    });
+    document.querySelectorAll('[data-penalty-lift]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.getAttribute('data-penalty-lift');
+        if(!confirm('この利用制限を解除しますか？')) return;
+        setPenalty(id, null, null);
+      });
+    });
+    document.querySelectorAll('[data-penalty-ban]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.getAttribute('data-penalty-ban');
+        const reason = prompt('BAN理由を入力してください:', '利用制限中の違反によるBAN');
+        if(reason === null) return;
+        if(!confirm('このユーザーをBANします。よろしいですか？')) return;
+        setBan(id, true, reason);
+      });
+    });
+
+    document.querySelectorAll('[data-ann-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        announcementSubTab = b.getAttribute('data-ann-tab');
+        announcementDetail = null;
+        render();
+      });
+    });
+
     const newBtn = document.getElementById('annNewBtn');
     if(newBtn) newBtn.addEventListener('click', ()=>{
-      editingAnnouncement = { id:null, title:'', body:'', tags:[], published_at:new Date().toISOString() };
+      const isPersonal = announcementSubTab === 'personal';
+      recipientSearchQuery = '';
+      recipientSearchResults = [];
+      announcementDetail = {
+        id:null, title:'', body:'', tags:[], published_at:new Date().toISOString(),
+        target_player_id:null, sender_name:DEFAULT_SENDER_NAME, editable:true,
+        isPersonalNew:isPersonal, recipients:[]
+      };
       render();
     });
 
-    document.querySelectorAll('[data-edit-ann]').forEach(b=>{
+    document.querySelectorAll('[data-view-ann]').forEach(b=>{
       b.addEventListener('click', ()=>{
-        const id = Number(b.getAttribute('data-edit-ann'));
-        editingAnnouncement = announcementList.find(a=>a.id===id) || null;
+        const id = Number(b.getAttribute('data-view-ann'));
+        const a = announcementList.find(a=>a.id===id);
+        announcementDetail = a ? { ...a, editable:false, isPersonalNew:false, recipients:[] } : null;
         render();
       });
     });
     document.querySelectorAll('[data-delete-ann]').forEach(b=>{
       b.addEventListener('click', ()=>{ deleteAnnouncement(Number(b.getAttribute('data-delete-ann'))); });
+    });
+
+    const annEditBtn = document.getElementById('annEditBtn');
+    if(annEditBtn) annEditBtn.addEventListener('click', ()=>{
+      announcementDetail.editable = true;
+      render();
+    });
+    const annDetailCloseBtn = document.getElementById('annDetailCloseBtn');
+    if(annDetailCloseBtn) annDetailCloseBtn.addEventListener('click', ()=>{
+      announcementDetail = null;
+      render();
+    });
+
+    const recipientInput = document.getElementById('annRecipientInput');
+    if(recipientInput){
+      recipientInput.addEventListener('input', (e)=>{
+        recipientSearchQuery = e.target.value;
+        clearTimeout(recipientSearchTimer);
+        recipientSearchTimer = setTimeout(()=>searchRecipientCandidates(recipientSearchQuery), 250);
+      });
+    }
+    document.querySelectorAll('[data-pick-recipient]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.getAttribute('data-pick-recipient');
+        const name = b.getAttribute('data-pick-name');
+        if(!announcementDetail.recipients.some(r=>r.id===id)){
+          announcementDetail.recipients.push({ id, name });
+        }
+        recipientSearchQuery = '';
+        recipientSearchResults = [];
+        render();
+      });
+    });
+    document.querySelectorAll('[data-remove-recipient]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.getAttribute('data-remove-recipient');
+        announcementDetail.recipients = announcementDetail.recipients.filter(r=>r.id!==id);
+        render();
+      });
+    });
+
+    document.querySelectorAll('[data-report-filter]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        reportFilter = b.getAttribute('data-report-filter');
+        loadReports();
+      });
+    });
+    document.querySelectorAll('[data-report-action]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = Number(b.getAttribute('data-report-action'));
+        const side = b.getAttribute('data-side');
+        const action = b.getAttribute('data-action');
+        const checkbox = document.querySelector(`[data-delete-msg="${id}"]`);
+        const deleteMessage = checkbox ? checkbox.checked : false;
+        handleReportSideAction(id, side, action, deleteMessage);
+      });
+    });
+    document.querySelectorAll('[data-close-report]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = Number(b.getAttribute('data-close-report'));
+        const checkbox = document.querySelector(`[data-delete-msg="${id}"]`);
+        const deleteMessage = checkbox ? checkbox.checked : false;
+        handleCloseReport(id, deleteMessage);
+      });
     });
 
     const saveBtn = document.getElementById('annSaveBtn');
@@ -395,11 +919,25 @@
       const body = document.getElementById('annBody').value.trim();
       const tags = document.getElementById('annTags').value;
       const publishedAt = document.getElementById('annPublishedAt').value;
+      const senderName = document.getElementById('annSender').value.trim();
       if(!title || !body){ alert('タイトルと本文は必須です。'); return; }
-      saveAnnouncement({ id: editingAnnouncement.id || null, title, body, tags, publishedAt });
+      if(announcementDetail.isPersonalNew){
+        if(recipientSearchQuery.trim()){
+          alert('宛先の入力欄に未確定の文字列が残っています。候補から選択するか、入力欄を空にしてください。');
+          return;
+        }
+        if(!announcementDetail.recipients.length){
+          alert('宛先を1人以上選択してください。');
+          return;
+        }
+      }
+      saveAnnouncement({
+        id: announcementDetail.id || null, title, body, tags, publishedAt, senderName,
+        targetPlayerIds: announcementDetail.isPersonalNew ? announcementDetail.recipients.map(r=>r.id) : null
+      });
     });
     const cancelBtn = document.getElementById('annCancelBtn');
-    if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ editingAnnouncement = null; render(); });
+    if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ announcementDetail = null; render(); });
   }
 
   init();

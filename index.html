@@ -369,6 +369,24 @@
     vertical-align:middle;
   }
 
+  /* チャット各投稿の通報トリガー。目立たせすぎず、気付いた人だけが
+   * 押せる程度の視認性にとどめる(絵文字ではなくU+22EEを使用)。 */
+  .chat-report-trigger{
+    display:inline-block;float:right;
+    color:var(--text-muted);opacity:0.45;cursor:pointer;
+    font-size:13px;padding:0 4px;user-select:none;
+  }
+  .chat-report-trigger:hover{opacity:0.9;color:var(--text-primary);}
+  .chat-report-reason-select{
+    width:100%;background:#0e1a45;border:1.6px solid var(--win-border);color:var(--text-primary);
+    font-family:var(--font-mono);font-size:13px;padding:7px 9px;margin-top:4px;
+  }
+  .chat-report-reason-text{
+    width:100%;background:#0e1a45;border:1.6px solid var(--win-border);color:var(--text-primary);
+    font-family:var(--font-body,inherit);font-size:13px;padding:7px 9px;margin-top:6px;
+    resize:vertical;min-height:60px;box-sizing:border-box;
+  }
+
   /* character creation */
   .create-box{max-width:440px;margin:60px auto;text-align:center;}
   .create-box input{
@@ -3075,6 +3093,7 @@
   let announcementList = null;      // { loading, items:[...] } | null
   let announcementReadIds = new Set();
   let announcementUnreadCount = 0;  // 町のボタンに出すバッジ用
+  let announcementTab = 'global';   // 'global' | 'personal' — お知らせ一覧のサブタブ
 
   function formatAnnouncementDate(iso){
     const d = new Date(iso);
@@ -3104,6 +3123,7 @@
   async function openAnnouncementList(){
     if(inCombat) return;
     state.screen = 'announcements';
+    announcementTab = 'global';
     announcementList = { loading:true, items:[] };
     render();
     try{
@@ -4345,6 +4365,19 @@
   /* ---------------- Rendering ---------------- */
   const app = document.getElementById('app');
 
+  /* チャットの通報トリガーは、チャンネル切替・Realtime新着受信時に
+   * #chatLogのinnerHTMLだけを直接書き換える経路(refreshChatDOM/
+   * startChatPollingのINSERTハンドラ)があり、その都度bindEvents()を
+   * 呼び直すのは無駄が大きい。appの要素自体はrender()で作り直されない
+   * ことを利用し、イベント委譲で1度だけ登録しておく。 */
+  app.addEventListener('click', (e)=>{
+    const trigger = e.target.closest && e.target.closest('[data-report-message]');
+    if(trigger){
+      e.stopPropagation();
+      openChatReportPopup(Number(trigger.getAttribute('data-report-message')));
+    }
+  });
+
   function esc(s){
     const d = document.createElement('div');
     d.textContent = s;
@@ -5030,6 +5063,11 @@
     if(tab !== 'buy') state.ui.marketStackBookOpen = false;
     render();
   }
+
+  function switchAnnouncementTab(tab){
+    announcementTab = tab;
+    render();
+  }
   function switchMarketBuySubTab(tab){
     if(!state.ui) state.ui = {};
     state.ui.marketBuySubTab = tab;
@@ -5589,10 +5627,17 @@
 
   function renderAnnouncementsInner(){
     const list = announcementList;
+    const allItems = (!list || list.loading) ? [] : list.items;
+    const globalItems = allItems.filter(a=>!a.target_player_id);
+    const personalItems = allItems.filter(a=>!!a.target_player_id);
+    const shownItems = announcementTab === 'personal' ? personalItems : globalItems;
+    const globalUnread = globalItems.filter(a=>!announcementReadIds.has(a.id)).length;
+    const personalUnread = personalItems.filter(a=>!announcementReadIds.has(a.id)).length;
+
     const itemsHtml = (!list || list.loading)
       ? '<p class="log-entry system">読み込み中……</p>'
-      : list.items.length
-        ? list.items.map(a=>{
+      : shownItems.length
+        ? shownItems.map(a=>{
             const unread = !announcementReadIds.has(a.id);
             const tagsHtml = (Array.isArray(a.tags) ? a.tags : [])
               .map(t=>`<span class="tag-chip">${esc(t)}</span>`).join('');
@@ -5602,10 +5647,11 @@
                   ${unread ? '<span class="notify-badge" style="margin-left:0;margin-right:6px;">未読</span>' : ''}${esc(a.title)}
                   <span style="float:right;color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${formatAnnouncementDate(a.published_at)}</span>
                 </span>
+                ${a.sender_name ? `<div style="margin-top:4px;color:var(--text-muted);font-size:11px;">${esc(a.sender_name)}より</div>` : ''}
                 ${tagsHtml ? `<div style="margin-top:6px;">${tagsHtml}</div>` : ''}
               </div>`;
           }).join('')
-        : '<p class="inv-empty">お知らせはまだありません。</p>';
+        : `<p class="inv-empty">${announcementTab === 'personal' ? '個人宛てのお知らせはありません。' : 'お知らせはまだありません。'}</p>`;
 
     return `
       <div class="scene-text">
@@ -5613,6 +5659,8 @@
       </div>
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
+        <button data-announcement-tab="global" class="${announcementTab==='global'?'primary':''}">全体${globalUnread>0?`<span class="notify-badge">${globalUnread}</span>`:''}</button>
+        <button data-announcement-tab="personal" class="${announcementTab==='personal'?'primary':''}">個人宛て${personalUnread>0?`<span class="notify-badge">${personalUnread}</span>`:''}</button>
       </div>
       <div class="section-block">
         ${itemsHtml}
@@ -5640,7 +5688,7 @@
     return `
       <div class="scene-text">
         ${sceneHeadingHtml(a.title)}
-        <p style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;margin-top:4px;">${formatAnnouncementDate(a.published_at)}</p>
+        <p style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;margin-top:4px;">${formatAnnouncementDate(a.published_at)}${a.sender_name ? ` ／ 送信元: ${esc(a.sender_name)}` : ''}</p>
         ${tagsHtml ? `<div style="margin:8px 0 4px;">${tagsHtml}</div>` : ''}
         <p class="log-entry system" style="margin-top:12px;">${bodyHtml}</p>
       </div>
@@ -6562,6 +6610,9 @@
         openAnnouncementDetail(Number(b.getAttribute('data-open-announcement')));
       });
     });
+    document.querySelectorAll('[data-announcement-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>switchAnnouncementTab(b.getAttribute('data-announcement-tab')));
+    });
     document.querySelectorAll('[data-open-ranking]').forEach(b=>{
       b.addEventListener('click', ()=>{
         openRankingDetail(b.getAttribute('data-open-ranking'));
@@ -6781,6 +6832,13 @@
     } else if(marketPopup && marketPopup.type === 'sellEquip'){
       on('marketPopupConfirmBtn', confirmMarketSellEquip);
     }
+
+    const chatReportPopupBackdrop = document.getElementById('chatReportPopupBackdrop');
+    if(chatReportPopupBackdrop){
+      chatReportPopupBackdrop.addEventListener('click', (e)=>{ if(e.target === chatReportPopupBackdrop) closeChatReportPopup(); });
+    }
+    on('chatReportPopupCancelBtn', closeChatReportPopup);
+    on('chatReportPopupConfirmBtn', submitChatReport);
   }
 
   /* ---------------- チャット(全ユーザー共有、Supabase Realtime) ---------------- */
@@ -6788,6 +6846,13 @@
     { id:'general', name:'総合チャット' },
     { id:'strategy', name:'攻略チャット' },
     { id:'casual', name:'雑談チャット' },
+  ];
+  const CHAT_REPORT_REASONS = [
+    { id:'spam', label:'スパム・広告' },
+    { id:'harassment', label:'誹謗中傷・嫌がらせ' },
+    { id:'inappropriate', label:'不適切な内容' },
+    { id:'impersonation', label:'なりすまし' },
+    { id:'other', label:'その他' },
   ];
   let chatCache = [];
   let chatChannel = null;
@@ -6799,7 +6864,7 @@
         .select('*').eq('channel', channel).order('created_at', {ascending:false}).limit(100);
       if(error) throw error;
       return (data||[]).slice().reverse().map(m=>(
-        { name: m.player_name, id: m.player_id, text: m.body, ts: new Date(m.created_at).getTime() }
+        { name: m.player_name, id: m.player_id, messageId: m.id, text: m.body, ts: new Date(m.created_at).getTime() }
       ));
     }catch(e){
       console.error('load chat failed', e);
@@ -6809,7 +6874,13 @@
 
   function renderChatMessages(){
     if(!chatCache.length) return '<p style="color:var(--text-muted);">まだ発言はない。</p>';
-    return chatCache.map(m=>`<p><span style="color:var(--gold);">${nameWithId(m.name, m.id)}:</span> ${esc(m.text)}</p>`).join('');
+    return chatCache.map(m=>{
+      const isOwn = !!(state && state.playerId && m.id === state.playerId);
+      const reportHtml = (!isOwn && m.messageId != null)
+        ? `<span class="chat-report-trigger" data-report-message="${m.messageId}" title="この投稿を通報する">⋮</span>`
+        : '';
+      return `<p>${reportHtml}<span style="color:var(--gold);">${nameWithId(m.name, m.id)}:</span> ${esc(m.text)}</p>`;
+    }).join('');
   }
 
   async function refreshChatDOM(){
@@ -6842,6 +6913,74 @@
     }
   }
 
+  function openChatReportPopup(messageId){
+    const msg = chatCache.find(m=>m.messageId === messageId);
+    if(!msg) return;
+    if(!state.ui) state.ui = {};
+    state.ui.chatReportPopup = {
+      messageId, authorName: msg.name, authorId: msg.id, text: msg.text,
+      submitting:false, error:''
+    };
+    render();
+  }
+
+  function closeChatReportPopup(){
+    if(!state.ui) return;
+    state.ui.chatReportPopup = null;
+    render();
+  }
+
+  async function submitChatReport(){
+    const popup = state.ui && state.ui.chatReportPopup;
+    if(!popup || popup.submitting) return;
+    const reasonSelect = document.getElementById('chatReportReasonSelect');
+    const reasonText = document.getElementById('chatReportReasonText');
+    const category = reasonSelect ? reasonSelect.value : 'other';
+    const detail = reasonText ? reasonText.value.trim().slice(0,500) : '';
+    popup.submitting = true;
+    popup.error = '';
+    render();
+    try{
+      const { error } = await sb.rpc('submit_chat_report', {
+        p_message_id: popup.messageId, p_reason_category: category, p_reason_text: detail || null
+      });
+      if(error) throw error;
+      state.ui.chatReportPopup = null;
+      pushLog('通報を受け付けました。運営にて内容を確認いたします。', 'system');
+      render();
+    }catch(e){
+      console.error('submit chat report failed', e);
+      popup.submitting = false;
+      popup.error = /already reported/.test(e.message) ? 'この投稿はすでに通報済みです。'
+        : /cannot report own message/.test(e.message) ? '自分の投稿は通報できません。'
+        : '通報の送信に失敗しました。通信状況をご確認ください。';
+      render();
+    }
+  }
+
+  function renderChatReportPopup(){
+    const popup = state.ui && state.ui.chatReportPopup;
+    if(!popup) return '';
+    const reasonOptionsHtml = CHAT_REPORT_REASONS.map(r=>`<option value="${r.id}">${esc(r.label)}</option>`).join('');
+    return `
+    <div class="help-popup-backdrop" id="chatReportPopupBackdrop">
+      <div class="help-popup">
+        <p class="section-label" style="margin-top:0;">投稿を通報</p>
+        <div class="market-popup-row"><span>投稿者</span><span>${nameWithId(popup.authorName, popup.authorId)}</span></div>
+        <p class="log-entry" style="margin-top:8px;background:rgba(255,255,255,0.05);padding:8px;">${esc(popup.text)}</p>
+        <label style="display:block;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:10px;">通報理由</label>
+        <select class="chat-report-reason-select" id="chatReportReasonSelect">${reasonOptionsHtml}</select>
+        <label style="display:block;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:8px;">詳細(任意)</label>
+        <textarea class="chat-report-reason-text" id="chatReportReasonText" maxlength="500" placeholder="具体的な状況があれば記入してください"></textarea>
+        ${popup.error ? `<p class="log-entry danger" style="margin-top:8px;">${esc(popup.error)}</p>` : ''}
+        <div class="actions" style="justify-content:flex-end;margin-top:14px;">
+          <button id="chatReportPopupCancelBtn" ${popup.submitting?'disabled':''}>キャンセル</button>
+          <button class="primary" id="chatReportPopupConfirmBtn" ${popup.submitting?'disabled':''}>${popup.submitting?'送信中……':'通報する'}</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
   function toggleBottomTab(tab){
     if(!state.ui) state.ui = {expandedGroups:[]};
     state.ui.bottomTab = tab;
@@ -6859,7 +6998,7 @@
       .on('postgres_changes', {event:'INSERT', schema:'public', table:'chat_messages'}, (payload)=>{
         const m = payload.new;
         if(m.channel !== activeChatChannel) return;
-        chatCache.push({ name: m.player_name, id: m.player_id, text: m.body, ts: new Date(m.created_at).getTime() });
+        chatCache.push({ name: m.player_name, id: m.player_id, messageId: m.id, text: m.body, ts: new Date(m.created_at).getTime() });
         if(chatCache.length > 100) chatCache.shift();
         if(state && state.ui && state.ui.bottomTab === 'chat'){
           const el = document.getElementById('chatLog');
@@ -7014,6 +7153,7 @@
       ${renderBottomPanel()}
       ${renderHelpPopup()}
       ${renderMarketPopup()}
+      ${renderChatReportPopup()}
     `;
     bindEvents();
     const historyEl = document.getElementById('historyLog');
@@ -7070,6 +7210,23 @@
     `;
   }
 
+  function formatPenaltyUntil(iso){
+    const d = new Date(iso);
+    return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
+
+  function renderPenaltyScreen(until, reason){
+    app.innerHTML = `
+      <div class="create-box">
+        <h1>${GAME_TITLE_HTML}</h1>
+        <p class="subtitle">${GAME_SUBTITLE}</p>
+        <p style="color:var(--danger);font-weight:700;margin-top:24px;">このアカウントは利用規約違反により、一時的に利用を制限しています。</p>
+        <p style="color:#000;font-size:12px;">解除予定: ${esc(formatPenaltyUntil(until))}</p>
+        ${reason ? `<p style="color:#000;font-size:12px;">理由: ${esc(reason)}</p>` : ''}
+      </div>
+    `;
+  }
+
   async function handleAgreeTos(){
     const btn = document.getElementById('agreeTosBtn');
     if(btn) btn.disabled = true;
@@ -7113,11 +7270,15 @@
     try{
       const uid = await ensureAuth();
       const { data: gateRow, error } = await sb.from('players')
-        .select('tos_agreed_version, banned_at, ban_reason').eq('id', uid).maybeSingle();
+        .select('tos_agreed_version, banned_at, ban_reason, penalty_until, penalty_reason').eq('id', uid).maybeSingle();
       if(error) throw error;
 
       if(gateRow && gateRow.banned_at){
         renderBanScreen(gateRow.ban_reason);
+        return;
+      }
+      if(gateRow && gateRow.penalty_until && new Date(gateRow.penalty_until).getTime() > Date.now()){
+        renderPenaltyScreen(gateRow.penalty_until, gateRow.penalty_reason);
         return;
       }
       // players行がまだ無い(=キャラ作成前)場合は、agree_to_tosのUPDATEが
