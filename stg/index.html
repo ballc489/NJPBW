@@ -6108,7 +6108,7 @@
     const resistanceTilesHtml = Object.keys(ELEMENT_LABELS).map(el=>{
       const value = resistances[el] || 0;
       const pct = value * 3;
-      const pctLabel = pct === 0 ? '±0%' : (pct > 0 ? `-${pct}%` : `+${Math.abs(pct)}%`);
+      const pctLabel = pct === 0 ? '±0%' : (pct > 0 ? `+${pct}%` : `-${Math.abs(pct)}%`);
       const color = value > 0 ? 'var(--rare-uncommon)' : (value < 0 ? 'var(--danger)' : 'var(--text-primary)');
       return `
         <div class="stat-tile">
