@@ -91,6 +91,10 @@
   let playerQuery = '';
   let playerList = [];
   let playerListLoading = false;
+  let banList = [];
+  let banListLoading = false;
+  let penaltyList = [];
+  let penaltyListLoading = false;
   let announcementList = [];
   let announcementListLoading = false;
   let announcementSubTab = 'global'; // 'global' | 'personal' — お知らせ一覧のタブ
@@ -127,7 +131,7 @@
     if(session){
       const ok = await checkAdmin();
       if(ok){
-        await Promise.all([loadPlayers(), loadAnnouncements(), loadReports()]);
+        await Promise.all([loadPlayers(), loadAnnouncements(), loadReports(), loadBanList(), loadPenaltyList()]);
       }
     }
     render();
@@ -161,7 +165,7 @@
       session = data.session;
       const ok = await checkAdmin();
       if(ok){
-        await Promise.all([loadPlayers(), loadAnnouncements(), loadReports()]);
+        await Promise.all([loadPlayers(), loadAnnouncements(), loadReports(), loadBanList(), loadPenaltyList()]);
       }
     }catch(e){
       alert('ログインに失敗しました: ' + e.message);
@@ -196,9 +200,51 @@
     try{
       const { error } = await sb.rpc('admin_set_ban', { p_target_id: id, p_banned: banned, p_reason: reason || null });
       if(error) throw error;
-      await loadPlayers();
+      await refreshModerationLists();
     }catch(e){
       alert('BAN処理に失敗しました: ' + e.message);
+    }
+  }
+
+  async function loadBanList(){
+    banListLoading = true; render();
+    try{
+      const { data, error } = await sb.from('players').select('id,name,gold,banned_at,ban_reason')
+        .not('banned_at', 'is', null).order('banned_at', {ascending:false}).limit(200);
+      if(error) throw error;
+      banList = data || [];
+    }catch(e){
+      console.error('load ban list failed', e);
+      banList = [];
+    }
+    banListLoading = false; render();
+  }
+
+  async function loadPenaltyList(){
+    penaltyListLoading = true; render();
+    try{
+      const { data, error } = await sb.from('players').select('id,name,penalty_until,penalty_reason')
+        .not('penalty_until', 'is', null).order('penalty_until', {ascending:false}).limit(200);
+      if(error) throw error;
+      penaltyList = data || [];
+    }catch(e){
+      console.error('load penalty list failed', e);
+      penaltyList = [];
+    }
+    penaltyListLoading = false; render();
+  }
+
+  async function refreshModerationLists(){
+    await Promise.all([loadPlayers(), loadBanList(), loadPenaltyList()]);
+  }
+
+  async function setPenalty(id, hours, reason){
+    try{
+      const { error } = await sb.rpc('admin_set_penalty', { p_target_id: id, p_hours: hours || null, p_reason: reason || null });
+      if(error) throw error;
+      await refreshModerationLists();
+    }catch(e){
+      alert('利用制限の更新に失敗しました: ' + e.message);
     }
   }
 
@@ -423,6 +469,64 @@
     `;
   }
 
+  function renderBanRow(p){
+    return `
+      <tr>
+        <td class="mono">${esc(p.id.slice(0,8))}</td>
+        <td>${esc(p.name)}</td>
+        <td class="mono">${p.gold}</td>
+        <td class="mono">${new Date(p.banned_at).toLocaleString('ja-JP')}</td>
+        <td>${esc(p.ban_reason||'')}</td>
+      </tr>
+    `;
+  }
+
+  function renderBanListTab(){
+    const rows = banListLoading
+      ? `<tr><td colspan="5">読み込み中……</td></tr>`
+      : banList.length
+        ? banList.map(renderBanRow).join('')
+        : `<tr><td colspan="5">BAN中のプレイヤーはいません。</td></tr>`;
+    return `
+      <p class="muted" style="margin-bottom:12px;">閲覧専用です。BANの解除は「プレイヤー」タブから行ってください。</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>ID</th><th>名前</th><th>ゴールド</th><th>BAN日時</th><th>BAN理由</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderPenaltyRow(p){
+    const active = p.penalty_until && new Date(p.penalty_until) > new Date();
+    return `
+      <div class="ann-row">
+        <div>
+          <strong>${esc(p.name)}</strong>
+          <span class="mono muted">#${esc(p.id.slice(0,8))}</span>
+          ${active ? '<span class="badge gold">制限中</span>' : '<span class="badge danger">期限切れ</span>'}
+          <div class="muted mono" style="margin-top:4px;">解除予定: ${new Date(p.penalty_until).toLocaleString('ja-JP')}</div>
+          ${p.penalty_reason ? `<div style="font-size:12px;margin-top:2px;">理由: ${esc(p.penalty_reason)}</div>` : ''}
+        </div>
+        <div class="actions">
+          <button data-penalty-change="${p.id}">時間を変更</button>
+          <button data-penalty-lift="${p.id}">解除</button>
+          <button data-penalty-ban="${p.id}" class="danger">BAN</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderPenaltyListTab(){
+    const rows = penaltyListLoading
+      ? '<p class="muted">読み込み中……</p>'
+      : penaltyList.length
+        ? penaltyList.map(renderPenaltyRow).join('')
+        : '<p class="muted">利用制限中(または制限履歴のある)プレイヤーはいません。</p>';
+    return `<div class="ann-list">${rows}</div>`;
+  }
+
   function renderRecipientPicker(d){
     const chips = d.recipients.map(r=>
       `<span class="tag" data-remove-recipient="${r.id}" style="cursor:pointer;">${esc(r.name)} #${esc(r.id.slice(0,8))} ×</span>`
@@ -624,6 +728,17 @@
     `;
   }
 
+  function renderTabContent(){
+    switch(tab){
+      case 'players': return renderPlayersTab();
+      case 'announcements': return renderAnnouncementsTab();
+      case 'reports': return renderReportsTab();
+      case 'banlist': return renderBanListTab();
+      case 'penaltylist': return renderPenaltyListTab();
+      default: return '';
+    }
+  }
+
   function render(){
     if(!session){ renderLogin(); return; }
     app.innerHTML = `
@@ -635,8 +750,10 @@
         <button data-tab="players" class="${tab==='players'?'primary':''}">プレイヤー</button>
         <button data-tab="announcements" class="${tab==='announcements'?'primary':''}">お知らせ</button>
         <button data-tab="reports" class="${tab==='reports'?'primary':''}">通報${openReportCount>0 ? `<span class="badge danger">${openReportCount}</span>` : ''}</button>
+        <button data-tab="banlist" class="${tab==='banlist'?'primary':''}">BANリスト</button>
+        <button data-tab="penaltylist" class="${tab==='penaltylist'?'primary':''}">利用制限リスト</button>
       </nav>
-      <main>${tab==='players' ? renderPlayersTab() : tab==='announcements' ? renderAnnouncementsTab() : renderReportsTab()}</main>
+      <main>${renderTabContent()}</main>
     `;
     bindEvents();
   }
@@ -667,6 +784,36 @@
           const reason = prompt('BAN理由を入力してください:');
           if(reason !== null) setBan(id, true, reason);
         }
+      });
+    });
+
+    document.querySelectorAll('[data-penalty-change]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.getAttribute('data-penalty-change');
+        const hoursStr = prompt('新しい制限時間を入力してください(時間単位。今からこの時間後が新しい解除予定になります):', '24');
+        if(hoursStr === null) return;
+        const hours = parseInt(hoursStr, 10);
+        if(!hours || hours <= 0){ alert('有効な時間を入力してください。'); return; }
+        const reason = prompt('制限理由を入力してください(空欄可):', '');
+        if(reason === null) return;
+        if(!confirm(`${hours}時間後を新しい解除予定として設定します。よろしいですか？`)) return;
+        setPenalty(id, hours, reason);
+      });
+    });
+    document.querySelectorAll('[data-penalty-lift]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.getAttribute('data-penalty-lift');
+        if(!confirm('この利用制限を解除しますか？')) return;
+        setPenalty(id, null, null);
+      });
+    });
+    document.querySelectorAll('[data-penalty-ban]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.getAttribute('data-penalty-ban');
+        const reason = prompt('BAN理由を入力してください:', '利用制限中の違反によるBAN');
+        if(reason === null) return;
+        if(!confirm('このユーザーをBANします。よろしいですか？')) return;
+        setBan(id, true, reason);
       });
     });
 
