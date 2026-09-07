@@ -6123,6 +6123,7 @@
         <div class="stat-tile"><span class="stat-tile-label">攻撃力</span><span class="stat-tile-value">${liverAtk(id)}</span></div>
         <div class="stat-tile"><span class="stat-tile-label">防御力</span><span class="stat-tile-value">${liverDefStat(id)}</span></div>
         ${resistanceTilesHtml}
+        <div class="stat-tile"><span class="stat-tile-label">EXP</span><span class="stat-tile-value">${jp.exp}<span style="color:var(--text-muted);font-size:12px;">/${expToNext(jp.level)}</span></span></div>
       </div>`;
 
     return `
@@ -6136,11 +6137,10 @@
       </div>
       <div class="section-block">
         <p class="section-label">ステータス</p>
-        <div style="display:flex;align-items:baseline;justify-content:space-between;background:rgba(255,216,99,0.08);border-left:3px solid var(--gold);padding:6px 10px;margin:0 0 8px;">
-          <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);letter-spacing:.04em;">戦闘力</span>
-          <span style="font-family:var(--font-mono);font-size:20px;color:var(--gold);">${combatPower(id)}</span>
+        <div class="stat-tile" style="background:rgba(255,216,99,0.08);margin:0 0 8px;">
+          <span class="stat-tile-label">戦闘力</span>
+          <span class="stat-tile-value" style="font-size:20px;color:var(--gold);">${combatPower(id)}</span>
         </div>
-        <p style="color:var(--text-muted);font-size:12px;margin:0 0 8px;">EXP ${jp.exp}/${expToNext(jp.level)}</p>
         ${statTilesHtml}
         <p style="color:var(--text-muted);font-size:11px;margin:8px 0 0;">属性耐性はレベルアップでは変化しません。装備品(主に防具)に付く耐性値によってのみ増減します。</p>
       </div>
