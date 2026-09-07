@@ -2668,6 +2668,7 @@
       hp:maxHp, maxHp, mp:maxMp, maxMp,
       equipped: {weapon:null, armor:null},
       unlocked: !!liverDefObj.startUnlocked,
+      unlockedAt: liverDefObj.startUnlocked ? Date.now() : null,
       costume: defaultCostume,
       unlockedCostumes: defaultCostume ? [defaultCostume] : []
     };
@@ -2676,7 +2677,10 @@
   function newCharacter(name, starterLiverId, playerId){
     const roster = {};
     LIVER_DEFS.forEach(def=>{ roster[def.id] = newLiverProgress(def); });
-    if(starterLiverId && roster[starterLiverId]) roster[starterLiverId].unlocked = true;
+    if(starterLiverId && roster[starterLiverId]){
+      roster[starterLiverId].unlocked = true;
+      roster[starterLiverId].unlockedAt = Date.now();
+    }
     const party = (starterLiverId && roster[starterLiverId]) ? [starterLiverId] : [];
     return {
       name, gold:0,
@@ -2954,6 +2958,7 @@
     const ls = state.roster[id];
     if(!ls || ls.unlocked) return;
     ls.unlocked = true;
+    ls.unlockedAt = Date.now();
     pushLog(`新たな仲間「${liverDef(id).name}」が加わった！`, 'reward');
     if(state.party.length < PARTY_MAX) state.party.push(id);
   }
@@ -5981,8 +5986,39 @@
     gotoScreen(state.ui.rosterDetailFrom === 'party' ? 'party' : 'roster');
   }
 
+  const ROSTER_SORT_DEFAULT = 'default';
+  const ROSTER_SORT_OPTIONS = [
+    { value:'default',        label:'標準' },
+    { value:'cp_asc',         label:'戦闘力順(昇順)' },
+    { value:'cp_desc',        label:'戦闘力順(降順)' },
+    { value:'acquired_asc',   label:'入手順(昇順)' },
+    { value:'acquired_desc',  label:'入手順(降順)' },
+  ];
+
+  /* 並び順のルール: 解放済みを常に未解放より上、その中でも編成中を
+   * 最上部に固定する。そのうえで、各グループ内をソートモードに応じて
+   * 並べ替える(標準時はLIVER_DEFSの定義順のまま)。未解放グループは
+   * ソート対象にしない(定義順で固定)。 */
+  function sortRosterDefs(defs, mode){
+    if(mode === 'cp_asc') return [...defs].sort((a,b)=> combatPower(a.id) - combatPower(b.id));
+    if(mode === 'cp_desc') return [...defs].sort((a,b)=> combatPower(b.id) - combatPower(a.id));
+    if(mode === 'acquired_asc') return [...defs].sort((a,b)=> (liverState(a.id).unlockedAt||0) - (liverState(b.id).unlockedAt||0));
+    if(mode === 'acquired_desc') return [...defs].sort((a,b)=> (liverState(b.id).unlockedAt||0) - (liverState(a.id).unlockedAt||0));
+    return defs;
+  }
+
   function renderRosterInner(){
-    const rows = LIVER_DEFS.map(def=>{
+    const sortMode = (state.ui && state.ui.rosterSort) || ROSTER_SORT_DEFAULT;
+    const unlockedInParty = [];
+    const unlockedOthers = [];
+    const lockedDefs = [];
+    LIVER_DEFS.forEach(def=>{
+      if(!liverState(def.id).unlocked){ lockedDefs.push(def); return; }
+      (state.party.includes(def.id) ? unlockedInParty : unlockedOthers).push(def);
+    });
+    const orderedDefs = [...sortRosterDefs(unlockedInParty, sortMode), ...sortRosterDefs(unlockedOthers, sortMode), ...lockedDefs];
+
+    const rows = orderedDefs.map(def=>{
       const ls = liverState(def.id);
       if(!ls.unlocked){
         return `
@@ -6001,11 +6037,13 @@
         </div>`;
     }).join('');
 
+    const sortSelectHtml = `<select id="rosterSortSelect" style="margin-left:auto;min-width:0;flex:0 1 auto;font-size:11px;padding:4px 4px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${ROSTER_SORT_OPTIONS.map(o=>`<option value="${o.value}" ${sortMode===o.value?'selected':''}>${esc(o.label)}</option>`).join('')}</select>`;
+
     return `
       <div class="scene-text">
         ${sceneHeadingHtml('ライバー', helpButtonHtml('roster'))}
       </div>
-      <div class="actions"><button id="backTownBtn">町に戻る</button></div>
+      <div class="actions"><button id="backTownBtn">町に戻る</button>${sortSelectHtml}</div>
       <div class="section-block">
         ${rows}
       </div>
@@ -6789,6 +6827,12 @@
     if(shopSortSelect) shopSortSelect.addEventListener('change', (e)=>{
       const kind = ((state.ui && state.ui.shopItemTab) || 'equip') === 'item' ? 'item' : 'equip';
       setSortMode(kind, e.target.value);
+    });
+    const rosterSortSelect = document.getElementById('rosterSortSelect');
+    if(rosterSortSelect) rosterSortSelect.addEventListener('change', (e)=>{
+      if(!state.ui) state.ui = {};
+      state.ui.rosterSort = e.target.value;
+      render();
     });
     document.querySelectorAll('[data-chat-channel]').forEach(b=>{
       b.addEventListener('click', ()=>switchChatChannel(b.getAttribute('data-chat-channel')));
