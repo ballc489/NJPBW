@@ -2894,6 +2894,16 @@
   function switchLiverJob(id, jobId){
     const ls = liverState(id);
     if(!JOB_DEFS[jobId] || ls.job === jobId || !ls.unlocked) return;
+    const weapon = ls.equipped.weapon;
+    if(weapon){
+      const currentlyAllowed = allowedWeaponTypes(id);
+      const def = liverDef(id);
+      const futureAllowed = new Set([...(JOB_DEFS[jobId].weaponTypes||[]), ...(def.weaponAptitude||[])]);
+      if(currentlyAllowed.has(weapon.weaponType) && !futureAllowed.has(weapon.weaponType)){
+        const ok = confirm(`ジョブを「${JOB_DEFS[jobId].name}」に変更すると、装備中の武器「${weapon.name}」(${WEAPON_TYPES[weapon.weaponType].name})が装備条件を満たさなくなります。変更しますか？`);
+        if(!ok) return;
+      }
+    }
     if(!ls.jobProgress[jobId]) ls.jobProgress[jobId] = newJobProgress(jobId);
     ls.job = jobId;
     recomputeLiverMaxStats(id, true);
@@ -6078,22 +6088,30 @@
 
     const lockedBanner = !unlocked ? `<p class="log-entry system" style="margin-top:10px;">${uiIcon('lock')} まだ仲間になっていない。「召喚」で運命のチケットを使うと仲間になる。</p>` : '';
 
+    const allowedWeaponLabel = Array.from(allowedWeaponTypes(id)).map(t=>WEAPON_TYPES[t].name).join('・') || 'なし';
+
     return `
-      <div class="scene-text">
-        ${sceneHeadingHtml(def.name, helpButtonHtml('roster'))}
-        <p class="log-entry" style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">Lv.${jp.level} ・ ${esc(job.name)} ・ 戦闘力 ${combatPower(id)}${inParty ? ' ・ 編成中' : ''}</p>
-        ${lockedBanner}
-      </div>
       <div class="actions">
         <button id="backFromLiverDetailBtn">${state.ui.rosterDetailFrom === 'party' ? '編成画面に戻る' : 'ライバー一覧に戻る'}</button>
       </div>
+      <div class="scene-text">
+        ${sceneHeadingHtml(def.name, helpButtonHtml('roster'))}
+        <p class="log-entry" style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">Lv.${jp.level} ・ ${esc(job.name)}${inParty ? ' ・ 編成中' : ''}</p>
+        ${lockedBanner}
+      </div>
       <div class="section-block">
         <p class="section-label">ステータス</p>
-        <p style="color:var(--text-muted);font-size:12px;margin:0 0 6px;">EXP ${jp.exp}/${expToNext(jp.level)} ・ ${esc(job.desc)}</p>
-        <p style="font-family:var(--font-mono);font-size:12px;">HP ${ls.maxHp} ・ MP ${ls.maxMp}</p>
+        <p style="color:var(--text-muted);font-size:12px;margin:0 0 6px;">EXP ${jp.exp}/${expToNext(jp.level)}</p>
+        <p style="font-family:var(--font-mono);font-size:12px;line-height:1.8;">
+          戦闘力 <span style="color:var(--gold);">${combatPower(id)}</span><br>
+          HP ${ls.maxHp} ・ MP ${ls.maxMp}<br>
+          攻撃力 ${liverAtk(id)} ・ 防御力 ${liverDefStat(id)}
+        </p>
+        ${renderResistancePanel(id)}
       </div>
       <div class="section-block">
         <p class="section-label">装備</p>
+        <p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">装備可能な武器種: ${esc(allowedWeaponLabel)}</p>
         ${equipHtml}
       </div>
       <div class="section-block">
@@ -6113,10 +6131,6 @@
         ${atkRow}
         ${skillRows}
         <p style="color:var(--text-muted);font-size:11px;margin:4px 0 0;">有効スキルは最大${SKILL_LOADOUT_MAX}つまで。希望発動率の合計が50%を超える分は自動的に按分されます。</p>
-      </div>
-      <div class="section-block">
-        <p class="section-label">属性耐性</p>
-        ${renderResistancePanel(id)}
       </div>
     `;
   }
