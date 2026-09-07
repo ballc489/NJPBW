@@ -266,7 +266,7 @@
   /* ライバー詳細画面などのステータス欄。項目ごとに小さなタイルで区切る
    * (単なる横並びテキストや、端から端まで伸びるバー状の行より
    * 「項目感」が出るデザインとして採用)。 */
-  .stat-tile-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,auto);grid-auto-flow:column;gap:8px;}
+  .stat-tile-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(5,auto);grid-auto-flow:column;gap:8px;}
   .stat-tile{background:rgba(255,255,255,0.05);border-left:3px solid var(--gold);padding:7px 10px;}
   .stat-tile .stat-tile-label{display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);letter-spacing:.04em;}
   .stat-tile .stat-tile-value{display:block;font-family:var(--font-mono);font-size:16px;color:var(--text-primary);margin-top:2px;}
@@ -6154,33 +6154,32 @@
           <span class="stat-tile-value" style="color:${color};">${pctLabel}</span>
         </div>`;
     }).join('');
+    const headlineTile = (label, value) => `
+        <div class="stat-tile" style="background:rgba(255,216,99,0.08);"><span class="stat-tile-label">${label}</span><span class="stat-tile-value" style="font-size:20px;color:var(--gold);">${value}</span></div>`;
     const statTilesHtml = `
       <div class="stat-tile-grid">
+        ${headlineTile('レベル', jp.level)}
         <div class="stat-tile"><span class="stat-tile-label">HP</span><span class="stat-tile-value">${ls.hp}<span style="color:var(--text-muted);font-size:12px;">/${ls.maxHp}</span></span></div>
         <div class="stat-tile"><span class="stat-tile-label">MP</span><span class="stat-tile-value">${ls.mp}<span style="color:var(--text-muted);font-size:12px;">/${ls.maxMp}</span></span></div>
         <div class="stat-tile"><span class="stat-tile-label">攻撃力</span><span class="stat-tile-value">${liverAtk(id)}</span></div>
         <div class="stat-tile"><span class="stat-tile-label">防御力</span><span class="stat-tile-value">${liverDefStat(id)}</span></div>
+        ${headlineTile('戦闘力', combatPower(id))}
         ${resistanceTilesHtml}
         <div class="stat-tile"><span class="stat-tile-label">EXP</span><span class="stat-tile-value">${jp.exp}<span style="color:var(--text-muted);font-size:12px;">/${expToNext(jp.level)}</span></span></div>
       </div>`;
 
+    const headingHtml = `<p class="scene-heading"><span>${esc(def.name)}${inParty ? ' <span style="color:var(--gold);font-weight:400;">(編成中)</span>' : ''}</span>${helpButtonHtml('roster')}</p>`;
+
     return `
       <div class="scene-text">
-        ${sceneHeadingHtml(def.name, helpButtonHtml('roster'))}
+        ${headingHtml}
+        ${lockedBanner}
       </div>
       <div class="actions">
         <button id="backFromLiverDetailBtn">${state.ui.rosterDetailFrom === 'party' ? '編成画面に戻る' : 'ライバー一覧に戻る'}</button>
       </div>
-      <div class="scene-text">
-        <p class="log-entry" style="font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--gold);margin:0;">Lv.${jp.level} <span style="font-size:12px;font-weight:400;color:var(--text-primary);">・ ${esc(job.name)}${inParty ? ' ・ 編成中' : ''}</span></p>
-        ${lockedBanner}
-      </div>
       <div class="section-block">
         <p class="section-label">ステータス</p>
-        <div class="stat-tile" style="background:rgba(255,216,99,0.08);margin:0 0 8px;">
-          <span class="stat-tile-label">戦闘力</span>
-          <span class="stat-tile-value" style="font-size:20px;color:var(--gold);">${combatPower(id)}</span>
-        </div>
         ${statTilesHtml}
         <p style="color:var(--text-muted);font-size:11px;margin:8px 0 0;">属性耐性はレベルアップでは変化しません。装備品(主に防具)に付く耐性値によってのみ増減します。</p>
       </div>
