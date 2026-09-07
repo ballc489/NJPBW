@@ -60,6 +60,8 @@
   .login-box{max-width:340px;margin:120px auto;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:28px;text-align:center;}
   .login-box h1{margin-bottom:20px;font-size:18px;}
   .login-box input{margin-bottom:12px;}
+  .recipient-option{padding:6px 8px;border-radius:4px;cursor:pointer;font-size:13px;}
+  .recipient-option:hover{background:rgba(255,255,255,0.06);}
 </style>
 </head>
 <body>
@@ -91,10 +93,16 @@
   let playerListLoading = false;
   let announcementList = [];
   let announcementListLoading = false;
+  let announcementSubTab = 'global'; // 'global' | 'personal' — お知らせ一覧のタブ
   let targetPlayerNames = {}; // 個別宛てお知らせの宛先表示用: player_id -> name
-  // null=非表示 / {id,title,body,tags,published_at,target_player_id,sender_name,editable}
+  const DEFAULT_SENDER_NAME = '七彩の塔運営';
+  // null=非表示 / {id,title,body,tags,published_at,target_player_id,sender_name,editable,isPersonalNew,recipients}
   // editable=falseで詳細(読み取り専用)表示、trueで編集フォーム表示。新規作成時は最初からeditable=true。
+  // isPersonalNew=trueの間だけrecipients([{id,name}])を複数選択できる(個別の新規作成のみ)。
   let announcementDetail = null;
+  let recipientSearchQuery = '';
+  let recipientSearchResults = [];
+  let recipientSearchTimer = null;
   let reportList = [];
   let reportListLoading = false;
   let reportFilter = 'open'; // 'open' | 'resolved' | 'all'
@@ -224,7 +232,9 @@
       const publishedIso = form.publishedAt ? new Date(form.publishedAt).toISOString() : new Date().toISOString();
       const { error } = await sb.rpc('admin_upsert_announcement', {
         p_title: form.title, p_body: form.body, p_id: form.id || null,
-        p_tags: tags, p_published_at: publishedIso
+        p_tags: tags, p_published_at: publishedIso,
+        p_sender_name: form.senderName || null,
+        p_target_player_ids: form.targetPlayerIds && form.targetPlayerIds.length ? form.targetPlayerIds : null
       });
       if(error) throw error;
       announcementDetail = null;
@@ -232,6 +242,25 @@
     }catch(e){
       alert('保存に失敗しました: ' + e.message);
     }
+  }
+
+  async function searchRecipientCandidates(query){
+    const q = query.trim();
+    if(!q){ recipientSearchResults = []; render(); return; }
+    try{
+      const { data, error } = await sb.rpc('search_players_by_id_prefix', { p_query: q });
+      if(error) throw error;
+      recipientSearchResults = data || [];
+    }catch(e){
+      console.error('search recipients failed', e);
+      recipientSearchResults = [];
+    }
+    render();
+    // render()はinnerHTMLをまるごと作り直すため入力欄のフォーカスが切れる。
+    // 検索は入力停止から250ms後にしか走らないとはいえ、続けて入力したい
+    // 場合のためにフォーカスとカーソル位置を戻しておく。
+    const input = document.getElementById('annRecipientInput');
+    if(input){ input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
   }
 
   async function deleteAnnouncement(id){
@@ -394,6 +423,24 @@
     `;
   }
 
+  function renderRecipientPicker(d){
+    const chips = d.recipients.map(r=>
+      `<span class="tag" data-remove-recipient="${r.id}" style="cursor:pointer;">${esc(r.name)} #${esc(r.id.slice(0,8))} ×</span>`
+    ).join('');
+    const resultsHtml = recipientSearchResults.length
+      ? `<div class="panel" style="margin-top:4px;padding:6px;">${recipientSearchResults.map(p=>
+          `<div class="recipient-option" data-pick-recipient="${p.id}" data-pick-name="${esc(p.name)}">${esc(p.name)} <span class="mono muted">#${esc(p.id.slice(0,8))}</span></div>`
+        ).join('')}</div>`
+      : (recipientSearchQuery.trim() ? '<p class="muted" style="font-size:12px;margin-top:4px;">該当するユーザーが見つかりません。</p>' : '');
+    return `
+      <label>宛先ユーザー(IDの一部を入力して検索・複数選択可)
+        <input id="annRecipientInput" type="text" value="${esc(recipientSearchQuery)}" placeholder="ユーザーIDの一部を入力" autocomplete="off">
+      </label>
+      ${resultsHtml}
+      <div style="margin:8px 0 12px;">${chips || '<span class="muted" style="font-size:12px;">まだ宛先が選択されていません。</span>'}</div>
+    `;
+  }
+
   function renderAnnouncementDetailPanel(d){
     const isNew = !d.id;
 
@@ -418,10 +465,14 @@
     }
 
     const publishedLocal = toLocalInputValue(d.published_at || new Date().toISOString());
+    const recipientHtml = d.isPersonalNew
+      ? renderRecipientPicker(d)
+      : (d.target_player_id ? `<p class="muted" style="font-size:12px;">宛先(個別・変更不可): ${esc(targetPlayerNames[d.target_player_id]||'-')} <span class="mono">#${esc(d.target_player_id.slice(0,8))}</span></p>` : '');
     return `
       <div class="panel">
-        <h3>${isNew ? '新規お知らせ' : 'お知らせを編集'}</h3>
-        ${d.target_player_id ? `<p class="muted" style="font-size:12px;">宛先(個別・変更不可): ${esc(targetPlayerNames[d.target_player_id]||'-')} <span class="mono">#${esc(d.target_player_id.slice(0,8))}</span></p>` : ''}
+        <h3>${isNew ? (d.isPersonalNew ? '新規お知らせ(個別宛て)' : '新規お知らせ(全体宛て)') : 'お知らせを編集'}</h3>
+        ${recipientHtml}
+        <label>送信元<input id="annSender" type="text" value="${esc(d.sender_name||'')}" placeholder="${esc(DEFAULT_SENDER_NAME)}"></label>
         <label>タイトル<input id="annTitle" type="text" value="${esc(d.title||'')}"></label>
         <label>本文<textarea id="annBody" rows="6">${esc(d.body||'')}</textarea></label>
         <label>タグ(カンマ区切り)<input id="annTags" type="text" value="${esc((d.tags||[]).join(', '))}"></label>
@@ -454,27 +505,25 @@
   }
 
   function renderAnnouncementsTab(){
-    const globalItems = announcementList.filter(a=>!a.target_player_id);
-    const personalItems = announcementList.filter(a=>!!a.target_player_id);
+    const items = announcementSubTab === 'personal'
+      ? announcementList.filter(a=>!!a.target_player_id)
+      : announcementList.filter(a=>!a.target_player_id);
 
-    const globalHtml = announcementListLoading
+    const listHtml = announcementListLoading
       ? '<p class="muted">読み込み中……</p>'
-      : globalItems.length ? globalItems.map(renderAnnouncementRow).join('') : '<p class="muted">全体宛てのお知らせはまだありません。</p>';
-    const personalHtml = announcementListLoading
-      ? ''
-      : personalItems.length ? personalItems.map(renderAnnouncementRow).join('') : '<p class="muted">個別宛てのお知らせはまだありません。</p>';
+      : items.length ? items.map(renderAnnouncementRow).join('')
+        : `<p class="muted">${announcementSubTab === 'personal' ? '個別宛て' : '全体宛て'}のお知らせはまだありません。</p>`;
 
     const detailHtml = announcementDetail ? renderAnnouncementDetailPanel(announcementDetail) : '';
 
     return `
       <div class="actions" style="margin-bottom:16px;">
-        <button id="annNewBtn" class="primary">新規作成</button>
+        <button data-ann-tab="global" class="${announcementSubTab==='global'?'primary':''}">全体宛て</button>
+        <button data-ann-tab="personal" class="${announcementSubTab==='personal'?'primary':''}">個別宛て</button>
+        <button id="annNewBtn" class="primary" style="margin-left:auto;">新規作成</button>
       </div>
       ${detailHtml}
-      <h3>全体宛て</h3>
-      <div class="ann-list">${globalHtml}</div>
-      <h3 style="margin-top:20px;">個別宛て</h3>
-      <div class="ann-list">${personalHtml}</div>
+      <div class="ann-list">${listHtml}</div>
     `;
   }
 
@@ -621,9 +670,24 @@
       });
     });
 
+    document.querySelectorAll('[data-ann-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        announcementSubTab = b.getAttribute('data-ann-tab');
+        announcementDetail = null;
+        render();
+      });
+    });
+
     const newBtn = document.getElementById('annNewBtn');
     if(newBtn) newBtn.addEventListener('click', ()=>{
-      announcementDetail = { id:null, title:'', body:'', tags:[], published_at:new Date().toISOString(), target_player_id:null, sender_name:null, editable:true };
+      const isPersonal = announcementSubTab === 'personal';
+      recipientSearchQuery = '';
+      recipientSearchResults = [];
+      announcementDetail = {
+        id:null, title:'', body:'', tags:[], published_at:new Date().toISOString(),
+        target_player_id:null, sender_name:DEFAULT_SENDER_NAME, editable:true,
+        isPersonalNew:isPersonal, recipients:[]
+      };
       render();
     });
 
@@ -631,7 +695,7 @@
       b.addEventListener('click', ()=>{
         const id = Number(b.getAttribute('data-view-ann'));
         const a = announcementList.find(a=>a.id===id);
-        announcementDetail = a ? { ...a, editable:false } : null;
+        announcementDetail = a ? { ...a, editable:false, isPersonalNew:false, recipients:[] } : null;
         render();
       });
     });
@@ -648,6 +712,34 @@
     if(annDetailCloseBtn) annDetailCloseBtn.addEventListener('click', ()=>{
       announcementDetail = null;
       render();
+    });
+
+    const recipientInput = document.getElementById('annRecipientInput');
+    if(recipientInput){
+      recipientInput.addEventListener('input', (e)=>{
+        recipientSearchQuery = e.target.value;
+        clearTimeout(recipientSearchTimer);
+        recipientSearchTimer = setTimeout(()=>searchRecipientCandidates(recipientSearchQuery), 250);
+      });
+    }
+    document.querySelectorAll('[data-pick-recipient]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.getAttribute('data-pick-recipient');
+        const name = b.getAttribute('data-pick-name');
+        if(!announcementDetail.recipients.some(r=>r.id===id)){
+          announcementDetail.recipients.push({ id, name });
+        }
+        recipientSearchQuery = '';
+        recipientSearchResults = [];
+        render();
+      });
+    });
+    document.querySelectorAll('[data-remove-recipient]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.getAttribute('data-remove-recipient');
+        announcementDetail.recipients = announcementDetail.recipients.filter(r=>r.id!==id);
+        render();
+      });
     });
 
     document.querySelectorAll('[data-report-filter]').forEach(b=>{
@@ -681,8 +773,22 @@
       const body = document.getElementById('annBody').value.trim();
       const tags = document.getElementById('annTags').value;
       const publishedAt = document.getElementById('annPublishedAt').value;
+      const senderName = document.getElementById('annSender').value.trim();
       if(!title || !body){ alert('タイトルと本文は必須です。'); return; }
-      saveAnnouncement({ id: announcementDetail.id || null, title, body, tags, publishedAt });
+      if(announcementDetail.isPersonalNew){
+        if(recipientSearchQuery.trim()){
+          alert('宛先の入力欄に未確定の文字列が残っています。候補から選択するか、入力欄を空にしてください。');
+          return;
+        }
+        if(!announcementDetail.recipients.length){
+          alert('宛先を1人以上選択してください。');
+          return;
+        }
+      }
+      saveAnnouncement({
+        id: announcementDetail.id || null, title, body, tags, publishedAt, senderName,
+        targetPlayerIds: announcementDetail.isPersonalNew ? announcementDetail.recipients.map(r=>r.id) : null
+      });
     });
     const cancelBtn = document.getElementById('annCancelBtn');
     if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ announcementDetail = null; render(); });
