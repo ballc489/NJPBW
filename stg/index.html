@@ -266,7 +266,7 @@
   /* ライバー詳細画面などのステータス欄。項目ごとに小さなタイルで区切る
    * (単なる横並びテキストや、端から端まで伸びるバー状の行より
    * 「項目感」が出るデザインとして採用)。 */
-  .stat-tile-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .stat-tile-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,auto);grid-auto-flow:column;gap:8px;}
   .stat-tile{background:rgba(255,255,255,0.05);border-left:3px solid var(--gold);padding:7px 10px;}
   .stat-tile .stat-tile-label{display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);letter-spacing:.04em;}
   .stat-tile .stat-tile-value{display:block;font-family:var(--font-mono);font-size:16px;color:var(--text-primary);margin-top:2px;}
@@ -6118,9 +6118,8 @@
     }).join('');
     const statTilesHtml = `
       <div class="stat-tile-grid">
-        <div class="stat-tile"><span class="stat-tile-label">戦闘力</span><span class="stat-tile-value" style="color:var(--gold);">${combatPower(id)}</span></div>
-        <div class="stat-tile"><span class="stat-tile-label">HP</span><span class="stat-tile-value">${ls.maxHp}</span></div>
-        <div class="stat-tile"><span class="stat-tile-label">MP</span><span class="stat-tile-value">${ls.maxMp}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">HP</span><span class="stat-tile-value">${ls.hp}<span style="color:var(--text-muted);font-size:12px;">/${ls.maxHp}</span></span></div>
+        <div class="stat-tile"><span class="stat-tile-label">MP</span><span class="stat-tile-value">${ls.mp}<span style="color:var(--text-muted);font-size:12px;">/${ls.maxMp}</span></span></div>
         <div class="stat-tile"><span class="stat-tile-label">攻撃力</span><span class="stat-tile-value">${liverAtk(id)}</span></div>
         <div class="stat-tile"><span class="stat-tile-label">防御力</span><span class="stat-tile-value">${liverDefStat(id)}</span></div>
         ${resistanceTilesHtml}
@@ -6137,6 +6136,10 @@
       </div>
       <div class="section-block">
         <p class="section-label">ステータス</p>
+        <div style="display:flex;align-items:baseline;justify-content:space-between;background:rgba(255,216,99,0.08);border-left:3px solid var(--gold);padding:6px 10px;margin:0 0 8px;">
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);letter-spacing:.04em;">戦闘力</span>
+          <span style="font-family:var(--font-mono);font-size:20px;color:var(--gold);">${combatPower(id)}</span>
+        </div>
         <p style="color:var(--text-muted);font-size:12px;margin:0 0 8px;">EXP ${jp.exp}/${expToNext(jp.level)}</p>
         ${statTilesHtml}
         <p style="color:var(--text-muted);font-size:11px;margin:8px 0 0;">属性耐性はレベルアップでは変化しません。装備品(主に防具)に付く耐性値によってのみ増減します。</p>
