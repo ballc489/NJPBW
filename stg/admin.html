@@ -105,13 +105,9 @@
     other: 'その他',
   };
   const REPORT_ACTION_LABELS = {
-    ban_reported: '対象ユーザーをBAN',
-    penalty_reported: '対象ユーザーにペナルティ',
-    warn_reported: '対象ユーザーへ警告',
-    warn_reporter: '通報者へ警告(悪質な通報)',
-    penalty_reporter: '通報者にペナルティ',
-    ban_reporter: '通報者をBAN',
-    close: 'クローズ(処罰なし)',
+    ban: 'BAN',
+    penalty: 'ペナルティ',
+    warn: '警告',
   };
 
   async function init(){
@@ -256,54 +252,70 @@
     reportListLoading = false; render();
   }
 
-  async function resolveReport(id, action, deleteMessage, penaltyHours, note){
+  async function reportAction(id, side, action, deleteMessage, penaltyHours, note){
     try{
-      const { error } = await sb.rpc('admin_resolve_report', {
-        p_report_id: id, p_action: action, p_delete_message: !!deleteMessage,
+      const { error } = await sb.rpc('admin_report_action', {
+        p_report_id: id, p_side: side, p_action: action, p_delete_message: !!deleteMessage,
         p_penalty_hours: penaltyHours || null, p_note: note || null
       });
       if(error) throw error;
       await loadReports();
     }catch(e){
-      alert('通報の処理に失敗しました: ' + e.message);
+      alert('処理に失敗しました: ' + e.message);
     }
   }
 
-  function handleResolveAction(id, action, deleteMessage){
+  async function closeReport(id, deleteMessage){
+    try{
+      const { error } = await sb.rpc('admin_close_report', {
+        p_report_id: id, p_delete_message: !!deleteMessage
+      });
+      if(error) throw error;
+      await loadReports();
+    }catch(e){
+      alert('クローズに失敗しました: ' + e.message);
+    }
+  }
+
+  // side: 'reported'(通報された側) | 'reporter'(通報した側)。
+  // それぞれ独立して1回だけ選べる(クローズはしない、別ボタンで行う)。
+  function handleReportSideAction(id, side, action, deleteMessage){
+    const sideLabel = side === 'reported' ? '対象ユーザー' : '通報者';
     const label = REPORT_ACTION_LABELS[action] || action;
     const deleteNote = deleteMessage ? '対象の投稿も削除されます。' : '';
 
-    if(action === 'penalty_reported' || action === 'penalty_reporter'){
+    if(action === 'penalty'){
       const hoursStr = prompt('利用を制限する時間を入力してください(時間単位):', '24');
       if(hoursStr === null) return;
       const hours = parseInt(hoursStr, 10);
       if(!hours || hours <= 0){ alert('有効な時間を入力してください。'); return; }
       const note = prompt('制限理由を入力してください(空欄可):', '');
       if(note === null) return;
-      if(!confirm(`${label}(${hours}時間)を実行します。${deleteNote}よろしいですか？`)) return;
-      resolveReport(id, action, deleteMessage, hours, note);
+      if(!confirm(`${sideLabel}に${label}(${hours}時間)を実行します。${deleteNote}よろしいですか？`)) return;
+      reportAction(id, side, action, deleteMessage, hours, note);
       return;
     }
-    if(action === 'ban_reported' || action === 'ban_reporter'){
+    if(action === 'ban'){
       const note = prompt('BAN理由を入力してください:', 'チャットでの通報対応によるBAN');
       if(note === null) return;
-      if(!confirm(`${label}を実行します。${deleteNote}よろしいですか？`)) return;
-      resolveReport(id, action, deleteMessage, null, note);
+      if(!confirm(`${sideLabel}に${label}を実行します。${deleteNote}よろしいですか？`)) return;
+      reportAction(id, side, action, deleteMessage, null, note);
       return;
     }
-    if(action === 'warn_reported' || action === 'warn_reporter'){
-      const defaultMsg = action === 'warn_reported'
-        ? 'チャットへの投稿内容について、運営より警告いたします。利用規約に違反する投稿を繰り返した場合、アカウントの利用を制限することがあります。'
-        : 'いただいた通報を運営で確認しましたが、妥当性が認められず、悪意のある通報(嫌がらせ)であると判断いたしました。今後このような通報を繰り返した場合、アカウントの利用を制限することがあります。';
-      const note = prompt('お知らせに表示する警告文を確認・編集してください:', defaultMsg);
-      if(note === null) return;
-      if(!confirm(`${label}を実行します。${deleteNote}よろしいですか？`)) return;
-      resolveReport(id, action, deleteMessage, null, note);
-      return;
-    }
-    // close
-    if(!confirm(`この通報をクローズします(処罰は行いません)。${deleteNote}よろしいですか？`)) return;
-    resolveReport(id, action, deleteMessage, null, null);
+    // warn
+    const defaultMsg = side === 'reported'
+      ? 'チャットへの投稿内容について、運営より警告いたします。利用規約に違反する投稿を繰り返した場合、アカウントの利用を制限することがあります。'
+      : 'いただいた通報を運営で確認しましたが、妥当性が認められず、悪意のある通報(嫌がらせ)であると判断いたしました。今後このような通報を繰り返した場合、アカウントの利用を制限することがあります。';
+    const note = prompt('お知らせに表示する警告文を確認・編集してください:', defaultMsg);
+    if(note === null) return;
+    if(!confirm(`${sideLabel}に${label}を実行します。${deleteNote}よろしいですか？`)) return;
+    reportAction(id, side, action, deleteMessage, null, note);
+  }
+
+  function handleCloseReport(id, deleteMessage){
+    const deleteNote = deleteMessage ? '対象の投稿も削除されます。' : '';
+    if(!confirm(`この通報をクローズします。${deleteNote}よろしいですか？`)) return;
+    closeReport(id, deleteMessage);
   }
 
   function toLocalInputValue(iso){
@@ -428,9 +440,39 @@
     return `<details style="margin-top:8px;"><summary class="muted" style="cursor:pointer;">${esc(label)}</summary><div style="margin-top:6px;">${rows}</div></details>`;
   }
 
+  function renderReportSideStatus(label, action, at){
+    if(!action){
+      return `<p class="muted" style="font-size:12px;">${esc(label)}: 未対応</p>`;
+    }
+    return `<p style="font-size:12px;">${esc(label)}: <strong>${esc(REPORT_ACTION_LABELS[action]||action)}</strong> 実行済み${at ? ' / ' + new Date(at).toLocaleString('ja-JP') : ''}</p>`;
+  }
+
   function renderReportRow(r){
     const resolved = r.status === 'resolved';
     const catLabel = REPORT_REASON_LABELS[r.reason_category] || r.reason_category;
+    const reportedDone = !!r.reported_action;
+    const reporterDone = !!r.reporter_action;
+
+    const reportedActionsHtml = reportedDone
+      ? renderReportSideStatus('対象ユーザーへの対応', r.reported_action, r.reported_action_at)
+      : `
+        <p class="muted" style="font-size:12px;margin-bottom:4px;">対象ユーザーへの対応(いずれか1つ):</p>
+        <div class="actions" style="margin-top:0;">
+          <button data-report-action="${r.id}" data-side="reported" data-action="ban" class="danger">BAN</button>
+          <button data-report-action="${r.id}" data-side="reported" data-action="penalty">ペナルティ</button>
+          <button data-report-action="${r.id}" data-side="reported" data-action="warn">警告</button>
+        </div>`;
+
+    const reporterActionsHtml = reporterDone
+      ? renderReportSideStatus('通報者への対応', r.reporter_action, r.reporter_action_at)
+      : `
+        <p class="muted" style="font-size:12px;margin-bottom:4px;">通報者への対応(いずれか1つ。通報が悪質だった場合など):</p>
+        <div class="actions" style="margin-top:0;">
+          <button data-report-action="${r.id}" data-side="reporter" data-action="warn">警告</button>
+          <button data-report-action="${r.id}" data-side="reporter" data-action="penalty">ペナルティ</button>
+          <button data-report-action="${r.id}" data-side="reporter" data-action="ban" class="danger">BAN</button>
+        </div>`;
+
     return `
       <div class="panel">
         <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
@@ -438,7 +480,7 @@
             <strong>${esc(r.reported_player_name)}</strong>
             <span class="mono muted">#${esc(r.reported_player_id ? r.reported_player_id.slice(0,8) : '-')}</span>
             <span class="badge gold">${esc(catLabel)}</span>
-            ${resolved ? `<span class="badge danger">対応済み</span>` : ''}
+            ${resolved ? `<span class="badge danger">クローズ済み</span>` : ''}
           </div>
           <div class="muted mono" style="font-size:11px;">${new Date(r.created_at).toLocaleString('ja-JP')} / ${esc(r.channel)}</div>
         </div>
@@ -447,20 +489,23 @@
         <p class="muted" style="font-size:11px;">通報者ID: ${esc(r.reporter_id ? r.reporter_id.slice(0,8) : '-')}</p>
         ${renderReportContext('チャンネル全体の前後文脈', r.channel_context)}
         ${renderReportContext('この投稿者の前後の発言', r.author_context)}
+
+        ${!r.message_deleted ? `
+          <label style="margin-top:10px;display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" data-delete-msg="${r.id}" style="width:auto;">対象の投稿を削除する
+          </label>` : ''}
+
+        <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">
+          ${reportedActionsHtml}
+        </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">
+          ${reporterActionsHtml}
+        </div>
+
         ${resolved
-          ? `<p class="muted" style="margin-top:10px;">処理内容: ${esc(REPORT_ACTION_LABELS[r.resolution_action]||r.resolution_action||'-')}${r.resolved_at ? ' / ' + new Date(r.resolved_at).toLocaleString('ja-JP') : ''}</p>`
-          : `
-            <label style="margin-top:10px;display:flex;align-items:center;gap:6px;">
-              <input type="checkbox" data-delete-msg="${r.id}" style="width:auto;">対象の投稿を削除する
-            </label>
-            <div class="actions">
-              <button data-resolve="${r.id}" data-action="ban_reported" class="danger">対象をBAN</button>
-              <button data-resolve="${r.id}" data-action="penalty_reported">対象にペナルティ</button>
-              <button data-resolve="${r.id}" data-action="warn_reported">対象へ警告</button>
-              <button data-resolve="${r.id}" data-action="warn_reporter">通報者へ警告</button>
-              <button data-resolve="${r.id}" data-action="penalty_reporter">通報者にペナルティ</button>
-              <button data-resolve="${r.id}" data-action="ban_reporter" class="danger">通報者をBAN</button>
-              <button data-resolve="${r.id}" data-action="close">クローズ</button>
+          ? `<p class="muted" style="margin-top:10px;">クローズ済み${r.resolved_at ? ' / ' + new Date(r.resolved_at).toLocaleString('ja-JP') : ''}</p>`
+          : `<div class="actions" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">
+              <button data-close-report="${r.id}">クローズ(この通報への対応を終了する)</button>
             </div>`
         }
       </div>
@@ -552,13 +597,22 @@
         loadReports();
       });
     });
-    document.querySelectorAll('[data-resolve]').forEach(b=>{
+    document.querySelectorAll('[data-report-action]').forEach(b=>{
       b.addEventListener('click', ()=>{
-        const id = Number(b.getAttribute('data-resolve'));
+        const id = Number(b.getAttribute('data-report-action'));
+        const side = b.getAttribute('data-side');
         const action = b.getAttribute('data-action');
         const checkbox = document.querySelector(`[data-delete-msg="${id}"]`);
         const deleteMessage = checkbox ? checkbox.checked : false;
-        handleResolveAction(id, action, deleteMessage);
+        handleReportSideAction(id, side, action, deleteMessage);
+      });
+    });
+    document.querySelectorAll('[data-close-report]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = Number(b.getAttribute('data-close-report'));
+        const checkbox = document.querySelector(`[data-delete-msg="${id}"]`);
+        const deleteMessage = checkbox ? checkbox.checked : false;
+        handleCloseReport(id, deleteMessage);
       });
     });
 

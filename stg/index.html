@@ -5647,6 +5647,7 @@
                   ${unread ? '<span class="notify-badge" style="margin-left:0;margin-right:6px;">未読</span>' : ''}${esc(a.title)}
                   <span style="float:right;color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${formatAnnouncementDate(a.published_at)}</span>
                 </span>
+                ${a.sender_name ? `<div style="margin-top:4px;color:var(--text-muted);font-size:11px;">${esc(a.sender_name)}より</div>` : ''}
                 ${tagsHtml ? `<div style="margin-top:6px;">${tagsHtml}</div>` : ''}
               </div>`;
           }).join('')
@@ -5687,7 +5688,7 @@
     return `
       <div class="scene-text">
         ${sceneHeadingHtml(a.title)}
-        <p style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;margin-top:4px;">${formatAnnouncementDate(a.published_at)}</p>
+        <p style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;margin-top:4px;">${formatAnnouncementDate(a.published_at)}${a.sender_name ? ` ／ 送信元: ${esc(a.sender_name)}` : ''}</p>
         ${tagsHtml ? `<div style="margin:8px 0 4px;">${tagsHtml}</div>` : ''}
         <p class="log-entry system" style="margin-top:12px;">${bodyHtml}</p>
       </div>
@@ -6945,14 +6946,14 @@
       });
       if(error) throw error;
       state.ui.chatReportPopup = null;
-      pushLog('通報を受け付けた。運営で内容を確認する。', 'system');
+      pushLog('通報を受け付けました。運営にて内容を確認いたします。', 'system');
       render();
     }catch(e){
       console.error('submit chat report failed', e);
       popup.submitting = false;
-      popup.error = /already reported/.test(e.message) ? 'この投稿はすでに通報済みだ。'
-        : /cannot report own message/.test(e.message) ? '自分の投稿は通報できない。'
-        : '通報の送信に失敗した。通信状況を確認してほしい。';
+      popup.error = /already reported/.test(e.message) ? 'この投稿はすでに通報済みです。'
+        : /cannot report own message/.test(e.message) ? '自分の投稿は通報できません。'
+        : '通報の送信に失敗しました。通信状況をご確認ください。';
       render();
     }
   }
