@@ -6167,11 +6167,13 @@
     return `
       <div class="scene-text">
         ${sceneHeadingHtml(def.name, helpButtonHtml('roster'))}
-        <p class="log-entry" style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">Lv.${jp.level} ・ ${esc(job.name)}${inParty ? ' ・ 編成中' : ''}</p>
-        ${lockedBanner}
       </div>
       <div class="actions">
         <button id="backFromLiverDetailBtn">${state.ui.rosterDetailFrom === 'party' ? '編成画面に戻る' : 'ライバー一覧に戻る'}</button>
+      </div>
+      <div class="scene-text">
+        <p class="log-entry" style="font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--gold);margin:0;">Lv.${jp.level} <span style="font-size:12px;font-weight:400;color:var(--text-primary);">・ ${esc(job.name)}${inParty ? ' ・ 編成中' : ''}</span></p>
+        ${lockedBanner}
       </div>
       <div class="section-block">
         <p class="section-label">ステータス</p>
