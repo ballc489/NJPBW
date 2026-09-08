@@ -692,6 +692,113 @@
     epic:     {label:'エピック', cls:'epic',     mult:3.2, weight:3},
   };
 
+  /* ---------------------------------------------------------------
+   * アクセサリー・クリスタル
+   * 武器・防具とは別枠の装備(1人1個まで)。アクセサリー本体は「主効果」
+   * 1つと「クリスタルスロット」(0〜5)を持ち、スロットには「消費スロット数」
+   * (1〜3)を持つクリスタルを、合計消費が枠を超えない範囲で何個でも挿せる。
+   * 主効果と同じ種類の効果を持つクリスタルを挿すと、その主効果自体・
+   * 該当クリスタル自体、それぞれの数値が同種ボーナス倍率だけ上乗せされる
+   * (計算はcomputeAccessoryEffects()に集約)。
+   *
+   * 効果の種類は、ステータス系(HP/MP/攻撃力/防御力の%上昇)・属性耐性系
+   * (既存の武器防具と同じ+N方式)・特殊系(ドロップ率/クリティカル率/
+   * 状態異常耐性)の10種。数値の振れ幅は種類ごとに固定(レアリティでは
+   * 変えない。レアリティが効くのはアクセサリーのスロット数だけ)。
+   * --------------------------------------------------------------- */
+  const SAME_EFFECT_BONUS_MULT = 1.1;
+  const ACCESSORY_EFFECT_DEFS = {
+    hpPct:         { label:'HP',           unit:'%', min:1, max:3 },
+    mpPct:         { label:'MP',           unit:'%', min:1, max:3 },
+    atkPct:        { label:'攻撃力',       unit:'%', min:1, max:3 },
+    defPct:        { label:'防御力',       unit:'%', min:1, max:3 },
+    fireResist:    { label:'火属性耐性',   unit:'',  min:1, max:10 },
+    iceResist:     { label:'氷属性耐性',   unit:'',  min:1, max:10 },
+    thunderResist: { label:'雷属性耐性',   unit:'',  min:1, max:10 },
+    dropRate:      { label:'ドロップ率',   unit:'%', min:1, max:3 },
+    critChance:    { label:'クリティカル率', unit:'%', min:1, max:3 },
+    ailmentResist: { label:'状態異常耐性', unit:'%', min:1, max:10 },
+  };
+  /* アクセサリー名は、にじさんじの配信システムにある「アクセサリー」機能
+   * (配信者が顔周りに着ける装飾)のイメージに倣った名称プール。 */
+  const ACCESSORY_NAME_POOL = [
+    'うさ耳','王冠','集中線','天使の輪','悪魔の角','猫耳','星のかんむり',
+    'リボン','ヘッドセット','眼鏡','蝶リボン','花冠','ちょうちょ髪飾り'
+  ];
+  const CRYSTAL_NAME_BY_EFFECT = {
+    hpPct:'生命のクリスタル', mpPct:'精神のクリスタル',
+    atkPct:'剛力のクリスタル', defPct:'守護のクリスタル',
+    fireResist:'紅蓮のクリスタル', iceResist:'氷結のクリスタル', thunderResist:'雷光のクリスタル',
+    dropRate:'強奪のクリスタル', critChance:'会心のクリスタル', ailmentResist:'加護のクリスタル'
+  };
+  function pickAccessoryEffectType(){
+    const keys = Object.keys(ACCESSORY_EFFECT_DEFS);
+    return keys[Math.floor(Math.random()*keys.length)];
+  }
+  function rollAccessoryEffectValue(effectType){
+    const def = ACCESSORY_EFFECT_DEFS[effectType];
+    return def ? rnd(def.min, def.max) : 1;
+  }
+  const ACCESSORY_SLOT_COUNT_RANGE = { common:[0,1], uncommon:[1,2], rare:[2,4], epic:[3,5] };
+  function makeAccessory(rarityKey){
+    rarityKey = rarityKey || rollRarity();
+    const rarity = RARITY[rarityKey];
+    const effectType = pickAccessoryEffectType();
+    const range = ACCESSORY_SLOT_COUNT_RANGE[rarityKey] || [0,1];
+    return {
+      id: 'itm_'+Math.random().toString(36).slice(2,9),
+      type:'accessory', rarity:rarityKey, rarityLabel:rarity.cls,
+      name: ACCESSORY_NAME_POOL[Math.floor(Math.random()*ACCESSORY_NAME_POOL.length)],
+      mainEffect: { type: effectType, value: rollAccessoryEffectValue(effectType) },
+      slotCount: rnd(range[0], range[1]),
+      crystals: []
+    };
+  }
+  function makeCrystal(rarityKey){
+    rarityKey = rarityKey || rollRarity();
+    const rarity = RARITY[rarityKey];
+    const effectType = pickAccessoryEffectType();
+    return {
+      id: 'itm_'+Math.random().toString(36).slice(2,9),
+      type:'crystal', rarity:rarityKey, rarityLabel:rarity.cls,
+      name: CRYSTAL_NAME_BY_EFFECT[effectType] || 'クリスタル',
+      effect: { type: effectType, value: rollAccessoryEffectValue(effectType) },
+      slotCost: rnd(1,3)
+    };
+  }
+  function accessoryEffectLabel(effect){
+    const def = effect && ACCESSORY_EFFECT_DEFS[effect.type];
+    if(!def) return '';
+    const sign = effect.value > 0 ? '+' : '';
+    return `${def.label}${sign}${effect.value}${def.unit}`;
+  }
+  /* アクセサリー本体の装備効果を集計する。同種ボーナス(主効果と同じ種類の
+   * クリスタルが挿さっている場合、主効果・該当クリスタルの両方に効く)は
+   * ここに集約する。他プレイヤーのプロフィール閲覧(foreignAccessoryEffects)
+   * でも同じロジックを使う。 */
+  function computeAccessoryEffects(accessory){
+    const totals = {};
+    if(!accessory || !accessory.mainEffect) return totals;
+    const crystals = accessory.crystals || [];
+    const hasMatch = crystals.some(c=>c.effect && c.effect.type === accessory.mainEffect.type);
+    const mainValue = accessory.mainEffect.value * (hasMatch ? SAME_EFFECT_BONUS_MULT : 1);
+    totals[accessory.mainEffect.type] = (totals[accessory.mainEffect.type]||0) + mainValue;
+    crystals.forEach(c=>{
+      if(!c.effect) return;
+      const matches = c.effect.type === accessory.mainEffect.type;
+      const value = c.effect.value * (matches ? SAME_EFFECT_BONUS_MULT : 1);
+      totals[c.effect.type] = (totals[c.effect.type]||0) + value;
+    });
+    return totals;
+  }
+  function liverAccessoryEffects(id){
+    const ls = liverState(id);
+    return computeAccessoryEffects(ls && ls.equipped && ls.equipped.accessory);
+  }
+  function foreignAccessoryEffects(snap){
+    return computeAccessoryEffects(snap && snap.equippedAccessory);
+  }
+
   /* 合成(装備強化)。強化値+1ごとに基礎値の5%を加算(5%分が1未満なら
    * 最低+1を保証)。最大+10まで(基礎値が十分大きい装備ではおよそ+50%)。 */
   const ENHANCE_MAX_LEVEL = 10;
@@ -770,6 +877,12 @@
         rarity:'common', rarityLabel:'common', name:'獣皮の鎧', value:10, resist:null
       }) }
     },
+    {
+      id:'craft_accessory', category:'アクセサリー',
+      name:'アクセサリー錬成',
+      materials:[{key:'fine_iron_ore', qty:2}, {key:'mana_residue', qty:3}],
+      output:{ type:'item', make: () => makeAccessory() }
+    },
   ];
 
   /* カーソルを合わせた時に表示する、錬成結果アイテムの説明。装備は
@@ -814,10 +927,12 @@
       pushLog(`錬金に成功し、「${RARITY[key].label}のオーブ」を${recipe.output.qty}個手に入れた。`, 'reward');
     } else if(recipe.output.type === 'item'){
       const item = recipe.output.make();
-      const grade = rollAlchemyGrade();
-      if(grade > 0) item.enhanceLevel = grade;
+      let gradeLabel = '';
+      if(item.type === 'weapon' || item.type === 'armor'){
+        const grade = rollAlchemyGrade();
+        if(grade > 0){ item.enhanceLevel = grade; gradeLabel = ` 大成功！(強化値+${grade})`; }
+      }
       addItemToInventory(item);
-      const gradeLabel = grade > 0 ? ` 大成功！(強化値+${grade})` : '';
       pushLog(`錬金に成功し、「${item.name}」を手に入れた。${gradeLabel}`, 'reward');
     }
 
@@ -903,6 +1018,13 @@
   }
 
   function itemValueLabel(item){
+    if(item.type === 'accessory'){
+      const used = (item.crystals||[]).reduce((s,c)=>s+(c.slotCost||0), 0);
+      return `[${accessoryEffectLabel(item.mainEffect)}] スロット${used}/${item.slotCount||0}`;
+    }
+    if(item.type === 'crystal'){
+      return `[${accessoryEffectLabel(item.effect)}] 消費${item.slotCost}`;
+    }
     let s = `(+${itemEffectiveValue(item)})`;
     if(item.enhanceLevel) s += ` [強化+${item.enhanceLevel}]`;
     if(item.weaponType) s += ` [${WEAPON_TYPES[item.weaponType].name}]`;
@@ -917,6 +1039,19 @@
   }
 
   function itemDetailText(item){
+    if(item.type === 'accessory'){
+      const rarityLabel = (RARITY[item.rarity] && RARITY[item.rarity].label) || '';
+      const used = (item.crystals||[]).reduce((s,c)=>s+(c.slotCost||0), 0);
+      let text = `${item.name} / ${rarityLabel} / アクセサリー / 主効果 ${accessoryEffectLabel(item.mainEffect)} / クリスタルスロット ${used}/${item.slotCount||0}`;
+      if((item.crystals||[]).length){
+        text += ` / 装着中: ${item.crystals.map(c=>`${c.name}(${accessoryEffectLabel(c.effect)})`).join('・')}`;
+      }
+      return text;
+    }
+    if(item.type === 'crystal'){
+      const rarityLabel = (RARITY[item.rarity] && RARITY[item.rarity].label) || '';
+      return `${item.name} / ${rarityLabel} / クリスタル / 効果 ${accessoryEffectLabel(item.effect)} / 消費スロット${item.slotCost}`;
+    }
     const typeLabel = item.weaponType ? WEAPON_TYPES[item.weaponType].name : (item.type==='weapon' ? '武器' : '防具');
     const rarityLabel = (RARITY[item.rarity] && RARITY[item.rarity].label) || '';
     let text = `${item.name} / ${rarityLabel} / ${typeLabel} / 効果値 +${itemEffectiveValue(item)}`;
@@ -976,7 +1111,10 @@
             effects:[
               {type:'damage', target:'enemyRandom', amount:1.3},
               {type:'poison', target:'enemyRandom', amount:0.08, duration:3}
-            ] }
+            ] },
+          { key:'petrify_gaze', name:'石化の一睨み', everyNTurns:5,
+            announceText:'{name}が石の視線を放った！',
+            effects:[ {type:'stun', target:'enemyRandom', amount:1, duration:1} ] }
         ] },
       firstClearReward:{name:'守護者の心臓', type:'armor'}
     },
@@ -985,7 +1123,15 @@
       group:'spire', groupName:'星詠みの尖塔', floorLabel:'1F',
       level:2, rewardMult:1.1,
       boss:{ name:'尖塔の門番', hpMult:1.6, atkMult:1.1, defMult:1.3, weakness:'fire',
-        skills:[{key:'crit', name:'閃光の一閃', everyNTurns:3, kind:'trueDamage', mult:2.0, element:'fire'}] },
+        skills:[
+          {key:'crit', name:'閃光の一閃', everyNTurns:3, kind:'trueDamage', mult:2.0, element:'fire'},
+          { key:'seal_voice', name:'静寂の一睨み', everyNTurns:4,
+            announceText:'{name}の「静寂の一睨み」！',
+            effects:[
+              {type:'damage', target:'enemyRandom', amount:1.0},
+              {type:'silence', target:'enemyRandom', amount:1, duration:2}
+            ] }
+        ] },
       firstClearReward:{name:'門番の鍵爪', type:'weapon'}
     },
     {
@@ -1427,6 +1573,10 @@
   function marketEquipEligible(item){
     if(!item) return false;
     if(MARKET_EXCLUDED_EQUIPMENT_NAMES.has(item.name)) return false;
+    // クリスタルが挿さったままのアクセサリーは出品不可(先に外してもらう)。
+    // 装着中のクリスタル自体はstate.inventoryに現れないので、ここでの
+    // クリスタル側のガードは実質不要だが念のため明示しておく。
+    if(item.type === 'accessory' && (item.crystals||[]).length > 0) return false;
     return (MARKET_EQUIP_RARITY_RANK[item.rarity] || 0) >= MARKET_MIN_EQUIP_RARITY_RANK;
   }
   function marketStackDefFor(bucket, key){
@@ -1453,6 +1603,7 @@
    * 優先して左側に、装備種別(武器種別)は最右に置く。他画面の表記には
    * 影響させないよう、あえて別関数として持つ。 */
   function marketEquipMetaLabel(item){
+    if(item.type === 'accessory' || item.type === 'crystal') return itemValueLabel(item);
     let s = `効果値 +${itemEffectiveValue(item)}`;
     if(item.enhanceLevel) s += ` [強化+${item.enhanceLevel}]`;
     if(item.affix && item.affix.kind==='element'){
@@ -1937,11 +2088,18 @@
   let combatPassiveFlags = {}; // { liverId: {...} } 条件付きパッシブの発動状態・ログ済みフラグ。戦闘開始時にリセット
   let playerStatusEffects = {}; // { liverId: { [effectType]: {amount, turnsLeft, freshlyGranted} } } 戦闘中のみ・保存しない
 
-  /* 通常攻撃(スキルを使わなかった場合の攻撃)時、低確率で防御力を無視した
-   * 大ダメージが発生する。プレイヤー側は「会心の一撃」、敵側は「痛恨の一撃」
-   * と呼び分ける。スキルによる攻撃には影響しない(通常攻撃専用の演出)。 */
+  /* 低確率で防御力を無視した大ダメージが発生する(プレイヤー側は「会心の
+   * 一撃」、敵側は「痛恨の一撃」)。元々は通常攻撃専用だったが、アクセサリー
+   * の「クリティカル率」効果を活かすため、スキルによる攻撃にも同じ判定を
+   * 適用する(applyEffectToTargetのdamage分岐)。casterIdを渡すとその
+   * ライバーのアクセサリー加算込みの確率になり、null(敵の行動)なら
+   * 基礎値のみになる。 */
   const CRIT_CHANCE = 0.03;
   const CRIT_MULT = 2.0;
+  function rollCrit(casterId){
+    const bonus = casterId ? (liverAccessoryEffects(casterId).critChance||0)/100 : 0;
+    return Math.random() < (CRIT_CHANCE + bonus);
+  }
 
   const STATUS_EFFECT_LABELS = {
     atkBuff:'攻撃力上昇', defBuff:'防御力上昇', atkDebuff:'攻撃力低下', defDebuff:'防御力低下',
@@ -2122,11 +2280,12 @@
       let raw;
       if(casterIsEnemy){
         const atk = effectiveEnemyAtk();
-        raw = effect.ignoreDef
-          ? Math.max(1, Math.round(atk * effect.amount) + rnd(-1,2))
+        const isCrit = rollCrit(null);
+        raw = (effect.ignoreDef || isCrit)
+          ? Math.max(1, Math.round(atk * effect.amount * (isCrit?CRIT_MULT:1)) + rnd(-1,2))
           : Math.max(1, Math.round(atk * effect.amount) - liverDefStat(target) + rnd(-1,1));
         const dmg = applyDamageToLiver(target, raw, effect.element);
-        pushLog(`${combatEnemy.name}の攻撃！ ${targetName}が ${dmg} のダメージを受けた。`, 'danger', true);
+        pushLog(`${isCrit?'痛恨の一撃！ ':''}${combatEnemy.name}の攻撃！ ${targetName}が ${dmg} のダメージを受けた。`, 'danger', true);
         if(effect.drainRatio){
           const healed = Math.max(0, Math.round(dmg * effect.drainRatio));
           if(healed > 0){
@@ -2140,14 +2299,15 @@
         const casterName = liverDef(casterId).name;
         const atk = combatAtk(casterId);
         const affixMult = weaponAffixDamageMult(casterId);
+        const isCrit = rollCrit(casterId);
         let mult = effect.amount;
         let isWeak = null;
         if(effect.weaknessMult != null){
           isWeak = (combatEnemy.weakness === effect.element);
           mult = isWeak ? effect.weaknessMult : effect.offMult;
         }
-        if(effect.ignoreDef){
-          raw = Math.max(1, Math.round(atk * mult * affixMult) + rnd(-1,3));
+        if(effect.ignoreDef || isCrit){
+          raw = Math.max(1, Math.round(atk * mult * affixMult * (isCrit?CRIT_MULT:1)) + rnd(-1,3));
         } else {
           const def = effectiveEnemyDef() * (effect.defMult != null ? effect.defMult : 1);
           raw = Math.max(1, Math.round((atk - def) * mult * affixMult) + rnd(-1,2));
@@ -2155,14 +2315,15 @@
         combatEnemyHp -= raw;
         const drained = applyOnHitMpDrain(casterId, raw);
         const drainSuffix = drained > 0 ? ` (MP+${drained})` : '';
+        const critPrefix = isCrit ? '会心の一撃！ ' : '';
         let line;
         if(isWeak === true){
           const elLabel = ELEMENT_LABELS[effect.element] || '';
-          line = `${casterName}の攻撃！ 弱点(${elLabel})を突き、${raw} のダメージ！`;
+          line = `${critPrefix}${casterName}の攻撃！ 弱点(${elLabel})を突き、${raw} のダメージ！`;
         } else if(isWeak === false){
-          line = `${casterName}の攻撃！ ${raw} のダメージ(弱点不一致)。`;
-        } else if(effect.ignoreDef){
-          line = `${casterName}の攻撃！ 防御を貫く ${raw} のダメージ。`;
+          line = `${critPrefix}${casterName}の攻撃！ ${raw} のダメージ(弱点不一致)。`;
+        } else if(effect.ignoreDef || isCrit){
+          line = `${critPrefix}${casterName}の攻撃！ 防御を貫く ${raw} のダメージ。`;
         } else {
           line = `${casterName}の攻撃！ ${combatEnemy.name}に ${raw} のダメージ。`;
         }
@@ -2183,6 +2344,18 @@
         pushLog(`${targetName}のHPが ${heal} 回復した。`, 'reward', true);
       }
       return;
+    }
+
+    // 状態異常耐性: 敵からプレイヤーへの状態異常付与(毒/行動不能/沈黙)だけを
+    // 対象に、一定確率で付与そのものを防ぐ(すでに付いている効果を弱める
+    // 「軽減」とは別の仕組み。軽減は今後実装する場合、別の効果名で区別する)。
+    if(casterIsEnemy && target !== 'enemy'
+      && STATUS_EFFECT_ICONS[effect.type] && STATUS_EFFECT_ICONS[effect.type].category === 'ailment'){
+      const resist = (liverAccessoryEffects(target).ailmentResist||0)/100;
+      if(resist > 0 && Math.random() < resist){
+        pushLog(`${targetName}は「${statusEffectLabel(effect.type)}」の付与を防いだ！`, 'system', true);
+        return;
+      }
     }
 
     // バフ/デバフ・状態異常はここでまとめて登録するだけ
@@ -2552,6 +2725,11 @@
     const mainStat = jobStatPotential(activeJob, activeLevel);
     mainStat.atk += ls.equipped.weapon ? itemEffectiveValue(ls.equipped.weapon) : 0;
     mainStat.def += ls.equipped.armor ? itemEffectiveValue(ls.equipped.armor) : 0;
+    const accEff = liverAccessoryEffects(liverId);
+    mainStat.hp  = Math.round(mainStat.hp  * (1 + (accEff.hpPct ||0)/100));
+    mainStat.mp  = Math.round(mainStat.mp  * (1 + (accEff.mpPct ||0)/100));
+    mainStat.atk = Math.round(mainStat.atk * (1 + (accEff.atkPct||0)/100));
+    mainStat.def = Math.round(mainStat.def * (1 + (accEff.defPct||0)/100));
 
     let total = weightedStatSum(mainStat, CP_MAIN_WEIGHT);
     Object.keys(JOB_DEFS).forEach(jobId=>{
@@ -2637,8 +2815,9 @@
   function recomputeLiverMaxStats(id, fullRestore){
     const ls = liverState(id);
     const jp = jobProgressFor(id);
-    const newMaxHp = Math.round(jobMaxHp(ls.job, jp.level) * passiveStatMult(id, 'hp'));
-    const newMaxMp = Math.round(jobMaxMp(ls.job, jp.level) * passiveStatMult(id, 'mp'));
+    const accEff = liverAccessoryEffects(id);
+    const newMaxHp = Math.round(jobMaxHp(ls.job, jp.level) * passiveStatMult(id, 'hp') * (1 + (accEff.hpPct||0)/100));
+    const newMaxMp = Math.round(jobMaxMp(ls.job, jp.level) * passiveStatMult(id, 'mp') * (1 + (accEff.mpPct||0)/100));
     ls.maxHp = newMaxHp;
     ls.maxMp = newMaxMp;
     if(fullRestore){
@@ -2666,7 +2845,7 @@
     return {
       job, jobProgress,
       hp:maxHp, maxHp, mp:maxMp, maxMp,
-      equipped: {weapon:null, armor:null},
+      equipped: {weapon:null, armor:null, accessory:null},
       unlocked: !!liverDefObj.startUnlocked,
       unlockedAt: liverDefObj.startUnlocked ? Date.now() : null,
       costume: defaultCostume,
@@ -2698,7 +2877,7 @@
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
         rosterDetailId: null, rosterDetailFrom: 'roster',
         profileViewId: null, profileFrom: 'town', profileLiverId: null,
-        profileLiverFrom: 'profile', profileCommentEditing: false },
+        profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null },
       pendingDefeatGoldLoss: 0,
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
@@ -2718,14 +2897,16 @@
     const ls = liverState(id);
     const w = ls.equipped.weapon;
     const atk = jobBaseAtk(ls.job, jobProgressFor(id).level) + (w ? itemEffectiveValue(w) : 0);
-    return Math.round(atk * passiveStatMult(id, 'atk'));
+    const atkPct = liverAccessoryEffects(id).atkPct || 0;
+    return Math.round(atk * passiveStatMult(id, 'atk') * (1 + atkPct/100));
   }
   function liverDefStat(id){
     const ls = liverState(id);
     const a = ls.equipped.armor;
     const def = jobBaseDef(ls.job, jobProgressFor(id).level) + (a ? itemEffectiveValue(a) : 0);
     const statusMult = statusStatMult(playerStatusEffects[id], 'defBuff', 'defDebuff');
-    return Math.max(1, Math.round(def * passiveStatMult(id, 'def') * statusMult));
+    const defPct = liverAccessoryEffects(id).defPct || 0;
+    return Math.max(1, Math.round(def * passiveStatMult(id, 'def') * statusMult * (1 + defPct/100)));
   }
 
   /* 条件付きパッシブによる「戦闘中のみ」の与ダメージ倍率。
@@ -2804,6 +2985,8 @@
         dropMult *= (p.dropRateMult || 1);
         goldMult *= (p.goldMult || 1);
       }
+      const dropPct = liverAccessoryEffects(id).dropRate || 0;
+      if(dropPct) dropMult *= (1 + dropPct/100);
     });
     return { dropMult, goldMult };
   }
@@ -2885,6 +3068,7 @@
 
   /* ライバーの属性耐性。レベルアップでは伸びず、装備(・将来的にはスキル等の
    * 一時効果)によってのみ変動する。数値1につき被ダメージ±3%。 */
+  const ACCESSORY_RESIST_ELEMENT = { fireResist:'fire', iceResist:'ice', thunderResist:'thunder' };
   function liverResistances(id){
     const ls = liverState(id);
     const res = {};
@@ -2893,6 +3077,10 @@
       if(item && item.resist && res.hasOwnProperty(item.resist.element)){
         res[item.resist.element] += item.resist.value;
       }
+    });
+    const accEff = liverAccessoryEffects(id);
+    Object.keys(ACCESSORY_RESIST_ELEMENT).forEach(effType=>{
+      if(accEff[effType]) res[ACCESSORY_RESIST_ELEMENT[effType]] += accEff[effType];
     });
     return res;
   }
@@ -3301,6 +3489,7 @@
           hp: r.hp, max_hp: r.maxHp, mp: r.mp, max_mp: r.maxMp,
           equipped_weapon_id: r.equipped.weapon ? r.equipped.weapon.id : null,
           equipped_armor_id: r.equipped.armor ? r.equipped.armor.id : null,
+          equipped_accessory_id: r.equipped.accessory ? r.equipped.accessory.id : null,
           loadout: jp.loadout.enabled, unlocked: !!r.unlocked,
           job_progress: r.jobProgress,
           costume: r.costume || defaultCostumeKeyFor(def.id),
@@ -3308,21 +3497,38 @@
         };
       });
 
-      const allItems = [...state.inventory];
+      /* アクセサリーに挿さったクリスタルは、アクセサリー本体とは別行として
+       * 保存する(socketed_intoで親アクセサリーのidを持つ)。所持品リスト・
+       * 装備中のアクセサリーの両方について、挿さっているクリスタルを
+       * 再帰的に取り出す。 */
+      const inventoryRows = [];
+      const pushInventoryRow = (item, socketedInto) => {
+        if(!item) return;
+        inventoryRows.push({
+          id: item.id, item_type: item.type, name: item.name, rarity: item.rarity,
+          value: item.value || 0,
+          resist_element: item.resist ? item.resist.element : null,
+          resist_value: item.resist ? item.resist.value : null,
+          weapon_type: item.weaponType || null,
+          affix: item.affix || null,
+          enhance_level: item.enhanceLevel || 0,
+          effect_type: item.mainEffect ? item.mainEffect.type : (item.effect ? item.effect.type : null),
+          effect_value: item.mainEffect ? item.mainEffect.value : (item.effect ? item.effect.value : null),
+          slot_count: item.type === 'accessory' ? (item.slotCount||0) : null,
+          slot_cost: item.type === 'crystal' ? (item.slotCost||1) : null,
+          socketed_into: socketedInto || null
+        });
+        if(item.type === 'accessory' && Array.isArray(item.crystals)){
+          item.crystals.forEach(c => pushInventoryRow(c, item.id));
+        }
+      };
+      state.inventory.forEach(item => pushInventoryRow(item, null));
       LIVER_DEFS.forEach(def=>{
         const r = state.roster[def.id];
-        if(r.equipped.weapon) allItems.push(r.equipped.weapon);
-        if(r.equipped.armor) allItems.push(r.equipped.armor);
+        pushInventoryRow(r.equipped.weapon, null);
+        pushInventoryRow(r.equipped.armor, null);
+        pushInventoryRow(r.equipped.accessory, null);
       });
-      const inventoryRows = allItems.map(i=>({
-        id: i.id, item_type: i.type, name: i.name, rarity: i.rarity,
-        value: i.value,
-        resist_element: i.resist ? i.resist.element : null,
-        resist_value: i.resist ? i.resist.value : null,
-        weapon_type: i.weaponType || null,
-        affix: i.affix || null,
-        enhance_level: i.enhanceLevel || 0
-      }));
 
       const dungeonRows = DUNGEON_DEFS.map(d=>{
         const ds = state.dungeons[d.id];
@@ -3396,8 +3602,29 @@
           affix: i.affix || null,
           enhanceLevel: i.enhance_level || 0
         };
+        if(i.item_type === 'accessory'){
+          item.mainEffect = i.effect_type ? { type: i.effect_type, value: i.effect_value } : null;
+          item.slotCount = i.slot_count || 0;
+          item.crystals = [];
+        } else if(i.item_type === 'crystal'){
+          item.effect = i.effect_type ? { type: i.effect_type, value: i.effect_value } : null;
+          item.slotCost = i.slot_cost || 1;
+        }
         itemById[i.id] = item;
         inventory.push(item);
+      });
+      // アクセサリーに挿さっているクリスタルを、親アクセサリーのcrystals配列へ
+      // 埋め込み、所持品リストからは外す(装備中のアイテムと同じ扱い)。
+      invRows.forEach(i=>{
+        if(i.item_type === 'crystal' && i.socketed_into){
+          const parent = itemById[i.socketed_into];
+          const crystal = itemById[i.id];
+          if(parent && parent.type === 'accessory' && crystal){
+            parent.crystals.push(crystal);
+            const idx = inventory.findIndex(x=>x.id===crystal.id);
+            if(idx>=0) inventory.splice(idx,1);
+          }
+        }
       });
 
       const roster = {};
@@ -3425,7 +3652,8 @@
           hp: r.hp, maxHp: r.max_hp, mp: r.mp, maxMp: r.max_mp,
           equipped: {
             weapon: r.equipped_weapon_id ? (itemById[r.equipped_weapon_id]||null) : null,
-            armor: r.equipped_armor_id ? (itemById[r.equipped_armor_id]||null) : null
+            armor: r.equipped_armor_id ? (itemById[r.equipped_armor_id]||null) : null,
+            accessory: r.equipped_accessory_id ? (itemById[r.equipped_accessory_id]||null) : null
           },
           unlocked: r.unlocked,
           costume: r.costume || defaultCostumeKeyFor(r.liver_id),
@@ -3436,7 +3664,7 @@
       });
       // 装備中のアイテムは所持品リストからは除外する(以前のwindow.storage版と同じ表現)
       Object.values(roster).forEach(r=>{
-        [r.equipped.weapon, r.equipped.armor].forEach(item=>{
+        [r.equipped.weapon, r.equipped.armor, r.equipped.accessory].forEach(item=>{
           if(!item) return;
           const idx = inventory.findIndex(x=>x.id===item.id);
           if(idx>=0) inventory.splice(idx,1);
@@ -3473,7 +3701,7 @@
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
         rosterDetailId: null, rosterDetailFrom: 'roster',
         profileViewId: null, profileFrom: 'town', profileLiverId: null,
-        profileLiverFrom: 'profile', profileCommentEditing: false },
+        profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null },
         pendingDefeatGoldLoss: 0,
         dungeons,
         colosseum: {
@@ -3517,6 +3745,15 @@
     createSelectedLiver = null; createNameDraft = '';
     colosseumView = { loading: true, floor: 1, record: null, isDummy: true };
     render();
+  }
+
+  /* デバッグ用: クリスタルは本来「特殊なダンジョン」(未実装)限定のドロップ
+   * だが、アクセサリーへの着脱・同種ボーナスなどの動作確認ができるよう、
+   * 実装までの繋ぎとしてランダムなクリスタルを直接付与する機能を用意する。 */
+  function debugGrantCrystals(){
+    for(let i=0;i<3;i++) addItemToInventory(makeCrystal());
+    pushLog('デバッグ: テスト用クリスタルを3個入手した。', 'reward');
+    saveGame(); render();
   }
 
   /* ---------------- コロシアムタワー: Supabase I/O ---------------- */
@@ -3687,7 +3924,7 @@
     const affixMult = weaponAffixDamageMult(liverId);
 
     if(!chosen){
-      if(Math.random() < CRIT_CHANCE){
+      if(rollCrit(liverId)){
         const dmg = Math.max(1, Math.round(combatAtk(liverId) * CRIT_MULT * affixMult) + rnd(-1,3));
         combatEnemyHp -= dmg;
         pushLog(`${name}の攻撃が会心の一撃となった！ ${combatEnemy.name}に防御を貫く ${dmg} の大ダメージ！${drainSuffix(dmg)}`, 'reward', true);
@@ -3851,7 +4088,7 @@
       return;
     }
 
-    if(Math.random() < CRIT_CHANCE){
+    if(rollCrit(null)){
       const raw = Math.max(1, Math.round(effectiveEnemyAtk() * CRIT_MULT) + rnd(-1,2));
       const dmg = applyDamageToLiver(target, raw);
       pushLog(`${combatEnemy.name}の痛恨の一撃！ ${targetName}が防御を貫く ${dmg} の大ダメージを受けた！`, 'danger', true);
@@ -4309,13 +4546,15 @@
     const ls = liverState(liverId);
     const prev = ls.equipped[slot];
     state.inventory.splice(idx,1);
-    if(prev) state.inventory.push(prev); // 元々装備していた物は所持品に戻す
+    if(prev) state.inventory.push(prev); // 元々装備していた物は所持品に戻す(クリスタルも装着したまま付いてくる)
     ls.equipped[slot] = item;
     pushLog(`${liverDef(liverId).name}が「${item.name}」を装備した。`, 'system');
     state.ui.equipPickerSlot = null;
+    recomputeLiverMaxStats(liverId, false);
     saveGame(); render();
   }
 
+  const EQUIP_SLOT_LABELS = { weapon:'武器', armor:'防具', accessory:'アクセサリー' };
   function unequipSlot(slot, liverId){
     if(!canManageEquipment()) return;
     if(!liverId || !liverState(liverId) || !liverState(liverId).unlocked) return;
@@ -4324,7 +4563,8 @@
     if(!item) return;
     ls.equipped[slot] = null;
     state.inventory.push(item);
-    pushLog(`${liverDef(liverId).name}の${slot==='weapon' ? '武器':'防具'}を外した。`, 'system');
+    pushLog(`${liverDef(liverId).name}の${EQUIP_SLOT_LABELS[slot]||slot}を外した。`, 'system');
+    recomputeLiverMaxStats(liverId, false);
     saveGame(); render();
   }
 
@@ -4337,6 +4577,57 @@
   }
   function closeEquipPicker(){
     state.ui.equipPickerSlot = null;
+    render();
+  }
+
+  /* ---------------- クリスタルの着脱 ----------------
+   * クリスタルは所持品からアクセサリーのスロットへ「移動」する形で扱う
+   * (装備品と同じ考え方: 挿した瞬間に所持品リストからは消え、外すと戻る)。 */
+  function socketCrystal(liverId, crystalId){
+    if(!canManageEquipment()) return;
+    const ls = liverState(liverId);
+    if(!ls || !ls.unlocked) return;
+    const accessory = ls.equipped.accessory;
+    if(!accessory) return;
+    const idx = state.inventory.findIndex(i=>i.id===crystalId && i.type==='crystal');
+    if(idx<0) return;
+    const crystal = state.inventory[idx];
+    const used = (accessory.crystals||[]).reduce((s,c)=>s+(c.slotCost||0), 0);
+    if(used + crystal.slotCost > (accessory.slotCount||0)){
+      pushLog(`「${accessory.name}」のスロットが足りない。`, 'system');
+      render();
+      return;
+    }
+    state.inventory.splice(idx,1);
+    if(!accessory.crystals) accessory.crystals = [];
+    accessory.crystals.push(crystal);
+    pushLog(`「${accessory.name}」に「${crystal.name}」を挿した。`, 'system');
+    state.ui.crystalPickerSlot = null;
+    recomputeLiverMaxStats(liverId, false);
+    saveGame(); render();
+  }
+  function unsocketCrystal(liverId, crystalIndex){
+    if(!canManageEquipment()) return;
+    const ls = liverState(liverId);
+    if(!ls || !ls.unlocked) return;
+    const accessory = ls.equipped.accessory;
+    if(!accessory || !accessory.crystals) return;
+    const crystal = accessory.crystals[crystalIndex];
+    if(!crystal) return;
+    accessory.crystals.splice(crystalIndex, 1);
+    state.inventory.push(crystal);
+    pushLog(`「${accessory.name}」から「${crystal.name}」を外した。`, 'system');
+    recomputeLiverMaxStats(liverId, false);
+    saveGame(); render();
+  }
+  function openCrystalPicker(liverId){
+    const ls = liverState(liverId);
+    if(!canManageEquipment() || !ls || !ls.unlocked || !ls.equipped.accessory) return;
+    state.ui.crystalPickerSlot = { liverId };
+    render();
+  }
+  function closeCrystalPicker(){
+    state.ui.crystalPickerSlot = null;
     render();
   }
 
@@ -4418,14 +4709,50 @@
   }
 
   /* ---------------- 商店 ---------------- */
+  /* アクセサリー・クリスタルはvalueを持たないため、レアリティとスロット
+   * 数/消費数から簡易的に売却額を出す(武器・防具のitem.value*3とは別式)。 */
+  function itemSellPrice(item){
+    if(item.type === 'accessory' || item.type === 'crystal'){
+      const rarityMult = (RARITY[item.rarity] && RARITY[item.rarity].mult) || 1;
+      const sizeFactor = item.type === 'accessory' ? (item.slotCount||0) : (item.slotCost||1);
+      return Math.max(1, Math.round(rarityMult*10 + sizeFactor*5));
+    }
+    return Math.max(1, Math.round(item.value*3));
+  }
   function sellItem(id){
     const idx = state.inventory.findIndex(i=>i.id===id);
     if(idx<0) return;
     const item = state.inventory[idx];
-    const price = Math.max(1, Math.round(item.value*3));
+    const price = itemSellPrice(item);
     state.gold += price;
     state.inventory.splice(idx,1);
     pushLog(`「${item.name}」を ${price}G で売却した。`, 'system');
+    saveGame(); render();
+  }
+
+  /* 商店で買える固定効果のアクセサリー。錬金・(将来の)特殊ダンジョン産と
+   * 違い、効果・スロット数が固定な代わりに数値は控えめ(狙った効果を
+   * 確実に手に入れたい人向け)。 */
+  const ACCESSORY_SHOP_DEFS = [
+    { key:'shop_acc_hp',   name:'うさ耳',   effectType:'hpPct',  value:1, slotCount:0, price:300 },
+    { key:'shop_acc_mp',   name:'王冠',     effectType:'mpPct',  value:1, slotCount:0, price:300 },
+    { key:'shop_acc_atk',  name:'集中線',   effectType:'atkPct', value:1, slotCount:0, price:350 },
+    { key:'shop_acc_def',  name:'リボン',   effectType:'defPct', value:1, slotCount:0, price:350 },
+    { key:'shop_acc_drop', name:'猫耳',     effectType:'dropRate', value:1, slotCount:1, price:450 },
+  ];
+  function buyAccessoryFromShop(key){
+    const def = ACCESSORY_SHOP_DEFS.find(d=>d.key===key);
+    if(!def || state.gold < def.price) return;
+    state.gold -= def.price;
+    addItemToInventory({
+      id: 'itm_'+Math.random().toString(36).slice(2,9),
+      type:'accessory', rarity:'common', rarityLabel:'common',
+      name: def.name,
+      mainEffect: { type: def.effectType, value: def.value },
+      slotCount: def.slotCount,
+      crystals: []
+    });
+    pushLog(`「${def.name}」を購入した。`, 'reward');
     saveGame(); render();
   }
 
@@ -5065,7 +5392,7 @@
    * itemDetailText/itemValueLabelがそのまま使えるクライアント側の
    * アイテム形(loadGame()での変換と同じ形)に直す。 */
   function marketItemFromSnapshot(snap){
-    return {
+    const item = {
       id: snap.id, type: snap.item_type, name: snap.name,
       rarity: snap.rarity, rarityLabel: snap.rarity, value: snap.value,
       resist: snap.resist_element ? { element: snap.resist_element, value: snap.resist_value } : null,
@@ -5073,6 +5400,15 @@
       affix: snap.affix || null,
       enhanceLevel: snap.enhance_level || 0
     };
+    if(snap.item_type === 'accessory'){
+      item.mainEffect = snap.effect_type ? { type: snap.effect_type, value: snap.effect_value } : null;
+      item.slotCount = snap.slot_count || 0;
+      item.crystals = [];
+    } else if(snap.item_type === 'crystal'){
+      item.effect = snap.effect_type ? { type: snap.effect_type, value: snap.effect_value } : null;
+      item.slotCost = snap.slot_cost || 1;
+    }
+    return item;
   }
   function applyMarketItemSnapshotToInventory(snap){
     state.inventory.push(marketItemFromSnapshot(snap));
@@ -6161,6 +6497,7 @@
     const inParty = state.party.includes(id);
     const weapon = ls.equipped.weapon;
     const armor = ls.equipped.armor;
+    const accessory = ls.equipped.accessory;
 
     const { atkRate, actions } = computeActionRates(id);
     const actualRateOf = key => {
@@ -6235,7 +6572,32 @@
           ${armor ? `<button data-unequip="armor" data-unequip-for="${id}">外す</button>` : ''}
           <button data-open-equip-picker="${id}:armor">変更</button>
         </span>
+      </div>
+      <div class="equip-row">
+        <span class="equip-slot">アクセサリー</span>
+        <span>${accessory ? `${esc(accessory.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(accessory))}</span>` : '未装備'}
+          ${accessory ? `<button data-unequip="accessory" data-unequip-for="${id}">外す</button>` : ''}
+          <button data-open-equip-picker="${id}:accessory">変更</button>
+        </span>
       </div>` : `<p style="color:var(--text-muted);font-size:12px;">仲間になると装備を変更できるようになる。</p>`;
+
+    const crystalSocketsHtml = (unlocked && accessory) ? (() => {
+      const crystals = accessory.crystals || [];
+      const used = crystals.reduce((s,c)=>s+(c.slotCost||0), 0);
+      const rows = crystals.length ? crystals.map((c,idx)=>`
+        <div class="inv-item ${c.rarityLabel}" title="${esc(itemDetailText(c))}">
+          <span class="inv-item-name">${esc(c.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(c))}</span></span>
+          <span class="inv-item-actions"><button data-unsocket-crystal="${id}:${idx}">外す</button></span>
+        </div>`).join('') : `<p class="inv-empty">クリスタルは挿さっていない。</p>`;
+      const addBtn = used < (accessory.slotCount||0)
+        ? `<div class="actions" style="margin-top:6px;"><button data-open-crystal-picker="${id}">クリスタルを挿す</button></div>` : '';
+      return `
+        <div class="section-block">
+          <p class="section-label">クリスタル(${used}/${accessory.slotCount||0})</p>
+          ${rows}
+          ${addBtn}
+        </div>`;
+    })() : '';
 
     const lockedBanner = !unlocked ? `<p class="log-entry system" style="margin-top:10px;">${uiIcon('lock')} まだ仲間になっていない。「召喚」で運命のチケットを使うと仲間になる。</p>` : '';
 
@@ -6287,6 +6649,7 @@
         <p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">装備可能な武器種: ${esc(allowedWeaponLabel)}</p>
         ${equipHtml}
       </div>
+      ${crystalSocketsHtml}
       <div class="section-block">
         <p class="section-label">衣装</p>
         <div class="actions" style="margin-top:0;">${costumeSwitchHtml}</div>
@@ -6320,7 +6683,7 @@
     const def = liverDef(liverId);
     const ls = liverState(liverId);
     const current = ls.equipped[slot];
-    const slotLabel = slot === 'weapon' ? '武器' : '防具';
+    const slotLabel = EQUIP_SLOT_LABELS[slot] || slot;
 
     const candidates = state.inventory.filter(i=>i.type===slot);
     const itemsHtml = candidates.length ? candidates.map(i=>{
@@ -6352,6 +6715,51 @@
       <div class="actions">
         ${current ? `<button data-unequip="${slot}" data-unequip-for="${liverId}">外す</button>` : ''}
         <button id="closeEquipPickerBtn">戻る</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">所持品から選ぶ</p>
+        <div class="scrollbox equip-picker-scroll">${itemsHtml}</div>
+      </div>
+    `;
+  }
+
+  /* クリスタルの着脱ピッカー。装備ピッカーと同じくメインウィンドウを
+   * 差し替える形式(state.ui.crystalPickerSlot = {liverId})で開く。
+   * 挿せるのは「残りスロット数に収まる消費スロット数」のクリスタルのみ。 */
+  function renderCrystalPickerInner(){
+    const { liverId } = state.ui.crystalPickerSlot;
+    const ls = liverState(liverId);
+    const accessory = ls && ls.equipped.accessory;
+    if(!ls || !accessory){
+      state.ui.crystalPickerSlot = null;
+      return renderLiverDetailInner();
+    }
+    const def = liverDef(liverId);
+    const used = (accessory.crystals||[]).reduce((s,c)=>s+(c.slotCost||0), 0);
+    const remaining = (accessory.slotCount||0) - used;
+
+    const candidates = state.inventory.filter(i=>i.type==='crystal');
+    const itemsHtml = candidates.length ? candidates.map(c=>{
+      const fits = c.slotCost <= remaining;
+      return `
+        <div class="inv-item ${c.rarityLabel}" title="${esc(itemDetailText(c))}">
+          <span class="inv-item-name">${esc(c.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(c))}</span></span>
+          <span class="inv-item-actions">
+            <button data-socket-crystal="${liverId}:${c.id}" ${fits?'':'disabled title="スロットが足りない"'}>挿す</button>
+          </span>
+        </div>`;
+    }).join('') : `<p class="inv-empty">クリスタルを所持していない。</p>`;
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml(`${esc(def.name)}のクリスタルを選ぶ`)}
+      </div>
+      <div class="section-block" style="margin-top:0;">
+        <p class="section-label">「${esc(accessory.name)}」のスロット</p>
+        <p style="color:var(--text-muted);font-size:12px;margin:0 0 8px;">使用 ${used}/${accessory.slotCount||0}(残り${remaining})</p>
+      </div>
+      <div class="actions">
+        <button id="closeCrystalPickerBtn">戻る</button>
       </div>
       <div class="section-block">
         <p class="section-label">所持品から選ぶ</p>
@@ -6436,8 +6844,8 @@
 
     let bodyHtml;
     if(buyActive){
-      const keys = Object.keys(TOOL_DEFS).filter(k=>TOOL_DEFS[k].purchasable);
-      bodyHtml = keys.length ? keys.map(key=>{
+      const toolKeys = Object.keys(TOOL_DEFS).filter(k=>TOOL_DEFS[k].purchasable);
+      const toolsHtml = toolKeys.length ? toolKeys.map(key=>{
         const def = TOOL_DEFS[key];
         return `
           <div class="inv-item" title="${esc(def.desc)}">
@@ -6447,6 +6855,14 @@
             </span>
           </div>`;
       }).join('') : `<p class="inv-empty">購入できるアイテムが無い。</p>`;
+      const accessoriesHtml = ACCESSORY_SHOP_DEFS.map(def=>`
+        <div class="inv-item" title="固定効果のアクセサリー(効果は控えめ)">
+          <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">[${esc(accessoryEffectLabel({type:def.effectType, value:def.value}))}] スロット${def.slotCount}</span></span>
+          <span class="inv-item-actions">
+            <button data-buy-accessory="${def.key}" ${(state.gold<def.price)?'disabled':''}>${def.price}G 購入</button>
+          </span>
+        </div>`).join('');
+      bodyHtml = `${toolsHtml}<p class="section-label" style="margin:14px 0 8px;">アクセサリー</p>${accessoriesHtml}`;
     } else if(equipActive){
       const equipSort = (state.ui && state.ui.equipSort) || INVENTORY_SORT_DEFAULT;
       const sellList = applyInventorySort(state.inventory, equipSort, i => RARITY_SORT_ORDER[i.rarity] || 0);
@@ -6454,7 +6870,7 @@
         <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
           <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
           <span class="inv-item-actions">
-            <button data-sell="${item.id}">${Math.max(1,Math.round(item.value*3))}G で売る</button>
+            <button data-sell="${item.id}">${itemSellPrice(item)}G で売る</button>
           </span>
         </div>`).join('') : `<p class="inv-empty">売れる装備が無い。</p>`;
     } else {
@@ -6532,6 +6948,8 @@
         <p class="section-label">デバッグ</p>
         <p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">セーブデータを完全に削除し、キャラ作成からやり直す。動作確認用の機能。</p>
         <button class="danger" id="resetGameBtn">セーブデータをリセット</button>
+        <p style="color:var(--text-muted);font-size:11px;margin:14px 0 8px;">クリスタルは現在、特殊ダンジョン(未実装)でのみ入手できる。実装までの動作確認用に、ランダムなクリスタルを3個手に入れる。</p>
+        <button id="debugGrantCrystalsBtn">テスト用クリスタルを3個入手</button>
       </div>
     `;
   }
@@ -7022,6 +7440,7 @@
   function renderMainArea(){
     let inner;
     if(state.ui.equipPickerSlot) inner = renderEquipPickerInner();
+    else if(state.ui.crystalPickerSlot) inner = renderCrystalPickerInner();
     else if(state.screen === 'dungeon') inner = renderDungeonInner();
     else if(state.screen === 'party') inner = renderPartyInner();
     else if(state.screen === 'roster') inner = renderRosterInner();
@@ -7354,6 +7773,7 @@
     on('stayBtn', stayAtInn);
     on('renameBtn', renameCharacter);
     on('resetGameBtn', resetGameData);
+    on('debugGrantCrystalsBtn', debugGrantCrystals);
     on('returnTownBtn', returnToTownAfterDeath);
     on('sendChatBtn', ()=>{
       const input = document.getElementById('chatInput');
@@ -7432,6 +7852,25 @@
     });
     document.querySelectorAll('[data-buy-tool]').forEach(b=>{
       b.addEventListener('click', ()=>buyToolItem(b.getAttribute('data-buy-tool')));
+    });
+    document.querySelectorAll('[data-buy-accessory]').forEach(b=>{
+      b.addEventListener('click', ()=>buyAccessoryFromShop(b.getAttribute('data-buy-accessory')));
+    });
+    document.querySelectorAll('[data-open-crystal-picker]').forEach(b=>{
+      b.addEventListener('click', ()=>openCrystalPicker(b.getAttribute('data-open-crystal-picker')));
+    });
+    on('closeCrystalPickerBtn', closeCrystalPicker);
+    document.querySelectorAll('[data-socket-crystal]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const [liverId, crystalId] = b.getAttribute('data-socket-crystal').split(':');
+        socketCrystal(liverId, crystalId);
+      });
+    });
+    document.querySelectorAll('[data-unsocket-crystal]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const [liverId, idx] = b.getAttribute('data-unsocket-crystal').split(':');
+        unsocketCrystal(liverId, Number(idx));
+      });
     });
     document.querySelectorAll('[data-sell-tool]').forEach(b=>{
       b.addEventListener('click', ()=>sellToolItem(b.getAttribute('data-sell-tool')));
