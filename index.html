@@ -2696,7 +2696,9 @@
       ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
         marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
-        rosterDetailId: null, rosterDetailFrom: 'roster' },
+        rosterDetailId: null, rosterDetailFrom: 'roster',
+        profileViewId: null, profileFrom: 'town', profileLiverId: null,
+        profileLiverFrom: 'profile', profileCommentEditing: false },
       pendingDefeatGoldLoss: 0,
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
@@ -2898,6 +2900,89 @@
     if(!element) return 1;
     const value = liverResistances(id)[element] || 0;
     return Math.max(0.1, 1 - value*0.03);
+  }
+
+  /* ---------------------------------------------------------------
+   * マイページ(他プレイヤーの公開プロフィール)閲覧用。
+   * combatPower/liverAtk/liverDefStat/liverResistances/computeActionRates/
+   * equippedPassiveの「他プレイヤーの読み取り専用スナップショット
+   * (player_public_profile.roster内の1要素、liverStateと近い形だが
+   * equipped.weapon/armorではなくequippedWeapon/equippedArmorという
+   * フラットなキー名を持つ)に対して同じ計算式を適用する」ための専用版。
+   * state.roster / state.party を一切参照しない(呼び出し元は
+   * 本人のstateを一切汚さない)。元の計算式(combatPower等)を変更した
+   * 場合、こちらも合わせて更新すること。
+   * --------------------------------------------------------------- */
+  function foreignEquippedPassive(liverId, snap){
+    const costumeKey = snap.costume || defaultCostumeKeyFor(liverId);
+    const def = costumeDefFor(liverId, costumeKey) || costumeDefsFor(liverId)[0];
+    return def ? def.passive : null;
+  }
+  function foreignPassiveStatMult(liverId, snap, partySize, stat){
+    const p = foreignEquippedPassive(liverId, snap);
+    if(!p) return 1;
+    if(p.kind==='statMult' && p.stat===stat) return p.mult;
+    if(p.kind==='partySizeStatMult' && (p.stats||[]).includes(stat)){
+      const extraMembers = Math.max(0, (partySize||1) - 1);
+      return 1 + extraMembers * (p.perMember||0);
+    }
+    return 1;
+  }
+  function foreignCombatPower(snap){
+    const activeJob = snap.job;
+    const activeLevel = (snap.jobProgress[activeJob] || {}).level || 1;
+    const mainStat = jobStatPotential(activeJob, activeLevel);
+    mainStat.atk += snap.equippedWeapon ? itemEffectiveValue(snap.equippedWeapon) : 0;
+    mainStat.def += snap.equippedArmor ? itemEffectiveValue(snap.equippedArmor) : 0;
+    let total = weightedStatSum(mainStat, CP_MAIN_WEIGHT);
+    Object.keys(JOB_DEFS).forEach(jobId=>{
+      if(jobId === activeJob) return;
+      const level = (snap.jobProgress[jobId] || {}).level || 1;
+      total += weightedStatSum(jobStatPotential(jobId, level), CP_OTHER_JOB_WEIGHT);
+    });
+    return Math.round(total);
+  }
+  function foreignLiverAtk(liverId, snap, partySize){
+    const level = (snap.jobProgress[snap.job] || {}).level || 1;
+    const atk = jobBaseAtk(snap.job, level) + (snap.equippedWeapon ? itemEffectiveValue(snap.equippedWeapon) : 0);
+    return Math.round(atk * foreignPassiveStatMult(liverId, snap, partySize, 'atk'));
+  }
+  function foreignLiverDefStat(liverId, snap, partySize){
+    const level = (snap.jobProgress[snap.job] || {}).level || 1;
+    const def = jobBaseDef(snap.job, level) + (snap.equippedArmor ? itemEffectiveValue(snap.equippedArmor) : 0);
+    return Math.max(1, Math.round(def * foreignPassiveStatMult(liverId, snap, partySize, 'def')));
+  }
+  function foreignLiverResistances(snap){
+    const res = {};
+    Object.keys(ELEMENT_LABELS).forEach(el=>{ res[el] = 0; });
+    [snap.equippedWeapon, snap.equippedArmor].forEach(item=>{
+      if(item && item.resist && res.hasOwnProperty(item.resist.element)){
+        res[item.resist.element] += item.resist.value;
+      }
+    });
+    return res;
+  }
+  function foreignAllowedWeaponTypes(liverId, snap){
+    const jobTypes = (JOB_DEFS[snap.job] && JOB_DEFS[snap.job].weaponTypes) || [];
+    const liverTypes = liverDef(liverId).weaponAptitude || [];
+    return new Set([...jobTypes, ...liverTypes]);
+  }
+  function foreignComputeActionRates(snap){
+    const job = JOB_DEFS[snap.job];
+    const jp = snap.jobProgress[snap.job] || newJobProgress(snap.job);
+    const loadout = jp.loadout || {enabled:[]};
+    const enabledSkills = job.skills.filter(s=>(loadout.enabled||[]).includes(s.key) && jp.level >= (s.unlockLevel||1));
+    const rawSum = enabledSkills.reduce((sum,s)=>sum + (s.baseRate||0), 0);
+    let atkRate, scale;
+    if(rawSum <= (100-ATK_MIN_RATE)){
+      atkRate = 100 - rawSum;
+      scale = 1;
+    } else {
+      atkRate = ATK_MIN_RATE;
+      scale = rawSum > 0 ? (100-ATK_MIN_RATE) / rawSum : 1;
+    }
+    const actions = enabledSkills.map(s=>({skill:s, rate:(s.baseRate||0)*scale}));
+    return { atkRate, actions };
   }
 
   /* ジョブごとにレベル・EXP・スキル編成を個別管理しているため、切り替えは
@@ -3276,6 +3361,11 @@
       // 権威ある値を再計算するため、失敗してもメインの保存自体は成功扱いにする。
       const { error: cpError } = await sb.rpc('sync_combat_power');
       if(cpError) console.error('sync_combat_power failed', cpError);
+
+      // マイページ(公開プロフィール)の反映。こちらも表示専用データの
+      // 再計算なので、失敗してもメインの保存自体は成功扱いにする。
+      const { error: profileError } = await sb.rpc('sync_public_profile');
+      if(profileError) console.error('sync_public_profile failed', profileError);
     }catch(e){ console.error('save failed', e); }
   }
 
@@ -3381,7 +3471,9 @@
         ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
         marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
-        rosterDetailId: null, rosterDetailFrom: 'roster' },
+        rosterDetailId: null, rosterDetailFrom: 'roster',
+        profileViewId: null, profileFrom: 'town', profileLiverId: null,
+        profileLiverFrom: 'profile', profileCommentEditing: false },
         pendingDefeatGoldLoss: 0,
         dungeons,
         colosseum: {
@@ -4396,16 +4488,22 @@
   /* ---------------- Rendering ---------------- */
   const app = document.getElementById('app');
 
-  /* チャットの通報トリガーは、チャンネル切替・Realtime新着受信時に
+  /* チャットのユーザー名/三点リーダは、チャンネル切替・Realtime新着受信時に
    * #chatLogのinnerHTMLだけを直接書き換える経路(refreshChatDOM/
    * startChatPollingのINSERTハンドラ)があり、その都度bindEvents()を
    * 呼び直すのは無駄が大きい。appの要素自体はrender()で作り直されない
    * ことを利用し、イベント委譲で1度だけ登録しておく。 */
   app.addEventListener('click', (e)=>{
-    const trigger = e.target.closest && e.target.closest('[data-report-message]');
+    const trigger = e.target.closest && e.target.closest('[data-open-chat-user-menu]');
     if(trigger){
       e.stopPropagation();
-      openChatReportPopup(Number(trigger.getAttribute('data-report-message')));
+      const messageIdRaw = trigger.getAttribute('data-message-id');
+      openChatUserMenu(
+        trigger.getAttribute('data-open-chat-user-menu'),
+        trigger.getAttribute('data-user-name'),
+        trigger.getAttribute('data-is-own') === 'true',
+        messageIdRaw ? Number(messageIdRaw) : null
+      );
     }
   });
 
@@ -4780,6 +4878,7 @@
         <button class="primary" id="gotoAlchemyBtn">錬金</button>
         <button class="primary" id="gotoHomeBtn">家へ帰る</button>
         <button class="primary" id="gotoRankingsBtn">ランキング</button>
+        <button class="primary" id="gotoProfileBtn">マイページ</button>
         <button class="danger" id="gotoColosseumBtn">コロシアムタワー</button>
         <button class="danger" id="gotoRiftBtn">次元断層ポモ・ドーロ</button>
         <button class="danger" id="gotoTowersBtn">七彩の塔</button>
@@ -4924,7 +5023,7 @@
   function renderRankingRow(row, index, highlight){
     const liverLabel = row.liver_id ? (liverDef(row.liver_id) ? liverDef(row.liver_id).name : row.liver_id) : '';
     return `
-      <div class="inv-item" style="${highlight ? 'border-left-color:var(--gold);background:rgba(255,216,99,0.12);' : ''}">
+      <div class="inv-item" style="cursor:pointer;${highlight ? 'border-left-color:var(--gold);background:rgba(255,216,99,0.12);' : ''}" data-open-ranking-character="${row.player_id}" data-liver-id="${row.liver_id||''}" data-fallback-name="${esc(row.player_name)}">
         <span class="inv-item-name">
           <span style="color:var(--gold);font-family:var(--font-mono);">${index}位</span>
           ${nameWithId(row.player_name, row.player_id)}${liverLabel ? ` <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${esc(liverLabel)})</span>` : ''}
@@ -6437,6 +6536,473 @@
     `;
   }
 
+  /* ---------------------------------------------------------------
+   * マイページ(公開プロフィール)。ランキング・チャットのユーザー名から
+   * 他プレイヤーのマイページへ飛べる。表示専用データなので、戦闘中の
+   * combatEnemy等と同様にセーブ不要な一時状態としてモジュールスコープの
+   * 変数(profileViewCache)で保持する。自分自身のプロフィールを開いた
+   * 場合のみ、ひとことコメントの編集欄を表示する。
+   * --------------------------------------------------------------- */
+  let profileViewCache = null;    // { playerId, loading, data, error, fallbackName } | null
+  let profileFetchInFlight = null; // 現在取得中のplayerId(重複fetch防止)
+  let profileCommentStatus = null; // { ok, text } | null
+
+  /* player_public_profile.roster内の1要素(DBのsnake_case)を、
+   * foreignCombatPower等が期待する形(既存のstate.roster[id]に近い
+   * camelCaseのキー)へ変換する。 */
+  function normalizeProfileLiverSnap(raw){
+    return {
+      job: raw.job,
+      jobProgress: raw.job_progress || {},
+      hp: raw.hp, maxHp: raw.max_hp, mp: raw.mp, maxMp: raw.max_mp,
+      costume: raw.costume,
+      unlockedCostumes: raw.unlocked_costumes || [],
+      equippedWeapon: raw.equipped_weapon || null,
+      equippedArmor: raw.equipped_armor || null
+    };
+  }
+
+  /* 呼び出し元(openProfile)が先にprofileViewCacheをloading状態にして
+   * render()した後にこれを呼ぶ想定(render()の最中にrender()を再帰的に
+   * 呼び出さないようにするため、ここではrender()を呼ばない)。 */
+  async function fetchProfile(playerId, fallbackName){
+    if(profileFetchInFlight === playerId) return;
+    profileFetchInFlight = playerId;
+    try{
+      const { data, error } = await sb.from('player_public_profile').select('*').eq('player_id', playerId).maybeSingle();
+      if(error) throw error;
+      profileViewCache = { playerId, loading:false, data: data||null, error:false, fallbackName: fallbackName||null };
+    }catch(e){
+      console.error('profile fetch failed', e);
+      profileViewCache = { playerId, loading:false, data:null, error:true, fallbackName: fallbackName||null };
+    }
+    profileFetchInFlight = null;
+    render();
+  }
+
+  function openProfile(playerId, from, fallbackName){
+    if(inCombat || !playerId) return;
+    if(!state.ui) state.ui = {};
+    state.ui.profileViewId = playerId;
+    state.ui.profileFrom = from || 'town';
+    state.screen = 'profile';
+    profileCommentStatus = null;
+    state.ui.profileCommentEditing = false;
+    profileViewCache = { playerId, loading:true, data:null, error:false, fallbackName: fallbackName||null };
+    saveGame(); render();
+    fetchProfile(playerId, fallbackName);
+  }
+
+  function backFromProfile(){
+    const from = state.ui.profileFrom;
+    gotoScreen(from === 'rankings' || from === 'rankingDetail' ? from : 'town');
+  }
+
+  /* マイページの保有ライバー一覧から個別のキャラ詳細を開く場合。
+   * 戻る先は常にマイページ(profileLiverFrom:'profile')。 */
+  function openProfileLiverDetail(liverId){
+    if(!state.ui) state.ui = {};
+    state.ui.profileLiverId = liverId;
+    state.ui.profileLiverFrom = 'profile';
+    state.screen = 'profileLiverDetail';
+    saveGame(); render();
+  }
+
+  /* ランキングの行を押した場合は、マイページを経由せず直接そのキャラの
+   * 詳細画面へ遷移する(profileLiverFrom:'ranking')。詳細画面側で
+   * 「マイページを見る」「ランキングに戻る」の2つの選択肢を出す。 */
+  function openProfileLiverFromRanking(playerId, liverId, from, fallbackName){
+    if(inCombat || !playerId || !liverId) return;
+    if(!state.ui) state.ui = {};
+    state.ui.profileViewId = playerId;
+    state.ui.profileFrom = (from === 'rankings' || from === 'rankingDetail') ? from : 'rankings';
+    state.ui.profileLiverId = liverId;
+    state.ui.profileLiverFrom = 'ranking';
+    state.screen = 'profileLiverDetail';
+    profileCommentStatus = null;
+    state.ui.profileCommentEditing = false;
+    profileViewCache = { playerId, loading:true, data:null, error:false, fallbackName: fallbackName||null };
+    saveGame(); render();
+    fetchProfile(playerId, fallbackName);
+  }
+
+  function backFromProfileLiverDetail(){
+    state.screen = 'profile';
+    saveGame(); render();
+  }
+
+  function viewProfileFromLiverDetail(){
+    state.screen = 'profile';
+    saveGame(); render();
+  }
+
+  function backToRankingFromLiverDetail(){
+    gotoScreen(state.ui.profileFrom === 'rankingDetail' ? 'rankingDetail' : 'rankings');
+  }
+
+  async function saveProfileComment(){
+    const input = document.getElementById('profileCommentInput');
+    if(!input) return;
+    const btn = document.getElementById('saveProfileCommentBtn');
+    if(btn) btn.disabled = true;
+    try{
+      const { error } = await sb.rpc('set_profile_comment', { p_comment: input.value });
+      if(error) throw error;
+      profileCommentStatus = { ok:true, text:'コメントを保存しました。' };
+      if(!state.ui) state.ui = {};
+      state.ui.profileCommentEditing = false;
+      await fetchProfile(state.playerId);
+    }catch(e){
+      console.error('save profile comment failed', e);
+      profileCommentStatus = {
+        ok:false,
+        text: /comment too long/.test(e.message) ? '60文字以内で入力してください。' : 'コメントの保存に失敗しました。'
+      };
+      render();
+    }
+  }
+
+  function openProfileReportPopup(targetId, targetName){
+    if(!state.ui) state.ui = {};
+    state.ui.profileReportPopup = { targetId, targetName, submitting:false, error:'' };
+    render();
+  }
+  function closeProfileReportPopup(){
+    if(!state.ui) return;
+    state.ui.profileReportPopup = null;
+    render();
+  }
+  async function submitProfileReport(){
+    const popup = state.ui && state.ui.profileReportPopup;
+    if(!popup || popup.submitting) return;
+    const reasonSelect = document.getElementById('profileReportReasonSelect');
+    const reasonText = document.getElementById('profileReportReasonText');
+    const category = reasonSelect ? reasonSelect.value : 'other';
+    const detail = reasonText ? reasonText.value.trim().slice(0,500) : '';
+    popup.submitting = true;
+    popup.error = '';
+    render();
+    try{
+      const { error } = await sb.rpc('submit_user_report', {
+        p_reported_player_id: popup.targetId, p_reason_category: category, p_reason_text: detail || null
+      });
+      if(error) throw error;
+      state.ui.profileReportPopup = null;
+      pushLog('通報を受け付けました。運営にて内容を確認いたします。', 'system');
+      render();
+    }catch(e){
+      console.error('submit user report failed', e);
+      popup.submitting = false;
+      popup.error = /already reported/.test(e.message) ? 'このユーザーはすでに通報済みです(対応完了までお待ちください)。'
+        : /cannot report yourself/.test(e.message) ? '自分自身は通報できません。'
+        : '通報の送信に失敗しました。通信状況をご確認ください。';
+      render();
+    }
+  }
+
+  function renderProfileReportPopup(){
+    const popup = state.ui && state.ui.profileReportPopup;
+    if(!popup) return '';
+    const reasonOptionsHtml = CHAT_REPORT_REASONS.map(r=>`<option value="${r.id}">${esc(r.label)}</option>`).join('');
+    return `
+    <div class="help-popup-backdrop" id="profileReportPopupBackdrop">
+      <div class="help-popup">
+        <p class="section-label" style="margin-top:0;">ユーザーを通報</p>
+        <div class="market-popup-row"><span>対象</span><span>${esc(popup.targetName)}</span></div>
+        <label style="display:block;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:10px;">通報理由</label>
+        <select class="chat-report-reason-select" id="profileReportReasonSelect">${reasonOptionsHtml}</select>
+        <label style="display:block;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-top:8px;">詳細(任意)</label>
+        <textarea class="chat-report-reason-text" id="profileReportReasonText" maxlength="500" placeholder="具体的な状況があれば記入してください"></textarea>
+        ${popup.error ? `<p class="log-entry danger" style="margin-top:8px;">${esc(popup.error)}</p>` : ''}
+        <div class="actions" style="justify-content:flex-end;margin-top:14px;">
+          <button id="profileReportPopupCancelBtn" ${popup.submitting?'disabled':''}>キャンセル</button>
+          <button class="primary" id="profileReportPopupConfirmBtn" ${popup.submitting?'disabled':''}>${popup.submitting?'送信中……':'通報する'}</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  /* チャット欄のユーザー名クリック時に「マイページ/通報」を選ぶ小さなメニュー。
+   * 自分自身の発言の場合は通報を出さない。 */
+  function openChatUserMenu(playerId, playerName, isOwn, messageId){
+    if(!state.ui) state.ui = {};
+    state.ui.chatUserMenu = { playerId, playerName, isOwn, messageId };
+    render();
+  }
+  function closeChatUserMenu(){
+    if(!state.ui) return;
+    state.ui.chatUserMenu = null;
+    render();
+  }
+  function renderChatUserMenu(){
+    const menu = state.ui && state.ui.chatUserMenu;
+    if(!menu) return '';
+    return `
+    <div class="help-popup-backdrop" id="chatUserMenuBackdrop">
+      <div class="help-popup" style="max-width:280px;">
+        <p class="section-label" style="margin-top:0;">${esc(menu.playerName)}</p>
+        <div class="actions" style="flex-direction:column;align-items:stretch;">
+          <button id="chatUserMenuProfileBtn">詳細を見る</button>
+          ${(!menu.isOwn && menu.messageId != null) ? `<button id="chatUserMenuReportBtn">この投稿を通報する</button>` : ''}
+          <button id="chatUserMenuCancelBtn">閉じる</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function renderProfileInner(){
+    const targetId = state.ui.profileViewId || state.playerId;
+    const isSelf = targetId === state.playerId;
+    const backBtnHtml = `<div class="actions"><button id="backFromProfileBtn">戻る</button></div>`;
+    const cache = profileViewCache;
+
+    if(!cache || cache.playerId !== targetId){
+      // 通常はopenProfile()が先にloading状態をセットしてから遷移するため
+      // ここには来ない想定だが、リロード直後など想定外の経路に備えて
+      // フォールバック表示だけ用意しておく(ランキング画面と同じ割り切り)。
+      return `
+        <div class="scene-text">${sceneHeadingHtml('マイページ')}</div>
+        ${backBtnHtml}
+        <p class="log-entry system">読み込み中……</p>
+      `;
+    }
+    if(cache.loading){
+      return `
+        <div class="scene-text">${sceneHeadingHtml(cache.fallbackName || 'マイページ')}</div>
+        ${backBtnHtml}
+        <p class="log-entry system">読み込み中……</p>
+      `;
+    }
+    if(cache.error){
+      return `
+        <div class="scene-text">${sceneHeadingHtml('マイページ')}</div>
+        ${backBtnHtml}
+        <p class="log-entry danger">読み込みに失敗した。時間をおいて開き直してみてほしい。</p>
+      `;
+    }
+    const p = cache.data;
+    if(!p){
+      return `
+        <div class="scene-text">${sceneHeadingHtml(cache.fallbackName || 'マイページ')}</div>
+        ${backBtnHtml}
+        <p class="inv-empty">まだ記録がありません(保存が反映されるとここに表示されます)。</p>
+      `;
+    }
+
+    const roster = Array.isArray(p.roster) ? p.roster : [];
+    const rosterRowsHtml = roster.length
+      ? roster.map(r=>{
+          const def = liverDef(r.liver_id);
+          if(!def) return '';
+          const snap = normalizeProfileLiverSnap(r);
+          const level = (snap.jobProgress[snap.job]||{}).level || 1;
+          const jobName = (JOB_DEFS[snap.job] && JOB_DEFS[snap.job].name) || snap.job;
+          return `
+            <div class="inv-item" style="cursor:pointer;" data-open-profile-liver="${r.liver_id}">
+              <span style="width:10px;height:10px;background:${def.color};display:inline-block;margin-right:8px;"></span>
+              <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${level} ・ ${esc(jobName)} ・ <span style="color:var(--gold);">戦闘力 ${foreignCombatPower(snap)}</span></span></span>
+            </div>`;
+        }).join('')
+      : '<p class="inv-empty">まだ仲間になったライバーがいません。</p>';
+
+    const commentEditing = !!(state.ui && state.ui.profileCommentEditing);
+    const commentHtml = isSelf
+      ? (commentEditing
+          ? `
+            <textarea id="profileCommentInput" maxlength="60" placeholder="ひとことコメント(60文字まで)" style="width:100%;min-height:54px;font-family:var(--font-display);font-size:13px;background:var(--win-bg-2);color:var(--text-primary);border:1px solid var(--win-border);padding:8px;box-sizing:border-box;">${esc(p.comment || '')}</textarea>
+            <div class="actions" style="margin-top:6px;">
+              <button class="primary" id="saveProfileCommentBtn">保存</button>
+              <button id="cancelProfileCommentEditBtn">キャンセル</button>
+            </div>
+            ${profileCommentStatus ? `<p class="log-entry ${profileCommentStatus.ok?'system':'danger'}" style="margin-top:4px;">${esc(profileCommentStatus.text)}</p>` : ''}
+          `
+          : `
+            ${p.comment
+              ? `<p class="log-entry" style="background:rgba(255,255,255,0.05);padding:8px;">${esc(p.comment)}</p>`
+              : `<p class="inv-empty">コメントはまだありません。</p>`}
+            ${profileCommentStatus ? `<p class="log-entry ${profileCommentStatus.ok?'system':'danger'}" style="margin-top:4px;">${esc(profileCommentStatus.text)}</p>` : ''}
+          `)
+      : (p.comment
+          ? `<p class="log-entry" style="background:rgba(255,255,255,0.05);padding:8px;">${esc(p.comment)}</p>`
+          : `<p class="inv-empty">コメントはまだありません。</p>`);
+
+    const commentHeaderHtml = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 8px;">
+        <p class="section-label" style="margin:0;">ひとことコメント</p>
+        ${(isSelf && !commentEditing) ? `<button id="editProfileCommentBtn" style="padding:3px 10px;font-size:11px;">編集</button>` : ''}
+      </div>`;
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml(`${p.player_name}${isSelf ? '(あなた)' : ''}`)}
+        ${p.title ? `<p class="log-entry" style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">称号: ${esc(p.title)}</p>` : ''}
+      </div>
+      <div class="actions">
+        <button id="backFromProfileBtn">戻る</button>
+        ${!isSelf ? `<button data-open-profile-report="${targetId}" data-target-name="${esc(p.player_name)}" style="margin-left:auto;">このユーザーを通報</button>` : ''}
+      </div>
+      <div class="section-block">
+        <p class="section-label">プロフィール</p>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          <div class="stat-tile"><span class="stat-tile-label">所持ライバー数</span><span class="stat-tile-value">${p.character_count}</span></div>
+          <div class="stat-tile"><span class="stat-tile-label">クリアステージ数</span><span class="stat-tile-value">${p.cleared_stage_count}</span></div>
+          <div class="stat-tile"><span class="stat-tile-label">コロシアム最高到達</span><span class="stat-tile-value">${p.colosseum_best_floor}F</span></div>
+        </div>
+      </div>
+      <div class="section-block">
+        ${commentHeaderHtml}
+        ${commentHtml}
+      </div>
+      <div class="section-block">
+        <p class="section-label">保有ライバー</p>
+        ${rosterRowsHtml}
+      </div>
+    `;
+  }
+
+  function renderProfileLiverDetailInner(){
+    const targetId = state.ui.profileViewId || state.playerId;
+    const cache = profileViewCache;
+    const liverId = state.ui.profileLiverId;
+    const def = liverId && liverDef(liverId);
+    if(!cache || cache.playerId !== targetId || !cache.data || !def) return renderProfileInner();
+    const raw = (cache.data.roster || []).find(r=>r.liver_id === liverId);
+    if(!raw) return renderProfileInner();
+
+    const snap = normalizeProfileLiverSnap(raw);
+    const partySize = cache.data.party_size || 0;
+    const job = JOB_DEFS[snap.job];
+    const jp = snap.jobProgress[snap.job] || newJobProgress(snap.job);
+    const { atkRate, actions } = foreignComputeActionRates(snap);
+    const actualRateOf = key => {
+      const found = actions.find(a=>a.skill.key===key);
+      return found ? Math.round(found.rate) : 0;
+    };
+
+    const currentCostumeKey = snap.costume || defaultCostumeKeyFor(liverId);
+    const costumeDef = costumeDefFor(liverId, currentCostumeKey) || costumeDefsFor(liverId)[0];
+
+    const atkRow = `
+      <div class="inv-item" style="border-left-color:var(--text-muted);opacity:.85;">
+        <span class="inv-item-name">通常攻撃 <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(常時習得済み・下限50%)</span></span>
+        <span class="inv-item-actions">
+          <span style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">${Math.round(atkRate)}%</span>
+        </span>
+      </div>`;
+
+    const passive = foreignEquippedPassive(liverId, snap);
+    const passiveRow = passive ? `
+      <div class="inv-item" style="border-left-color:${def.color};">
+        <span class="inv-item-name">
+          ${esc(passive.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${passive.always?'常時発動':'条件付き発動'})</span><br>
+          <span style="color:var(--text-muted);font-size:11px;">${esc(passive.desc)}</span>
+        </span>
+      </div>` : '<p class="inv-empty">なし</p>';
+
+    const skillRows = job.skills.map(s=>{
+      const skillUnlocked = jp.level >= (s.unlockLevel||1);
+      if(!skillUnlocked){
+        return `
+          <div class="inv-item" style="opacity:.4;">
+            <span class="inv-item-name">
+              ${uiIcon('lock')} ${esc(s.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${s.unlockLevel}で習得</span><br>
+              <span style="color:var(--text-muted);font-size:11px;">${esc(s.desc)}</span>
+            </span>
+          </div>`;
+      }
+      const enabled = (jp.loadout && jp.loadout.enabled || []).includes(s.key);
+      return `
+        <div class="inv-item" style="${enabled?'':'opacity:.5;'}">
+          <span class="inv-item-name">
+            ${esc(s.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${s.element?`${ELEMENT_LABELS[s.element]}属性 ・ `:''}MP${s.mpCost} ・ 発動率${s.baseRate}%${enabled?` → 実質${actualRateOf(s.key)}%`:''})</span><br>
+            <span style="color:var(--text-muted);font-size:11px;">${esc(s.desc)}</span>
+          </span>
+        </div>`;
+    }).join('');
+
+    const equipHtml = `
+      <div class="equip-row">
+        <span class="equip-slot">武器</span>
+        <span>${snap.equippedWeapon ? `${esc(snap.equippedWeapon.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(snap.equippedWeapon))}</span>` : '未装備'}</span>
+      </div>
+      <div class="equip-row">
+        <span class="equip-slot">防具</span>
+        <span>${snap.equippedArmor ? `${esc(snap.equippedArmor.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(snap.equippedArmor))}</span>` : '未装備'}</span>
+      </div>`;
+
+    const allowedWeaponLabel = Array.from(foreignAllowedWeaponTypes(liverId, snap)).map(t=>WEAPON_TYPES[t].name).join('・') || 'なし';
+
+    const resistances = foreignLiverResistances(snap);
+    const resistanceTilesHtml = Object.keys(ELEMENT_LABELS).map(el=>{
+      const value = resistances[el] || 0;
+      const pct = value * 3;
+      const pctLabel = pct === 0 ? '±0%' : (pct > 0 ? `+${pct}%` : `-${Math.abs(pct)}%`);
+      const color = value > 0 ? 'var(--rare-uncommon)' : (value < 0 ? 'var(--danger)' : 'var(--text-primary)');
+      return `
+        <div class="stat-tile">
+          <span class="stat-tile-label">${ELEMENT_LABELS[el]}属性耐性</span>
+          <span class="stat-tile-value" style="color:${color};">${pctLabel}</span>
+        </div>`;
+    }).join('');
+    const headlineTile = (label, value) => `
+        <div class="stat-tile" style="background:rgba(255,216,99,0.08);"><span class="stat-tile-label">${label}</span><span class="stat-tile-value" style="font-size:20px;color:var(--gold);">${value}</span></div>`;
+    const statTilesHtml = `
+      <div class="stat-tile-grid">
+        ${headlineTile('レベル', jp.level)}
+        <div class="stat-tile"><span class="stat-tile-label">HP</span><span class="stat-tile-value">${snap.hp}<span style="color:var(--text-muted);font-size:12px;">/${snap.maxHp}</span></span></div>
+        <div class="stat-tile"><span class="stat-tile-label">MP</span><span class="stat-tile-value">${snap.mp}<span style="color:var(--text-muted);font-size:12px;">/${snap.maxMp}</span></span></div>
+        <div class="stat-tile"><span class="stat-tile-label">攻撃力</span><span class="stat-tile-value">${foreignLiverAtk(liverId, snap, partySize)}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">防御力</span><span class="stat-tile-value">${foreignLiverDefStat(liverId, snap, partySize)}</span></div>
+        ${headlineTile('戦闘力', foreignCombatPower(snap))}
+        ${resistanceTilesHtml}
+        <div class="stat-tile"><span class="stat-tile-label">EXP</span><span class="stat-tile-value">${jp.exp}<span style="color:var(--text-muted);font-size:12px;">/${expToNext(jp.level)}</span></span></div>
+      </div>`;
+
+    const liverFrom = state.ui.profileLiverFrom;
+    const actionsHtml = liverFrom === 'ranking'
+      ? `<div class="actions">
+          <button id="viewProfileFromLiverBtn">${esc(cache.data.player_name)}のマイページを見る</button>
+          <button id="backToRankingFromLiverBtn">ランキングに戻る</button>
+        </div>`
+      : `<div class="actions">
+          <button id="backFromProfileLiverDetailBtn">マイページに戻る</button>
+        </div>`;
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml(def.name)}
+      </div>
+      ${actionsHtml}
+      <div class="section-block">
+        <p class="section-label">ステータス</p>
+        ${statTilesHtml}
+        <p style="color:var(--text-muted);font-size:11px;margin:8px 0 0;">属性耐性はレベルアップでは変化しません。装備品(主に防具)に付く耐性値によってのみ増減します。</p>
+      </div>
+      <div class="section-block">
+        <p class="section-label">装備</p>
+        <p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">装備可能な武器種: ${esc(allowedWeaponLabel)}</p>
+        ${equipHtml}
+      </div>
+      <div class="section-block">
+        <p class="section-label">衣装</p>
+        <p class="log-entry" style="margin:0;">${costumeDef ? esc(costumeDef.name) : '(未設定)'}</p>
+      </div>
+      <div class="section-block">
+        <p class="section-label">パッシブスキル</p>
+        ${passiveRow}
+      </div>
+      <div class="section-block">
+        <p class="section-label">ジョブ</p>
+        <p class="log-entry" style="margin:0;">${esc(job.name)}</p>
+      </div>
+      <div class="section-block">
+        <p class="section-label">スキル</p>
+        ${atkRow}
+        ${skillRows}
+      </div>
+    `;
+  }
+
   function renderDeadInner(){
     const lost = state.pendingDefeatGoldLoss || 0;
     const wasTutorial = state.activeDungeonId === 'tutorial';
@@ -6475,6 +7041,8 @@
     else if(state.screen === 'market') inner = renderMarketInner();
     else if(state.screen === 'rankings') inner = renderRankingsInner();
     else if(state.screen === 'rankingDetail') inner = renderRankingDetailInner();
+    else if(state.screen === 'profile') inner = renderProfileInner();
+    else if(state.screen === 'profileLiverDetail') inner = renderProfileLiverDetailInner();
     else if(state.screen === 'announcements') inner = renderAnnouncementsInner();
     else if(state.screen === 'announcementDetail') inner = renderAnnouncementDetailInner();
     else if(state.screen === 'dead') inner = renderDeadInner();
@@ -7006,6 +7574,65 @@
     }
     on('chatReportPopupCancelBtn', closeChatReportPopup);
     on('chatReportPopupConfirmBtn', submitChatReport);
+
+    const chatUserMenuBackdrop = document.getElementById('chatUserMenuBackdrop');
+    if(chatUserMenuBackdrop){
+      chatUserMenuBackdrop.addEventListener('click', (e)=>{ if(e.target === chatUserMenuBackdrop) closeChatUserMenu(); });
+    }
+    on('chatUserMenuCancelBtn', closeChatUserMenu);
+    on('chatUserMenuProfileBtn', ()=>{
+      const menu = state.ui && state.ui.chatUserMenu;
+      if(!menu) return;
+      closeChatUserMenu();
+      openProfile(menu.playerId, 'town', menu.playerName);
+    });
+    on('chatUserMenuReportBtn', ()=>{
+      const menu = state.ui && state.ui.chatUserMenu;
+      if(!menu || menu.messageId == null) return;
+      closeChatUserMenu();
+      openChatReportPopup(menu.messageId);
+    });
+
+    on('gotoProfileBtn', ()=>openProfile(state.playerId, 'town'));
+    on('backFromProfileBtn', backFromProfile);
+    on('backFromProfileLiverDetailBtn', backFromProfileLiverDetail);
+    on('viewProfileFromLiverBtn', viewProfileFromLiverDetail);
+    on('backToRankingFromLiverBtn', backToRankingFromLiverDetail);
+    document.querySelectorAll('[data-open-profile-liver]').forEach(b=>{
+      b.addEventListener('click', ()=>openProfileLiverDetail(b.getAttribute('data-open-profile-liver')));
+    });
+    document.querySelectorAll('[data-open-ranking-character]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const from = (state.screen === 'rankings' || state.screen === 'rankingDetail') ? state.screen : 'rankings';
+        openProfileLiverFromRanking(
+          b.getAttribute('data-open-ranking-character'),
+          b.getAttribute('data-liver-id'),
+          from,
+          b.getAttribute('data-fallback-name')
+        );
+      });
+    });
+    on('saveProfileCommentBtn', saveProfileComment);
+    on('editProfileCommentBtn', ()=>{
+      if(!state.ui) state.ui = {};
+      state.ui.profileCommentEditing = true;
+      render();
+    });
+    on('cancelProfileCommentEditBtn', ()=>{
+      if(!state.ui) return;
+      state.ui.profileCommentEditing = false;
+      profileCommentStatus = null;
+      render();
+    });
+    document.querySelectorAll('[data-open-profile-report]').forEach(b=>{
+      b.addEventListener('click', ()=>openProfileReportPopup(b.getAttribute('data-open-profile-report'), b.getAttribute('data-target-name')));
+    });
+    const profileReportPopupBackdrop = document.getElementById('profileReportPopupBackdrop');
+    if(profileReportPopupBackdrop){
+      profileReportPopupBackdrop.addEventListener('click', (e)=>{ if(e.target === profileReportPopupBackdrop) closeProfileReportPopup(); });
+    }
+    on('profileReportPopupCancelBtn', closeProfileReportPopup);
+    on('profileReportPopupConfirmBtn', submitProfileReport);
   }
 
   /* ---------------- チャット(全ユーザー共有、Supabase Realtime) ---------------- */
@@ -7019,6 +7646,7 @@
     { id:'harassment', label:'誹謗中傷・嫌がらせ' },
     { id:'inappropriate', label:'不適切な内容' },
     { id:'impersonation', label:'なりすまし' },
+    { id:'cheat', label:'不正・チートの疑い' },
     { id:'other', label:'その他' },
   ];
   let chatCache = [];
@@ -7043,10 +7671,11 @@
     if(!chatCache.length) return '<p style="color:var(--text-muted);">まだ発言はない。</p>';
     return chatCache.map(m=>{
       const isOwn = !!(state && state.playerId && m.id === state.playerId);
-      const reportHtml = (!isOwn && m.messageId != null)
-        ? `<span class="chat-report-trigger" data-report-message="${m.messageId}" title="この投稿を通報する">⋮</span>`
+      const menuHtml = (m.id != null)
+        ? `<span class="chat-report-trigger" data-open-chat-user-menu="${m.id}" data-user-name="${esc(m.name)}" data-is-own="${isOwn}" data-message-id="${m.messageId!=null?m.messageId:''}" title="マイページ・通報">⋮</span>`
         : '';
-      return `<p>${reportHtml}<span style="color:var(--gold);">${nameWithId(m.name, m.id)}:</span> ${esc(m.text)}</p>`;
+      const nameHtml = `<span style="color:var(--gold);">${nameWithId(m.name, m.id)}</span>`;
+      return `<p>${menuHtml}${nameHtml}: ${esc(m.text)}</p>`;
     }).join('');
   }
 
@@ -7321,6 +7950,8 @@
       ${renderHelpPopup()}
       ${renderMarketPopup()}
       ${renderChatReportPopup()}
+      ${renderChatUserMenu()}
+      ${renderProfileReportPopup()}
     `;
     bindEvents();
     const historyEl = document.getElementById('historyLog');
