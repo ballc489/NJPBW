@@ -682,15 +682,17 @@
             <span class="badge gold">${esc(catLabel)}</span>
             ${resolved ? `<span class="badge danger">クローズ済み</span>` : ''}
           </div>
-          <div class="muted mono" style="font-size:11px;">${new Date(r.created_at).toLocaleString('ja-JP')} / ${esc(r.channel)}</div>
+          <div class="muted mono" style="font-size:11px;">${new Date(r.created_at).toLocaleString('ja-JP')} / ${r.message_id == null ? 'マイページ' : esc(r.channel)}</div>
         </div>
-        <p style="margin:10px 0 4px;">${esc(r.reported_body)}${r.message_deleted?' <span class="muted">(投稿は削除済み)</span>':''}</p>
+        ${r.message_id == null
+          ? `<p style="margin:10px 0 4px;">${r.reported_body ? esc(r.reported_body) : '<span class="muted">(通報時点でコメントは未設定)</span>'}<br><span class="muted" style="font-size:11px;">(マイページのひとことコメント。通報時点のスナップショット)</span></p>`
+          : `<p style="margin:10px 0 4px;">${esc(r.reported_body)}${r.message_deleted?' <span class="muted">(投稿は削除済み)</span>':''}</p>`}
         ${r.reason_text ? `<p class="muted" style="font-size:12px;">通報理由の詳細: ${esc(r.reason_text)}</p>` : ''}
         <p class="muted" style="font-size:11px;">通報者ID: ${esc(r.reporter_id ? r.reporter_id.slice(0,8) : '-')}</p>
         ${renderReportContext('チャンネル全体の前後文脈', r.channel_context)}
         ${renderReportContext('この投稿者の前後の発言', r.author_context)}
 
-        ${!r.message_deleted ? `
+        ${(r.message_id != null && !r.message_deleted) ? `
           <label style="margin-top:10px;display:flex;align-items:center;gap:6px;">
             <input type="checkbox" data-delete-msg="${r.id}" style="width:auto;">対象の投稿を削除する
           </label>` : ''}
