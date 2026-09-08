@@ -2697,7 +2697,8 @@
         marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
         rosterDetailId: null, rosterDetailFrom: 'roster',
-        profileViewId: null, profileFrom: 'town', profileLiverId: null },
+        profileViewId: null, profileFrom: 'town', profileLiverId: null,
+        profileLiverFrom: 'profile', profileCommentEditing: false },
       pendingDefeatGoldLoss: 0,
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
@@ -3471,7 +3472,8 @@
         marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
         rosterDetailId: null, rosterDetailFrom: 'roster',
-        profileViewId: null, profileFrom: 'town', profileLiverId: null },
+        profileViewId: null, profileFrom: 'town', profileLiverId: null,
+        profileLiverFrom: 'profile', profileCommentEditing: false },
         pendingDefeatGoldLoss: 0,
         dungeons,
         colosseum: {
@@ -5027,10 +5029,10 @@
   function renderRankingRow(row, index, highlight){
     const liverLabel = row.liver_id ? (liverDef(row.liver_id) ? liverDef(row.liver_id).name : row.liver_id) : '';
     return `
-      <div class="inv-item" style="${highlight ? 'border-left-color:var(--gold);background:rgba(255,216,99,0.12);' : ''}">
+      <div class="inv-item" style="cursor:pointer;${highlight ? 'border-left-color:var(--gold);background:rgba(255,216,99,0.12);' : ''}" data-open-ranking-character="${row.player_id}" data-liver-id="${row.liver_id||''}" data-fallback-name="${esc(row.player_name)}">
         <span class="inv-item-name">
           <span style="color:var(--gold);font-family:var(--font-mono);">${index}位</span>
-          <span data-open-profile="${row.player_id}" data-fallback-name="${esc(row.player_name)}" style="cursor:pointer;text-decoration:underline dotted;">${nameWithId(row.player_name, row.player_id)}</span>${liverLabel ? ` <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${esc(liverLabel)})</span>` : ''}
+          ${nameWithId(row.player_name, row.player_id)}${liverLabel ? ` <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${esc(liverLabel)})</span>` : ''}
           <span style="float:right;color:var(--gold);font-family:var(--font-mono);">戦闘力 ${row.combat_power}</span>
         </span>
       </div>`;
@@ -6591,6 +6593,7 @@
     state.ui.profileFrom = from || 'town';
     state.screen = 'profile';
     profileCommentStatus = null;
+    state.ui.profileCommentEditing = false;
     profileViewCache = { playerId, loading:true, data:null, error:false, fallbackName: fallbackName||null };
     saveGame(); render();
     fetchProfile(playerId, fallbackName);
@@ -6601,16 +6604,46 @@
     gotoScreen(from === 'rankings' || from === 'rankingDetail' ? from : 'town');
   }
 
+  /* マイページの保有ライバー一覧から個別のキャラ詳細を開く場合。
+   * 戻る先は常にマイページ(profileLiverFrom:'profile')。 */
   function openProfileLiverDetail(liverId){
     if(!state.ui) state.ui = {};
     state.ui.profileLiverId = liverId;
+    state.ui.profileLiverFrom = 'profile';
     state.screen = 'profileLiverDetail';
     saveGame(); render();
+  }
+
+  /* ランキングの行を押した場合は、マイページを経由せず直接そのキャラの
+   * 詳細画面へ遷移する(profileLiverFrom:'ranking')。詳細画面側で
+   * 「マイページを見る」「ランキングに戻る」の2つの選択肢を出す。 */
+  function openProfileLiverFromRanking(playerId, liverId, from, fallbackName){
+    if(inCombat || !playerId || !liverId) return;
+    if(!state.ui) state.ui = {};
+    state.ui.profileViewId = playerId;
+    state.ui.profileFrom = (from === 'rankings' || from === 'rankingDetail') ? from : 'rankings';
+    state.ui.profileLiverId = liverId;
+    state.ui.profileLiverFrom = 'ranking';
+    state.screen = 'profileLiverDetail';
+    profileCommentStatus = null;
+    state.ui.profileCommentEditing = false;
+    profileViewCache = { playerId, loading:true, data:null, error:false, fallbackName: fallbackName||null };
+    saveGame(); render();
+    fetchProfile(playerId, fallbackName);
   }
 
   function backFromProfileLiverDetail(){
     state.screen = 'profile';
     saveGame(); render();
+  }
+
+  function viewProfileFromLiverDetail(){
+    state.screen = 'profile';
+    saveGame(); render();
+  }
+
+  function backToRankingFromLiverDetail(){
+    gotoScreen(state.ui.profileFrom === 'rankingDetail' ? 'rankingDetail' : 'rankings');
   }
 
   async function saveProfileComment(){
@@ -6622,6 +6655,8 @@
       const { error } = await sb.rpc('set_profile_comment', { p_comment: input.value });
       if(error) throw error;
       profileCommentStatus = { ok:true, text:'コメントを保存しました。' };
+      if(!state.ui) state.ui = {};
+      state.ui.profileCommentEditing = false;
       await fetchProfile(state.playerId);
     }catch(e){
       console.error('save profile comment failed', e);
@@ -6776,12 +6811,24 @@
         }).join('')
       : '<p class="inv-empty">まだ仲間になったライバーがいません。</p>';
 
+    const commentEditing = !!(state.ui && state.ui.profileCommentEditing);
     const commentHtml = isSelf
-      ? `
-        <textarea id="profileCommentInput" maxlength="60" placeholder="ひとことコメント(60文字まで)" style="width:100%;min-height:54px;font-family:var(--font-display);font-size:13px;background:var(--win-bg-2);color:var(--text-primary);border:1px solid var(--win-border);padding:8px;box-sizing:border-box;">${esc(p.comment || '')}</textarea>
-        <div class="actions" style="margin-top:6px;"><button class="primary" id="saveProfileCommentBtn">コメントを保存</button></div>
-        ${profileCommentStatus ? `<p class="log-entry ${profileCommentStatus.ok?'system':'danger'}" style="margin-top:4px;">${esc(profileCommentStatus.text)}</p>` : ''}
-      `
+      ? (commentEditing
+          ? `
+            <textarea id="profileCommentInput" maxlength="60" placeholder="ひとことコメント(60文字まで)" style="width:100%;min-height:54px;font-family:var(--font-display);font-size:13px;background:var(--win-bg-2);color:var(--text-primary);border:1px solid var(--win-border);padding:8px;box-sizing:border-box;">${esc(p.comment || '')}</textarea>
+            <div class="actions" style="margin-top:6px;">
+              <button class="primary" id="saveProfileCommentBtn">保存</button>
+              <button id="cancelProfileCommentEditBtn">キャンセル</button>
+            </div>
+            ${profileCommentStatus ? `<p class="log-entry ${profileCommentStatus.ok?'system':'danger'}" style="margin-top:4px;">${esc(profileCommentStatus.text)}</p>` : ''}
+          `
+          : `
+            ${p.comment
+              ? `<p class="log-entry" style="background:rgba(255,255,255,0.05);padding:8px;">${esc(p.comment)}</p>`
+              : `<p class="inv-empty">コメントはまだありません。</p>`}
+            <div class="actions" style="margin-top:6px;"><button id="editProfileCommentBtn">編集</button></div>
+            ${profileCommentStatus ? `<p class="log-entry ${profileCommentStatus.ok?'system':'danger'}" style="margin-top:4px;">${esc(profileCommentStatus.text)}</p>` : ''}
+          `)
       : (p.comment
           ? `<p class="log-entry" style="background:rgba(255,255,255,0.05);padding:8px;">${esc(p.comment)}</p>`
           : `<p class="inv-empty">コメントはまだありません。</p>`);
@@ -6914,13 +6961,21 @@
         <div class="stat-tile"><span class="stat-tile-label">EXP</span><span class="stat-tile-value">${jp.exp}<span style="color:var(--text-muted);font-size:12px;">/${expToNext(jp.level)}</span></span></div>
       </div>`;
 
+    const liverFrom = state.ui.profileLiverFrom;
+    const actionsHtml = liverFrom === 'ranking'
+      ? `<div class="actions">
+          <button id="viewProfileFromLiverBtn">${esc(cache.data.player_name)}のマイページを見る</button>
+          <button id="backToRankingFromLiverBtn">ランキングに戻る</button>
+        </div>`
+      : `<div class="actions">
+          <button id="backFromProfileLiverDetailBtn">マイページに戻る</button>
+        </div>`;
+
     return `
       <div class="scene-text">
         ${sceneHeadingHtml(def.name, helpButtonHtml('profile'))}
       </div>
-      <div class="actions">
-        <button id="backFromProfileLiverDetailBtn">マイページに戻る</button>
-      </div>
+      ${actionsHtml}
       <div class="section-block">
         <p class="section-label">ステータス</p>
         ${statTilesHtml}
@@ -7544,16 +7599,34 @@
     on('gotoProfileBtn', ()=>openProfile(state.playerId, 'town'));
     on('backFromProfileBtn', backFromProfile);
     on('backFromProfileLiverDetailBtn', backFromProfileLiverDetail);
+    on('viewProfileFromLiverBtn', viewProfileFromLiverDetail);
+    on('backToRankingFromLiverBtn', backToRankingFromLiverDetail);
     document.querySelectorAll('[data-open-profile-liver]').forEach(b=>{
       b.addEventListener('click', ()=>openProfileLiverDetail(b.getAttribute('data-open-profile-liver')));
     });
-    document.querySelectorAll('[data-open-profile]').forEach(b=>{
+    document.querySelectorAll('[data-open-ranking-character]').forEach(b=>{
       b.addEventListener('click', ()=>{
-        const from = (state.screen === 'rankings' || state.screen === 'rankingDetail') ? state.screen : 'town';
-        openProfile(b.getAttribute('data-open-profile'), from, b.getAttribute('data-fallback-name'));
+        const from = (state.screen === 'rankings' || state.screen === 'rankingDetail') ? state.screen : 'rankings';
+        openProfileLiverFromRanking(
+          b.getAttribute('data-open-ranking-character'),
+          b.getAttribute('data-liver-id'),
+          from,
+          b.getAttribute('data-fallback-name')
+        );
       });
     });
     on('saveProfileCommentBtn', saveProfileComment);
+    on('editProfileCommentBtn', ()=>{
+      if(!state.ui) state.ui = {};
+      state.ui.profileCommentEditing = true;
+      render();
+    });
+    on('cancelProfileCommentEditBtn', ()=>{
+      if(!state.ui) return;
+      state.ui.profileCommentEditing = false;
+      profileCommentStatus = null;
+      render();
+    });
     document.querySelectorAll('[data-open-profile-report]').forEach(b=>{
       b.addEventListener('click', ()=>openProfileReportPopup(b.getAttribute('data-open-profile-report'), b.getAttribute('data-target-name')));
     });
@@ -7603,9 +7676,7 @@
       const menuHtml = (m.id != null)
         ? `<span class="chat-report-trigger" data-open-chat-user-menu="${m.id}" data-user-name="${esc(m.name)}" data-is-own="${isOwn}" data-message-id="${m.messageId!=null?m.messageId:''}" title="マイページ・通報">⋮</span>`
         : '';
-      const nameHtml = (m.id != null)
-        ? `<span data-open-chat-user-menu="${m.id}" data-user-name="${esc(m.name)}" data-is-own="${isOwn}" data-message-id="${m.messageId!=null?m.messageId:''}" style="color:var(--gold);cursor:pointer;text-decoration:underline dotted;">${nameWithId(m.name, m.id)}</span>`
-        : `<span style="color:var(--gold);">${nameWithId(m.name, m.id)}</span>`;
+      const nameHtml = `<span style="color:var(--gold);">${nameWithId(m.name, m.id)}</span>`;
       return `<p>${menuHtml}${nameHtml}: ${esc(m.text)}</p>`;
     }).join('');
   }
