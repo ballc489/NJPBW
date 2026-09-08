@@ -4719,12 +4719,6 @@
       '選択すると、そのライバーのステータス・装備・ジョブ・スキルなどを詳しく確認できる。',
       '未解放のライバーも詳細を覗くことはできる(編集や装備は不可)。気になったら「召喚」で仲間にしよう。'
     ],
-    profile: [
-      'ランキングやチャットのユーザー名から開ける、他プレイヤーの「マイページ」。',
-      '所持ライバー数・クリアステージ数・コロシアム最高到達階・ひとことコメントに加え、保有ライバーの一覧を確認できる。',
-      'ライバーを選択すると、そのステータス・装備・スキル構成などを閲覧できる(すべて閲覧専用)。',
-      '自分自身のマイページでは、ひとことコメントを編集できる。気になるユーザーがいれば、ここから通報も行える。'
-    ],
     home: ['あなただけの小さな家。まだ何もない部屋だが、少しずつ形にしていけばいい。'],
     colosseum: [
       '全世界の冒険者と戦うPvPコンテンツ。',
@@ -6748,7 +6742,7 @@
       <div class="help-popup" style="max-width:280px;">
         <p class="section-label" style="margin-top:0;">${esc(menu.playerName)}</p>
         <div class="actions" style="flex-direction:column;align-items:stretch;">
-          <button id="chatUserMenuProfileBtn">マイページを見る</button>
+          <button id="chatUserMenuProfileBtn">詳細を見る</button>
           ${(!menu.isOwn && menu.messageId != null) ? `<button id="chatUserMenuReportBtn">この投稿を通報する</button>` : ''}
           <button id="chatUserMenuCancelBtn">閉じる</button>
         </div>
@@ -6767,21 +6761,21 @@
       // ここには来ない想定だが、リロード直後など想定外の経路に備えて
       // フォールバック表示だけ用意しておく(ランキング画面と同じ割り切り)。
       return `
-        <div class="scene-text">${sceneHeadingHtml('マイページ', helpButtonHtml('profile'))}</div>
+        <div class="scene-text">${sceneHeadingHtml('マイページ')}</div>
         ${backBtnHtml}
         <p class="log-entry system">読み込み中……</p>
       `;
     }
     if(cache.loading){
       return `
-        <div class="scene-text">${sceneHeadingHtml(cache.fallbackName || 'マイページ', helpButtonHtml('profile'))}</div>
+        <div class="scene-text">${sceneHeadingHtml(cache.fallbackName || 'マイページ')}</div>
         ${backBtnHtml}
         <p class="log-entry system">読み込み中……</p>
       `;
     }
     if(cache.error){
       return `
-        <div class="scene-text">${sceneHeadingHtml('マイページ', helpButtonHtml('profile'))}</div>
+        <div class="scene-text">${sceneHeadingHtml('マイページ')}</div>
         ${backBtnHtml}
         <p class="log-entry danger">読み込みに失敗した。時間をおいて開き直してみてほしい。</p>
       `;
@@ -6789,7 +6783,7 @@
     const p = cache.data;
     if(!p){
       return `
-        <div class="scene-text">${sceneHeadingHtml(cache.fallbackName || 'マイページ', helpButtonHtml('profile'))}</div>
+        <div class="scene-text">${sceneHeadingHtml(cache.fallbackName || 'マイページ')}</div>
         ${backBtnHtml}
         <p class="inv-empty">まだ記録がありません(保存が反映されるとここに表示されます)。</p>
       `;
@@ -6826,23 +6820,27 @@
             ${p.comment
               ? `<p class="log-entry" style="background:rgba(255,255,255,0.05);padding:8px;">${esc(p.comment)}</p>`
               : `<p class="inv-empty">コメントはまだありません。</p>`}
-            <div class="actions" style="margin-top:6px;"><button id="editProfileCommentBtn">編集</button></div>
             ${profileCommentStatus ? `<p class="log-entry ${profileCommentStatus.ok?'system':'danger'}" style="margin-top:4px;">${esc(profileCommentStatus.text)}</p>` : ''}
           `)
       : (p.comment
           ? `<p class="log-entry" style="background:rgba(255,255,255,0.05);padding:8px;">${esc(p.comment)}</p>`
           : `<p class="inv-empty">コメントはまだありません。</p>`);
 
-    const reportBtnHtml = !isSelf
-      ? `<div class="section-block"><button data-open-profile-report="${targetId}" data-target-name="${esc(p.player_name)}">このユーザーを通報</button></div>`
-      : '';
+    const commentHeaderHtml = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 8px;">
+        <p class="section-label" style="margin:0;">ひとことコメント</p>
+        ${(isSelf && !commentEditing) ? `<button id="editProfileCommentBtn" style="padding:3px 10px;font-size:11px;">編集</button>` : ''}
+      </div>`;
 
     return `
       <div class="scene-text">
-        ${sceneHeadingHtml(`${p.player_name}${isSelf ? '(あなた)' : ''}`, helpButtonHtml('profile'))}
+        ${sceneHeadingHtml(`${p.player_name}${isSelf ? '(あなた)' : ''}`)}
         ${p.title ? `<p class="log-entry" style="font-family:var(--font-mono);font-size:12px;color:var(--gold);">称号: ${esc(p.title)}</p>` : ''}
       </div>
-      ${backBtnHtml}
+      <div class="actions">
+        <button id="backFromProfileBtn">戻る</button>
+        ${!isSelf ? `<button data-open-profile-report="${targetId}" data-target-name="${esc(p.player_name)}" style="margin-left:auto;">このユーザーを通報</button>` : ''}
+      </div>
       <div class="section-block">
         <p class="section-label">プロフィール</p>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
@@ -6852,14 +6850,13 @@
         </div>
       </div>
       <div class="section-block">
-        <p class="section-label">ひとことコメント</p>
+        ${commentHeaderHtml}
         ${commentHtml}
       </div>
       <div class="section-block">
         <p class="section-label">保有ライバー</p>
         ${rosterRowsHtml}
       </div>
-      ${reportBtnHtml}
     `;
   }
 
@@ -6973,7 +6970,7 @@
 
     return `
       <div class="scene-text">
-        ${sceneHeadingHtml(def.name, helpButtonHtml('profile'))}
+        ${sceneHeadingHtml(def.name)}
       </div>
       ${actionsHtml}
       <div class="section-block">
