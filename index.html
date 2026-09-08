@@ -263,6 +263,14 @@
   .equip-slot{color:var(--text-muted);font-family:var(--font-mono);font-size:11px;}
   .equip-row button{padding:3px 9px;font-size:11px;margin-left:8px;}
 
+  /* ライバー詳細画面などのステータス欄。項目ごとに小さなタイルで区切る
+   * (単なる横並びテキストや、端から端まで伸びるバー状の行より
+   * 「項目感」が出るデザインとして採用)。 */
+  .stat-tile-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(5,auto);grid-auto-flow:column;gap:8px;}
+  .stat-tile{background:rgba(255,255,255,0.05);border-left:3px solid var(--gold);padding:7px 10px;}
+  .stat-tile .stat-tile-label{display:block;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);letter-spacing:.04em;}
+  .stat-tile .stat-tile-value{display:block;font-family:var(--font-mono);font-size:16px;color:var(--text-primary);margin-top:2px;}
+
   .inv-item{
     display:flex;justify-content:space-between;align-items:center;
     padding:7px 8px;margin-bottom:6px;
@@ -2488,7 +2496,7 @@
   function switchLiverCostume(liverId, costumeKey){
     const ls = liverState(liverId);
     const def = costumeDefFor(liverId, costumeKey);
-    if(!ls || !def) return;
+    if(!ls || !def || !ls.unlocked) return;
     if(!(ls.unlockedCostumes||[]).includes(costumeKey)) return;
     if(ls.costume === costumeKey) return;
     ls.costume = costumeKey;
@@ -2603,6 +2611,7 @@
 
   function toggleSkillEnabled(liverId, skillKey){
     const ls = liverState(liverId);
+    if(!ls.unlocked) return;
     const jp = jobProgressFor(liverId);
     const loadout = jp.loadout;
     const idx = loadout.enabled.indexOf(skillKey);
@@ -2659,6 +2668,7 @@
       hp:maxHp, maxHp, mp:maxMp, maxMp,
       equipped: {weapon:null, armor:null},
       unlocked: !!liverDefObj.startUnlocked,
+      unlockedAt: liverDefObj.startUnlocked ? Date.now() : null,
       costume: defaultCostume,
       unlockedCostumes: defaultCostume ? [defaultCostume] : []
     };
@@ -2667,7 +2677,10 @@
   function newCharacter(name, starterLiverId, playerId){
     const roster = {};
     LIVER_DEFS.forEach(def=>{ roster[def.id] = newLiverProgress(def); });
-    if(starterLiverId && roster[starterLiverId]) roster[starterLiverId].unlocked = true;
+    if(starterLiverId && roster[starterLiverId]){
+      roster[starterLiverId].unlocked = true;
+      roster[starterLiverId].unlockedAt = Date.now();
+    }
     const party = (starterLiverId && roster[starterLiverId]) ? [starterLiverId] : [];
     return {
       name, gold:0,
@@ -2682,7 +2695,8 @@
       home: { furniture: [] },
       ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
         marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
-        marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null },
+        marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
+        rosterDetailId: null, rosterDetailFrom: 'roster' },
       pendingDefeatGoldLoss: 0,
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
@@ -2891,11 +2905,27 @@
    * jobProgressにそのまま残っており、戻ってくれば続きから)。 */
   function switchLiverJob(id, jobId){
     const ls = liverState(id);
-    if(!JOB_DEFS[jobId] || ls.job === jobId) return;
+    if(!JOB_DEFS[jobId] || ls.job === jobId || !ls.unlocked) return;
+    const weapon = ls.equipped.weapon;
+    let willUnequip = false;
+    if(weapon){
+      const currentlyAllowed = allowedWeaponTypes(id);
+      const def = liverDef(id);
+      const futureAllowed = new Set([...(JOB_DEFS[jobId].weaponTypes||[]), ...(def.weaponAptitude||[])]);
+      if(currentlyAllowed.has(weapon.weaponType) && !futureAllowed.has(weapon.weaponType)){
+        const ok = confirm(`ジョブを「${JOB_DEFS[jobId].name}」に変更すると、装備中の武器「${weapon.name}」(${WEAPON_TYPES[weapon.weaponType].name})が装備条件を満たさなくなるため、自動的に外れます。変更しますか？`);
+        if(!ok) return;
+        willUnequip = true;
+      }
+    }
     if(!ls.jobProgress[jobId]) ls.jobProgress[jobId] = newJobProgress(jobId);
     ls.job = jobId;
+    if(willUnequip){
+      ls.equipped.weapon = null;
+      state.inventory.push(weapon);
+    }
     recomputeLiverMaxStats(id, true);
-    pushLog(`${liverDef(id).name}のジョブを「${JOB_DEFS[jobId].name}」に切り替えた。`, 'system');
+    pushLog(`${liverDef(id).name}のジョブを「${JOB_DEFS[jobId].name}」に切り替えた。${willUnequip ? `「${weapon.name}」が外れた。` : ''}`, 'system');
     saveGame(); render();
   }
 
@@ -2928,6 +2958,7 @@
     const ls = state.roster[id];
     if(!ls || ls.unlocked) return;
     ls.unlocked = true;
+    ls.unlockedAt = Date.now();
     pushLog(`新たな仲間「${liverDef(id).name}」が加わった！`, 'reward');
     if(state.party.length < PARTY_MAX) state.party.push(id);
   }
@@ -3349,7 +3380,8 @@
         home: { furniture: playerRow.home_furniture || [] },
         ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
         marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
-        marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null },
+        marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
+        rosterDetailId: null, rosterDetailFrom: 'roster' },
         pendingDefeatGoldLoss: 0,
         dungeons,
         colosseum: {
@@ -4166,14 +4198,13 @@
     return allowedWeaponTypes(liverId).has(item.weaponType);
   }
 
-  /* 装備変更は「編成」画面内の専用ピッカー(state.ui.equipPickerSlot =
+  /* 装備変更は「ライバー」の詳細画面内の専用ピッカー(state.ui.equipPickerSlot =
    * {liverId, slot})を通して行う。ピッカーはメインウィンドウ上に所持品
    * 一覧を表示するので、モバイルでもサイドパネルまでスクロールせずに
-   * 装備を選べる。装備が完了したら自動的にピッカーを閉じ、詳細設定
-   * 画面に戻る。 */
+   * 装備を選べる。装備が完了したら自動的にピッカーを閉じ、詳細画面に戻る。 */
   function equipItemForLiver(liverId, itemId){
     if(!canManageEquipment()) return;
-    if(!liverState(liverId)) return;
+    if(!liverState(liverId) || !liverState(liverId).unlocked) return;
     const idx = state.inventory.findIndex(i=>i.id===itemId);
     if(idx<0) return;
     const item = state.inventory[idx];
@@ -4195,7 +4226,7 @@
 
   function unequipSlot(slot, liverId){
     if(!canManageEquipment()) return;
-    if(!liverId || !liverState(liverId)) return;
+    if(!liverId || !liverState(liverId) || !liverState(liverId).unlocked) return;
     const ls = liverState(liverId);
     const item = ls.equipped[slot];
     if(!item) return;
@@ -4205,10 +4236,10 @@
     saveGame(); render();
   }
 
-  /* 詳細設定画面の装備欄にある「変更」ボタンで開く。メインウィンドウの
-   * 表示がピッカーに切り替わり、戻るボタンか装備完了で詳細設定画面に戻る。 */
+  /* ライバー詳細画面の装備欄にある「変更」ボタンで開く。メインウィンドウの
+   * 表示がピッカーに切り替わり、戻るボタンか装備完了で詳細画面に戻る。 */
   function openEquipPicker(liverId, slot){
-    if(!canManageEquipment() || !liverState(liverId)) return;
+    if(!canManageEquipment() || !liverState(liverId) || !liverState(liverId).unlocked) return;
     state.ui.equipPickerSlot = {liverId, slot};
     render();
   }
@@ -4582,7 +4613,13 @@
     ],
     party: [
       '最大4人まで編成可能。',
-      'あなただけの最強のパーティを編成しよう。'
+      'あなただけの最強のパーティを編成しよう。',
+      '装備・ジョブ・スキルなどの詳細設定は、各ライバーの「詳細を見る」から行える。'
+    ],
+    roster: [
+      '仲間になった、あるいはまだ見ぬライバーの一覧。',
+      '選択すると、そのライバーのステータス・装備・ジョブ・スキルなどを詳しく確認できる。',
+      '未解放のライバーも詳細を覗くことはできる(編集や装備は不可)。気になったら「召喚」で仲間にしよう。'
     ],
     home: ['あなただけの小さな家。まだ何もない部屋だが、少しずつ形にしていけばいい。'],
     colosseum: [
@@ -4732,6 +4769,7 @@
       </div>
       <div class="actions">
         <button class="primary" id="gotoAnnouncementsBtn">お知らせ${announcementUnreadCount > 0 ? `<span class="notify-badge">${announcementUnreadCount}</span>` : ''}</button>
+        <button class="primary" id="gotoRosterBtn">ライバー</button>
         <button class="primary" id="gotoPartyBtn">編成</button>
         <button class="primary" id="gotoInnBtn">宿屋</button>
         <button class="primary" id="gotoShopBtn">商店</button>
@@ -5915,30 +5953,115 @@
     `;
   }
 
-  /* パーティ編成画面の1行。折りたたみ時は編成の出し入れだけ、展開時は
-   * そのライバーの装備・パッシブ・ジョブ・スキル・耐性をまとめて表示する
-   * (以前はマイホーム側にあったジョブ・スキル管理をこちらに統合)。 */
+  /* パーティ編成画面の1行。編成の出し入れと、詳細画面(ライバー個別の
+   * 装備・ジョブ・スキル設定はすべてそちら)へのリンクだけを持つ。 */
   function renderPartyMemberRow(def){
     const id = def.id;
     const ls = liverState(id);
     const jp = jobProgressFor(id);
     const job = JOB_DEFS[ls.job];
     const inParty = state.party.includes(id);
-    const expanded = !!(state.ui.expandedGroups.includes('liver:'+id));
-    const weapon = ls.equipped.weapon;
-    const armor = ls.equipped.armor;
 
-    const summaryRow = `
+    return `
       <div class="inv-item" style="${inParty?'border-left-color:var(--gold);':''}">
         <span style="width:10px;height:10px;background:${def.color};display:inline-block;margin-right:8px;"></span>
         <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${jp.level} ・ ${esc(job.name)} ・ <span style="color:var(--gold);">戦闘力 ${combatPower(id)}</span></span></span>
         <span class="inv-item-actions">
           <button data-toggle-party="${id}" ${(!inParty && state.party.length>=PARTY_MAX)?'disabled':''}>${inParty?'外す':'編成に入れる'}</button>
-          <button data-toggle-group="liver:${id}" class="${expanded?'primary':''}">${expanded?'閉じる':'詳細設定'}</button>
+          <button data-view-liver-detail="${id}">詳細を見る</button>
         </span>
       </div>`;
+  }
 
-    if(!expanded) return summaryRow;
+  /* ---------------- ライバー一覧・詳細画面 ---------------- */
+  function openLiverDetail(id, from){
+    if(inCombat) return;
+    if(!state.ui) state.ui = {};
+    state.ui.rosterDetailId = id;
+    state.ui.rosterDetailFrom = from === 'party' ? 'party' : 'roster';
+    state.screen = 'liverDetail';
+    saveGame(); render();
+  }
+  function backFromLiverDetail(){
+    gotoScreen(state.ui.rosterDetailFrom === 'party' ? 'party' : 'roster');
+  }
+
+  const ROSTER_SORT_DEFAULT = 'default';
+  const ROSTER_SORT_OPTIONS = [
+    { value:'default',        label:'標準' },
+    { value:'cp_asc',         label:'戦闘力順(昇順)' },
+    { value:'cp_desc',        label:'戦闘力順(降順)' },
+    { value:'acquired_asc',   label:'入手順(昇順)' },
+    { value:'acquired_desc',  label:'入手順(降順)' },
+  ];
+
+  /* 並び順のルール: 解放済みを常に未解放より上、その中でも編成中を
+   * 最上部に固定する。そのうえで、各グループ内をソートモードに応じて
+   * 並べ替える(標準時はLIVER_DEFSの定義順のまま)。未解放グループは
+   * ソート対象にしない(定義順で固定)。 */
+  function sortRosterDefs(defs, mode){
+    if(mode === 'cp_asc') return [...defs].sort((a,b)=> combatPower(a.id) - combatPower(b.id));
+    if(mode === 'cp_desc') return [...defs].sort((a,b)=> combatPower(b.id) - combatPower(a.id));
+    if(mode === 'acquired_asc') return [...defs].sort((a,b)=> (liverState(a.id).unlockedAt||0) - (liverState(b.id).unlockedAt||0));
+    if(mode === 'acquired_desc') return [...defs].sort((a,b)=> (liverState(b.id).unlockedAt||0) - (liverState(a.id).unlockedAt||0));
+    return defs;
+  }
+
+  function renderRosterInner(){
+    const sortMode = (state.ui && state.ui.rosterSort) || ROSTER_SORT_DEFAULT;
+    const unlockedInParty = [];
+    const unlockedOthers = [];
+    const lockedDefs = [];
+    LIVER_DEFS.forEach(def=>{
+      if(!liverState(def.id).unlocked){ lockedDefs.push(def); return; }
+      (state.party.includes(def.id) ? unlockedInParty : unlockedOthers).push(def);
+    });
+    const orderedDefs = [...sortRosterDefs(unlockedInParty, sortMode), ...sortRosterDefs(unlockedOthers, sortMode), ...lockedDefs];
+
+    const rows = orderedDefs.map(def=>{
+      const ls = liverState(def.id);
+      if(!ls.unlocked){
+        return `
+          <div class="inv-item" style="opacity:.55;cursor:pointer;" data-open-roster-detail="${def.id}">
+            <span style="width:10px;height:10px;background:${def.color};display:inline-block;margin-right:8px;"></span>
+            <span class="inv-item-name">${uiIcon('lock')} ${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">未解放</span></span>
+          </div>`;
+      }
+      const jp = jobProgressFor(def.id);
+      const job = JOB_DEFS[ls.job];
+      const inParty = state.party.includes(def.id);
+      return `
+        <div class="inv-item" style="${inParty?'border-left-color:var(--gold);':''}cursor:pointer;" data-open-roster-detail="${def.id}">
+          <span style="width:10px;height:10px;background:${def.color};display:inline-block;margin-right:8px;"></span>
+          <span class="inv-item-name">${esc(def.name)}${inParty?' <span style="color:var(--gold);font-size:11px;">(編成中)</span>':''} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">Lv.${jp.level} ・ ${esc(job.name)} ・ <span style="color:var(--gold);">戦闘力 ${combatPower(def.id)}</span></span></span>
+        </div>`;
+    }).join('');
+
+    const sortSelectHtml = `<select id="rosterSortSelect" style="margin-left:auto;min-width:0;flex:0 1 auto;font-size:11px;padding:4px 4px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${ROSTER_SORT_OPTIONS.map(o=>`<option value="${o.value}" ${sortMode===o.value?'selected':''}>${esc(o.label)}</option>`).join('')}</select>`;
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('ライバー', helpButtonHtml('roster'))}
+      </div>
+      <div class="actions"><button id="backTownBtn">町に戻る</button>${sortSelectHtml}</div>
+      <div class="section-block">
+        ${rows}
+      </div>
+    `;
+  }
+
+  function renderLiverDetailInner(){
+    const id = state.ui.rosterDetailId;
+    const def = id && liverDef(id);
+    if(!def) return renderRosterInner();
+
+    const ls = liverState(id);
+    const unlocked = ls.unlocked;
+    const jp = jobProgressFor(id);
+    const job = JOB_DEFS[ls.job];
+    const inParty = state.party.includes(id);
+    const weapon = ls.equipped.weapon;
+    const armor = ls.equipped.armor;
 
     const { atkRate, actions } = computeActionRates(id);
     const actualRateOf = key => {
@@ -5947,17 +6070,17 @@
     };
 
     const jobSwitchHtml = Object.keys(JOB_DEFS).map(jobId=>`
-      <button data-switch-liver-job="${id}:${jobId}" ${ls.job===jobId?'disabled':''} style="padding:3px 9px;font-size:11px;">${ls.job===jobId?'◆ ':''}${esc(JOB_DEFS[jobId].name)}</button>`).join('');
+      <button data-switch-liver-job="${id}:${jobId}" ${(ls.job===jobId||!unlocked)?'disabled':''} style="padding:3px 9px;font-size:11px;">${ls.job===jobId?'◆ ':''}${esc(JOB_DEFS[jobId].name)}</button>`).join('');
 
     const currentCostumeKey = equippedCostumeKey(id);
     const unlockedCostumeKeys = ls.unlockedCostumes || [defaultCostumeKeyFor(id)];
     const costumeSwitchHtml = costumeDefsFor(id).map(c=>{
       const isCurrent = c.key === currentCostumeKey;
-      const isUnlocked = unlockedCostumeKeys.includes(c.key);
-      if(!isUnlocked){
+      const isCostumeUnlocked = unlockedCostumeKeys.includes(c.key);
+      if(!isCostumeUnlocked){
         return `<button disabled style="padding:3px 9px;font-size:11px;opacity:.45;">${uiIcon('lock')} ${esc(c.name)}</button>`;
       }
-      return `<button data-switch-liver-costume="${id}:${c.key}" ${isCurrent?'disabled':''} style="padding:3px 9px;font-size:11px;">${isCurrent?'◆ ':''}${esc(c.name)}</button>`;
+      return `<button data-switch-liver-costume="${id}:${c.key}" ${(isCurrent||!unlocked)?'disabled':''} style="padding:3px 9px;font-size:11px;">${isCurrent?'◆ ':''}${esc(c.name)}</button>`;
     }).join('');
 
     const atkRow = `
@@ -5975,11 +6098,11 @@
           ${esc(passive.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${passive.always?'常時発動':'条件付き発動'})</span><br>
           <span style="color:var(--text-muted);font-size:11px;">${esc(passive.desc)}</span>
         </span>
-      </div>` : '';
+      </div>` : '<p class="inv-empty">なし</p>';
 
     const skillRows = job.skills.map(s=>{
-      const unlocked = jp.level >= (s.unlockLevel||1);
-      if(!unlocked){
+      const skillUnlocked = jp.level >= (s.unlockLevel||1);
+      if(!skillUnlocked){
         return `
           <div class="inv-item" style="opacity:.4;">
             <span class="inv-item-name">
@@ -5995,13 +6118,11 @@
             ${esc(s.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">(${s.element?`${ELEMENT_LABELS[s.element]}属性 ・ `:''}MP${s.mpCost} ・ 発動率${s.baseRate}%${enabled?` → 実質${actualRateOf(s.key)}%`:''})</span><br>
             <span style="color:var(--text-muted);font-size:11px;">${esc(s.desc)}</span>
           </span>
-          <span class="inv-item-actions">
-            <button data-toggle-skill="${id}:${s.key}">${enabled?'無効化':'有効化'}</button>
-          </span>
+          ${unlocked ? `<span class="inv-item-actions"><button data-toggle-skill="${id}:${s.key}">${enabled?'無効化':'有効化'}</button></span>` : ''}
         </div>`;
     }).join('');
 
-    const equipHtml = `
+    const equipHtml = unlocked ? `
       <div class="equip-row">
         <span class="equip-slot">武器</span>
         <span>${weapon ? `${esc(weapon.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(weapon))}</span>` : '未装備'}
@@ -6015,29 +6136,77 @@
           ${armor ? `<button data-unequip="armor" data-unequip-for="${id}">外す</button>` : ''}
           <button data-open-equip-picker="${id}:armor">変更</button>
         </span>
+      </div>` : `<p style="color:var(--text-muted);font-size:12px;">仲間になると装備を変更できるようになる。</p>`;
+
+    const lockedBanner = !unlocked ? `<p class="log-entry system" style="margin-top:10px;">${uiIcon('lock')} まだ仲間になっていない。「召喚」で運命のチケットを使うと仲間になる。</p>` : '';
+
+    const allowedWeaponLabel = Array.from(allowedWeaponTypes(id)).map(t=>WEAPON_TYPES[t].name).join('・') || 'なし';
+
+    const resistances = liverResistances(id);
+    const resistanceTilesHtml = Object.keys(ELEMENT_LABELS).map(el=>{
+      const value = resistances[el] || 0;
+      const pct = value * 3;
+      const pctLabel = pct === 0 ? '±0%' : (pct > 0 ? `+${pct}%` : `-${Math.abs(pct)}%`);
+      const color = value > 0 ? 'var(--rare-uncommon)' : (value < 0 ? 'var(--danger)' : 'var(--text-primary)');
+      return `
+        <div class="stat-tile">
+          <span class="stat-tile-label">${ELEMENT_LABELS[el]}属性耐性</span>
+          <span class="stat-tile-value" style="color:${color};">${pctLabel}</span>
+        </div>`;
+    }).join('');
+    const headlineTile = (label, value) => `
+        <div class="stat-tile" style="background:rgba(255,216,99,0.08);"><span class="stat-tile-label">${label}</span><span class="stat-tile-value" style="font-size:20px;color:var(--gold);">${value}</span></div>`;
+    const statTilesHtml = `
+      <div class="stat-tile-grid">
+        ${headlineTile('レベル', jp.level)}
+        <div class="stat-tile"><span class="stat-tile-label">HP</span><span class="stat-tile-value">${ls.hp}<span style="color:var(--text-muted);font-size:12px;">/${ls.maxHp}</span></span></div>
+        <div class="stat-tile"><span class="stat-tile-label">MP</span><span class="stat-tile-value">${ls.mp}<span style="color:var(--text-muted);font-size:12px;">/${ls.maxMp}</span></span></div>
+        <div class="stat-tile"><span class="stat-tile-label">攻撃力</span><span class="stat-tile-value">${liverAtk(id)}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">防御力</span><span class="stat-tile-value">${liverDefStat(id)}</span></div>
+        ${headlineTile('戦闘力', combatPower(id))}
+        ${resistanceTilesHtml}
+        <div class="stat-tile"><span class="stat-tile-label">EXP</span><span class="stat-tile-value">${jp.exp}<span style="color:var(--text-muted);font-size:12px;">/${expToNext(jp.level)}</span></span></div>
       </div>`;
 
-    const detailHtml = `
-      <div style="margin:6px 0 14px 10px;border:1px solid ${def.color}66;border-left:3px solid ${def.color};background:rgba(255,255,255,0.04);padding:12px 14px;">
-        <p style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;color:${def.color};text-transform:uppercase;margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.2);">${esc(def.name)}の詳細設定</p>
-        <p style="color:var(--text-muted);font-size:11px;margin:0 0 6px;">EXP ${jp.exp}/${expToNext(jp.level)} ・ ${esc(job.desc)}</p>
-        <p class="section-label" style="margin:6px 0 6px;">装備</p>
+    const headingHtml = `<p class="scene-heading"><span>${esc(def.name)}${inParty ? ' <span style="color:var(--gold);font-weight:400;">(編成中)</span>' : ''}</span>${helpButtonHtml('roster')}</p>`;
+
+    return `
+      <div class="scene-text">
+        ${headingHtml}
+        ${lockedBanner}
+      </div>
+      <div class="actions">
+        <button id="backFromLiverDetailBtn">${state.ui.rosterDetailFrom === 'party' ? '編成画面に戻る' : 'ライバー一覧に戻る'}</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">ステータス</p>
+        ${statTilesHtml}
+        <p style="color:var(--text-muted);font-size:11px;margin:8px 0 0;">属性耐性はレベルアップでは変化しません。装備品(主に防具)に付く耐性値によってのみ増減します。</p>
+      </div>
+      <div class="section-block">
+        <p class="section-label">装備</p>
+        <p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">装備可能な武器種: ${esc(allowedWeaponLabel)}</p>
         ${equipHtml}
-        <p class="section-label" style="margin:10px 0 6px;">衣装</p>
-        <div class="actions" style="margin-top:0;margin-bottom:10px;">${costumeSwitchHtml}</div>
-        <p class="section-label" style="margin:10px 0 6px;">パッシブスキル</p>
+      </div>
+      <div class="section-block">
+        <p class="section-label">衣装</p>
+        <div class="actions" style="margin-top:0;">${costumeSwitchHtml}</div>
+      </div>
+      <div class="section-block">
+        <p class="section-label">パッシブスキル</p>
         ${passiveRow}
-        <p class="section-label" style="margin:10px 0 6px;">ジョブ</p>
-        <div class="actions" style="margin-top:0;margin-bottom:10px;">${jobSwitchHtml}</div>
-        <p class="section-label" style="margin:6px 0 6px;">スキル</p>
+      </div>
+      <div class="section-block">
+        <p class="section-label">ジョブ</p>
+        <div class="actions" style="margin-top:0;">${jobSwitchHtml}</div>
+      </div>
+      <div class="section-block">
+        <p class="section-label">スキル</p>
         ${atkRow}
         ${skillRows}
         <p style="color:var(--text-muted);font-size:11px;margin:4px 0 0;">有効スキルは最大${SKILL_LOADOUT_MAX}つまで。希望発動率の合計が50%を超える分は自動的に按分されます。</p>
-        <p class="section-label" style="margin:10px 0 6px;">属性耐性</p>
-        ${renderResistancePanel(id)}
-      </div>`;
-
-    return summaryRow + detailHtml;
+      </div>
+    `;
   }
 
   /* 装備ピッカー: 「変更」ボタンから開く、メインウィンドウ上の所持品
@@ -6047,7 +6216,7 @@
     const { liverId, slot } = state.ui.equipPickerSlot;
     if(!liverState(liverId)){
       state.ui.equipPickerSlot = null;
-      return renderPartyInner();
+      return state.screen === 'liverDetail' ? renderLiverDetailInner() : renderPartyInner();
     }
     const def = liverDef(liverId);
     const ls = liverState(liverId);
@@ -6093,7 +6262,6 @@
   }
 
   function renderPartyInner(){
-    if(state.ui.equipPickerSlot) return renderEquipPickerInner();
     const unlockedDefs = LIVER_DEFS.filter(d=>liverState(d.id).unlocked);
     const inPartyDefs = unlockedDefs.filter(d=>state.party.includes(d.id));
     const benchedDefs = unlockedDefs.filter(d=>!state.party.includes(d.id));
@@ -6227,24 +6395,6 @@
     `;
   }
 
-  function renderResistancePanel(liverId){
-    const res = liverResistances(liverId);
-    const rows = Object.keys(ELEMENT_LABELS).map(el=>{
-      const value = res[el] || 0;
-      const pct = value * 3;
-      const pctLabel = pct === 0 ? '±0%' : (pct > 0 ? `-${pct}%` : `+${Math.abs(pct)}%`);
-      const color = value > 0 ? 'var(--rare-uncommon)' : (value < 0 ? 'var(--danger)' : 'var(--text-muted)');
-      return `
-        <div class="inv-item">
-          <span class="inv-item-name">${ELEMENT_LABELS[el]}属性</span>
-          <span class="inv-item-actions" style="font-family:var(--font-mono);font-size:12px;color:${color};">
-            ${value>0?'+':''}${value} <span style="color:var(--text-muted);">(被ダメージ ${pctLabel})</span>
-          </span>
-        </div>`;
-    }).join('');
-    return rows + `<p style="color:var(--text-muted);font-size:11px;margin:6px 0 0;">レベルアップでは変化しません。装備品(主に防具)に付く耐性値によってのみ増減します。</p>`;
-  }
-
   function renderHomeInner(){
     const ownedHtml = state.home.furniture.length
       ? state.home.furniture.map(id=>{
@@ -6305,8 +6455,11 @@
 
   function renderMainArea(){
     let inner;
-    if(state.screen === 'dungeon') inner = renderDungeonInner();
+    if(state.ui.equipPickerSlot) inner = renderEquipPickerInner();
+    else if(state.screen === 'dungeon') inner = renderDungeonInner();
     else if(state.screen === 'party') inner = renderPartyInner();
+    else if(state.screen === 'roster') inner = renderRosterInner();
+    else if(state.screen === 'liverDetail') inner = renderLiverDetailInner();
     else if(state.screen === 'colosseum') inner = renderColosseumInner();
     else if(state.screen === 'inn') inner = renderInnInner();
     else if(state.screen === 'shop') inner = renderShopInner();
@@ -6448,7 +6601,7 @@
       <div class="panel">
         <h2>パーティ</h2>
         ${renderPartyCompactRows()}
-        <p style="color:var(--text-muted);font-size:11px;margin:10px 0 0;">詳細(レベル・EXP・ジョブ・スキル・装備)は町の「編成」から確認・変更できる。</p>
+        <p style="color:var(--text-muted);font-size:11px;margin:10px 0 0;">詳細(レベル・EXP・ジョブ・スキル・装備)は町の「ライバー」から確認・変更できる。</p>
       </div>
     `;
   }
@@ -6505,7 +6658,7 @@
     return `<select id="${id}" style="margin-left:auto;min-width:0;flex:0 1 auto;font-size:11px;padding:4px 4px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${options}</select>`;
   }
 
-  /* 装備の変更は「編成」画面の詳細設定から行うため、このサイドパネルは
+  /* 装備の変更は「ライバー」の詳細画面から行うため、このサイドパネルは
    * 所持品の一覧確認と破棄だけを担う。装備(武器・防具、個体ごとに
    * 別枠で保持)とアイテム(オーブ・素材、種類ごとにスタックして個数だけ
    * 保持)はデータの持ち方が違うため、タブで切り替えて表示する。
@@ -6582,6 +6735,14 @@
     on('rerollGachaBtn', rerollDestinyGacha);
     on('exchangeGuaranteedBtn', exchangeForGuaranteedTicket);
     on('gotoPartyBtn', ()=>gotoScreen('party'));
+    on('gotoRosterBtn', ()=>gotoScreen('roster'));
+    on('backFromLiverDetailBtn', backFromLiverDetail);
+    document.querySelectorAll('[data-open-roster-detail]').forEach(b=>{
+      b.addEventListener('click', ()=>openLiverDetail(b.getAttribute('data-open-roster-detail'), 'roster'));
+    });
+    document.querySelectorAll('[data-view-liver-detail]').forEach(b=>{
+      b.addEventListener('click', ()=>openLiverDetail(b.getAttribute('data-view-liver-detail'), 'party'));
+    });
     on('closeEquipPickerBtn', closeEquipPicker);
     on('gotoColosseumBtn', gotoColosseum);
     on('gotoRiftBtn', ()=>gotoScreen('rift'));
@@ -6667,6 +6828,12 @@
     if(shopSortSelect) shopSortSelect.addEventListener('change', (e)=>{
       const kind = ((state.ui && state.ui.shopItemTab) || 'equip') === 'item' ? 'item' : 'equip';
       setSortMode(kind, e.target.value);
+    });
+    const rosterSortSelect = document.getElementById('rosterSortSelect');
+    if(rosterSortSelect) rosterSortSelect.addEventListener('change', (e)=>{
+      if(!state.ui) state.ui = {};
+      state.ui.rosterSort = e.target.value;
+      render();
     });
     document.querySelectorAll('[data-chat-channel]').forEach(b=>{
       b.addEventListener('click', ()=>switchChatChannel(b.getAttribute('data-chat-channel')));
