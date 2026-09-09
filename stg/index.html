@@ -4880,11 +4880,7 @@
    * 到達済みフラグ(cleared)自体は通常ダンジョンと同じく永続するが、
    * 踏破率・深度はここで必ず0に戻す(再突入時は常に0から)。 */
   function resolvePrismBossVictory(dungeonDef, ds){
-    const firstClear = !ds.cleared;
-    if(firstClear){
-      ds.cleared = true;
-      state.destinyTickets += 1;
-    }
+    ds.cleared = true;
     ds.bossKillCount = (ds.bossKillCount||0) + 1;
     ds.progress = 0; ds.depth = 0;
 
@@ -4892,7 +4888,7 @@
     if(drop.equip) addItemToInventory(drop.equip);
     if(drop.materialQty > 0) grantPrismMaterial(drop.materialQty);
 
-    state.lastPrismResult = { floorName: dungeonDef.name, firstClear, reward: drop.equip, materialQty: drop.materialQty };
+    state.lastPrismResult = { floorName: dungeonDef.name, reward: drop.equip, materialQty: drop.materialQty };
     state.prismRun = null;
     state.activeDungeonId = null;
     state.screen = 'prismResult';
@@ -5884,16 +5880,12 @@
     const materialLine = result.materialQty > 0
       ? `<p class="log-entry reward">「${esc(MATERIAL_DEFS[PRISM_MATERIAL_KEY].name)}」を${result.materialQty}個手に入れた。</p>`
       : '';
-    const firstClearLine = result.firstClear
-      ? `<p class="log-entry reward">初回撃破報酬として「運命のチケット」を手に入れた。</p>`
-      : '';
     return `
       <div class="scene-text" style="text-align:center;padding:24px 0 8px;">
         <p style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--gold);text-shadow:2px 2px 0 #2c5c2c;margin:0 0 16px;">
           ${esc(result.floorName)}のボスを撃破した！
         </p>
         <div style="text-align:left;display:inline-block;">
-          ${firstClearLine}
           ${rewardLine}
           ${materialLine}
         </div>
