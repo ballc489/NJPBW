@@ -1695,8 +1695,8 @@
 
   /* ---------------------------------------------------------------
    * スタミナ: ダンジョン探索に必要な、ライバー単位ではなくプレイヤー
-   * (アカウント)単位のリソース。上限100固定、1分に1回復。時間経過以外の
-   * 回復手段(アイテム消費・広告視聴など)は今のところ設けない。
+   * (アカウント)単位のリソース。上限100固定、1分に1回復。時間経過以外にも、
+   * 回復薬の使用・広告視聴(ヘッダーの+ボタンから)でも回復できる。
    *
    * 他の資源(ゴールド・チケットなど)と同じ信頼モデルで、サーバー側の
    * 厳密な検証はせず、state.stamina/staminaUpdatedAtをクライアント側で
@@ -1755,6 +1755,37 @@
     def.use();
     state.tools[key] = toolCount(key) - 1;
     pushLog(`「${def.name}」を使った。`, 'reward');
+    saveGame(); render();
+  }
+
+  /* ---------------- スタミナ回復ポップアップ ----------------
+   * ヘッダーの+ボタンから開く。回復薬の消費(既存のuseToolItemをそのまま
+   * 使う)と、広告視聴による回復の2手段を1箇所にまとめる。 */
+  const STAMINA_AD_RECOVER_AMOUNT = 50;
+  function openStaminaPopup(){
+    if(!state || !state.ui) return;
+    recomputeStamina();
+    state.ui.staminaPopupOpen = true;
+    render();
+  }
+  function closeStaminaPopup(){
+    if(!state || !state.ui) return;
+    state.ui.staminaPopupOpen = false;
+    render();
+  }
+  /* 広告視聴によるスタミナ回復。現時点では実際の広告SDKが未導入のため、
+   * 引き直しガチャの広告演出と同様、数秒待たせる疑似演出で代用している。
+   * 広告SDK導入時はここを差し替える。 */
+  async function watchAdForStamina(){
+    if(staminaAdWatching) return;
+    recomputeStamina();
+    if(state.stamina >= STAMINA_MAX) return;
+    staminaAdWatching = true;
+    render();
+    await sleep(2000);
+    state.stamina = Math.min(STAMINA_MAX, state.stamina + STAMINA_AD_RECOVER_AMOUNT);
+    staminaAdWatching = false;
+    pushLog(`広告視聴でスタミナを${STAMINA_AD_RECOVER_AMOUNT}回復した。`, 'reward');
     saveGame(); render();
   }
 
@@ -3100,7 +3131,8 @@
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
         rosterDetailId: null, rosterDetailFrom: 'roster',
         profileViewId: null, profileFrom: 'town', profileLiverId: null,
-        profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null },
+        profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null,
+        staminaPopupOpen: false },
       pendingDefeatGoldLoss: 0,
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
@@ -3482,6 +3514,7 @@
   const DESTINY_EXCHANGE_COST = 5;
   const DESTINY_MAX_REROLLS = 3;
   let pendingGacha = null; // { candidateId, rerollsUsed, rolling }
+  let staminaAdWatching = false; // スタミナ回復ポップアップの「広告視聴」演出中フラグ
 
   function unclaimedLiverDefs(){ return LIVER_DEFS.filter(d=>!liverState(d.id).unlocked); }
 
@@ -3939,7 +3972,8 @@
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
         rosterDetailId: null, rosterDetailFrom: 'roster',
         profileViewId: null, profileFrom: 'town', profileLiverId: null,
-        profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null },
+        profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null,
+        staminaPopupOpen: false },
         pendingDefeatGoldLoss: 0,
         dungeons,
         colosseum: {
@@ -4065,6 +4099,10 @@
         const newSkill = JOB_DEFS[ls.job].skills.find(s=>s.unlockLevel === jp.level);
         if(newSkill){
           pushLog(`${liverDef(id).name}は新しいスキル「${newSkill.name}」を習得した!`, 'reward');
+          // 有効スキル枠にまだ空きがあれば、習得したスキルは自動的に有効化する。
+          if(jp.loadout.enabled.length < SKILL_LOADOUT_MAX){
+            jp.loadout.enabled.push(newSkill.key);
+          }
         }
       }
     });
@@ -5389,7 +5427,7 @@
       <div class="depth-badge">
         <div class="badge-row badge-location">${esc(locationLabel())}</div>
         <div class="badge-resources">
-          <span class="badge-resource" title="スタミナ(1分に1回復、上限${STAMINA_MAX})">${uiIcon('stamina')}${state.stamina}/${STAMINA_MAX}</span>
+          <span class="badge-resource" title="スタミナ(1分に1回復、上限${STAMINA_MAX})">${uiIcon('stamina')}${state.stamina}/${STAMINA_MAX}<button id="openStaminaPopupBtn" title="スタミナを回復する" style="margin-left:4px;padding:0 6px;font-size:11px;line-height:1.5;">+</button></span>
           <span class="badge-resource" title="所持金">${uiIcon('gold')}${state.gold}</span>
           <span class="badge-resource" title="運命のチケット">${uiIcon('ticket')}${state.destinyTickets}</span>
           <span class="badge-resource" title="コロシアムメダル">${uiIcon('medal')}${state.colosseum.medals}</span>
@@ -5499,6 +5537,32 @@
           ${bodyHtml}
           <div class="actions" style="justify-content:center;margin-top:14px;">
             <button class="primary" id="helpPopupCloseBtn">閉じる</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderStaminaPopup(){
+    if(!state || !state.ui || !state.ui.staminaPopupOpen) return '';
+    const potionDef = TOOL_DEFS.stamina_potion_10;
+    const potionCount = toolCount('stamina_potion_10');
+    const full = state.stamina >= STAMINA_MAX;
+    return `
+      <div class="help-popup-backdrop" id="staminaPopupBackdrop">
+        <div class="help-popup">
+          <p class="section-label" style="margin-top:0;">スタミナ回復</p>
+          <p class="log-entry system" style="margin:0 0 10px;">現在 ${state.stamina}/${STAMINA_MAX}</p>
+          <div class="market-popup-row">
+            <span>${esc(potionDef.name)} (所持数${potionCount})</span>
+            <button id="staminaUsePotionBtn" ${(potionCount<1||full)?'disabled':''}>使う(+10)</button>
+          </div>
+          <div class="market-popup-row" style="border-bottom:none;">
+            <span>広告を見て回復</span>
+            <button id="staminaWatchAdBtn" ${(full||staminaAdWatching)?'disabled':''}>${staminaAdWatching?'視聴中…':`広告を見る(+${STAMINA_AD_RECOVER_AMOUNT})`}</button>
+          </div>
+          <p style="color:var(--text-muted);font-size:11px;margin:6px 0 0;">※広告視聴は現在仮の演出です。実際の広告は後日導入予定。</p>
+          <div class="actions" style="justify-content:center;margin-top:14px;">
+            <button id="staminaPopupCloseBtn">閉じる</button>
           </div>
         </div>
       </div>`;
@@ -8261,6 +8325,14 @@
     if(helpBackdrop){
       helpBackdrop.addEventListener('click', (e)=>{ if(e.target === helpBackdrop) closeHelpPopup(); });
     }
+    on('openStaminaPopupBtn', openStaminaPopup);
+    on('staminaPopupCloseBtn', closeStaminaPopup);
+    on('staminaUsePotionBtn', ()=>useToolItem('stamina_potion_10'));
+    on('staminaWatchAdBtn', watchAdForStamina);
+    const staminaBackdrop = document.getElementById('staminaPopupBackdrop');
+    if(staminaBackdrop){
+      staminaBackdrop.addEventListener('click', (e)=>{ if(e.target === staminaBackdrop) closeStaminaPopup(); });
+    }
     document.querySelectorAll('[data-enter-tower]').forEach(b=>{
       b.addEventListener('click', ()=>enterTower(b.getAttribute('data-enter-tower')));
     });
@@ -8902,6 +8974,7 @@
       </div>
       ${renderBottomPanel()}
       ${renderHelpPopup()}
+      ${renderStaminaPopup()}
       ${renderMarketPopup()}
       ${renderChatReportPopup()}
       ${renderChatUserMenu()}
