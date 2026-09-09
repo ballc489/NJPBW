@@ -616,6 +616,15 @@
         skills:[{key:'judgement', name:'神罰の降臨', everyNTurns:5, kind:'telegraphed', mult:3.6,
           warnText:'{name}の光輪が眩く輝き始めた……', executeText:'神罰が降り注いだ！'}]},
     ],
+    prism: [
+      {key:'prism_wisp',   name:'虹光の残滓',       hpMult:0.85, atkMult:1.15, defMult:0.80, weakness:'thunder'},
+      {key:'prism_knight', name:'屈折する騎士像',   hpMult:1.20, atkMult:1.05, defMult:1.20, weakness:'fire',
+        skills:[{key:'refract', name:'乱反射の斬撃', everyNTurns:3, kind:'trueDamage', mult:2.2}]},
+      {key:'prism_moth',   name:'七色蛾',           hpMult:0.90, atkMult:1.20, defMult:0.85, weakness:'ice',
+        skills:[{key:'glare', name:'幻惑の光鱗', everyNTurns:4, kind:'telegraphed', mult:2.8,
+          warnText:'{name}が七色の鱗粉を撒き散らし始めた……', executeText:'幻惑する光の奔流が突き刺さった！'}]},
+      {key:'prism_golem',  name:'結晶の巨兵',       hpMult:1.35, atkMult:0.90, defMult:1.30, weakness:'thunder'},
+    ],
   };
   const ELEMENT_LABELS = {fire:'火', ice:'氷', thunder:'雷'};
 
@@ -735,12 +744,18 @@
     const keys = Object.keys(ACCESSORY_EFFECT_DEFS);
     return keys[Math.floor(Math.random()*keys.length)];
   }
-  function rollAccessoryEffectValue(effectType){
+  /* valueMultは通常1(補正無し)。プリズムタワー産のみ、到達階に応じて
+   * ここに1より大きい値を渡し、レアリティ表記(=市場価値の指標)には
+   * 一切触れずに数値だけを底上げする(階層が上がるほど「同じレアリティ
+   * でもより強い個体が出やすい」を実現するための唯一の掛かり所)。 */
+  function rollAccessoryEffectValue(effectType, valueMult){
     const def = ACCESSORY_EFFECT_DEFS[effectType];
-    return def ? rnd(def.min, def.max) : 1;
+    if(!def) return 1;
+    const base = rnd(def.min, def.max);
+    return valueMult ? Math.max(def.min, Math.round(base * valueMult)) : base;
   }
   const ACCESSORY_SLOT_COUNT_RANGE = { common:[0,1], uncommon:[1,2], rare:[2,4], epic:[3,5] };
-  function makeAccessory(rarityKey){
+  function makeAccessory(rarityKey, valueMult){
     rarityKey = rarityKey || rollRarity();
     const rarity = RARITY[rarityKey];
     const effectType = pickAccessoryEffectType();
@@ -749,12 +764,12 @@
       id: 'itm_'+Math.random().toString(36).slice(2,9),
       type:'accessory', rarity:rarityKey, rarityLabel:rarity.cls,
       name: ACCESSORY_NAME_POOL[Math.floor(Math.random()*ACCESSORY_NAME_POOL.length)],
-      mainEffect: { type: effectType, value: rollAccessoryEffectValue(effectType) },
+      mainEffect: { type: effectType, value: rollAccessoryEffectValue(effectType, valueMult) },
       slotCount: rnd(range[0], range[1]),
       crystals: []
     };
   }
-  function makeCrystal(rarityKey){
+  function makeCrystal(rarityKey, valueMult){
     rarityKey = rarityKey || rollRarity();
     const rarity = RARITY[rarityKey];
     const effectType = pickAccessoryEffectType();
@@ -762,7 +777,7 @@
       id: 'itm_'+Math.random().toString(36).slice(2,9),
       type:'crystal', rarity:rarityKey, rarityLabel:rarity.cls,
       name: CRYSTAL_NAME_BY_EFFECT[effectType] || 'クリスタル',
-      effect: { type: effectType, value: rollAccessoryEffectValue(effectType) },
+      effect: { type: effectType, value: rollAccessoryEffectValue(effectType, valueMult) },
       slotCost: rnd(1,3)
     };
   }
@@ -799,6 +814,64 @@
     return computeAccessoryEffects(snap && snap.equippedAccessory);
   }
 
+  /* ---------------------------------------------------------------
+   * プリズムタワー(素材ダンジョン)
+   * 1〜10階の各階が独立したDUNGEON_DEFSエントリ(isPrismTower:true)。
+   * 中身の探索ループ自体は通常ダンジョンのadvance()/challengeBoss()を
+   * 流用しつつ、以下の点だけ差し替える:
+   *   ・イベント確率(戦闘80%/素材宝箱15%/装備品宝箱4%/ミミック1%)
+   *   ・ドロップ内容(武器防具は出ず、専用素材・アクセサリー・クリスタルのみ)
+   *   ・突入時にスタミナを(階数×10)まとめて消費し、以降は探索中無消費
+   *   ・踏破率は勝敗撤退を問わずダンジョンを出るたびに必ず0へ戻す
+   *   ・ボス撃破後は七彩の塔と同様、リザルト画面を挟んで町へ強制送還
+   * レアリティ自体は通常通りランダム(rollRarity())のままにし、階層による
+   * 底上げは「同じレアリティの中での数値の強さ」だけに掛ける
+   * (rollAccessoryEffectValueのvalueMult引数)。これによりレアリティは
+   * 引き続き「相対的な希少さ」を表す指標として市場価値と直結したまま、
+   * 「上の階ほど数字が伸びやすい」という報酬感を両立させる狙い。
+   * --------------------------------------------------------------- */
+  const PRISM_FLOOR_COUNT = 10;
+  const PRISM_MATERIAL_KEY = 'prism_shard';
+  function prismValueMult(floorNum){ return 1 + (floorNum-1) * 0.1; } // 1F:1.0倍 〜 10F:1.9倍
+  function prismFloorDef(id){ return dungeonDefById(id); }
+
+  /* tierPool: ['common','uncommon'](普遍的枠) または ['rare','epic'](レア目枠)。
+   * アクセサリーとクリスタルは五分五分で抽選する。 */
+  function prismRollEquip(tierPool, floorNum){
+    const rarityKey = tierPool[Math.floor(Math.random()*tierPool.length)];
+    const valueMult = prismValueMult(floorNum);
+    return Math.random() < 0.5 ? makeAccessory(rarityKey, valueMult) : makeCrystal(rarityKey, valueMult);
+  }
+  function grantPrismMaterial(qty){
+    state.materials[PRISM_MATERIAL_KEY] = materialCount(PRISM_MATERIAL_KEY) + qty;
+  }
+  /* 通常戦闘(80%枠)勝利時のドロップ。全体10%: 素材5%/普遍的枠3%/レア目枠2%。
+   * ボス撃破時は全体10%だが素材は無く、普遍的枠6%/レア目枠4%に配分し直す
+   * (ハズレ枠を無くして報酬感を強めるため)。 */
+  function maybeDropPrismItem(floorNum, isBoss){
+    const roll = Math.random();
+    if(isBoss){
+      if(roll < 0.06){
+        const item = prismRollEquip(['common','uncommon'], floorNum);
+        if(addItemToInventory(item)) pushLog(`「${item.name}」を手に入れた。`, 'reward');
+      } else if(roll < 0.10){
+        const item = prismRollEquip(['rare','epic'], floorNum);
+        if(addItemToInventory(item)) pushLog(`「${item.name}」を手に入れた。`, 'reward');
+      }
+      return;
+    }
+    if(roll < 0.05){
+      grantPrismMaterial(1);
+      pushLog(`「${MATERIAL_DEFS[PRISM_MATERIAL_KEY].name}」を手に入れた。`, 'reward');
+    } else if(roll < 0.08){
+      const item = prismRollEquip(['common','uncommon'], floorNum);
+      if(addItemToInventory(item)) pushLog(`「${item.name}」を手に入れた。`, 'reward');
+    } else if(roll < 0.10){
+      const item = prismRollEquip(['rare','epic'], floorNum);
+      if(addItemToInventory(item)) pushLog(`「${item.name}」を手に入れた。`, 'reward');
+    }
+  }
+
   /* 合成(装備強化)。強化値+1ごとに基礎値の5%を加算(5%分が1未満なら
    * 最低+1を保証)。最大+10まで(基礎値が十分大きい装備ではおよそ+50%)。 */
   const ENHANCE_MAX_LEVEL = 10;
@@ -832,6 +905,7 @@
     crimson_crystal:{ name:'紅蓮の結晶',  desc:'紅蓮の塔の奥で採れる結晶。塔の装備や強力な品の錬金に大量に使う。' },
     azure_frost:    { name:'紺碧の氷晶',  desc:'紺碧の塔でのみ見つかる、極寒の力を宿した鉱石。' },
     azure_crystal:  { name:'紺碧の結晶',  desc:'紺碧の塔の奥で採れる結晶。塔の装備や強力な品の錬金に大量に使う。' },
+    prism_shard:    { name:'虹晶の欠片',  desc:'プリズムタワーでのみ見つかる、七色に輝く欠片。上質なアクセサリー錬成に使う。' },
   };
 
   /* 錬金の大成功: 出来上がったアイテムが装備(武器・防具)の時だけ判定する。
@@ -882,6 +956,12 @@
       name:'アクセサリー錬成',
       materials:[{key:'fine_iron_ore', qty:2}, {key:'mana_residue', qty:3}],
       output:{ type:'item', make: () => makeAccessory() }
+    },
+    {
+      id:'craft_accessory_prism', category:'アクセサリー',
+      name:'上質なアクセサリー錬成',
+      materials:[{key:'prism_shard', qty:3}, {key:'mana_residue', qty:5}],
+      output:{ type:'item', make: () => makeAccessory(null, 1.3) }
     },
   ];
 
@@ -1466,6 +1546,115 @@
             warnText:'{name}が最後の審判を告げた……', executeText:'終焉の裁きが全てを飲み込んだ！'}
         ] },
       firstClearReward:{name:'堕神の審判剣', type:'weapon'}
+    },
+    /* ---------------------------------------------------------------
+     * プリズムタワー(素材ダンジョン)。町の通常ダンジョン一覧には出さず
+     * (isPrismTower:trueをvisibleDungeonDefs()側で除外)、専用の
+     * 「素材ダンジョン」画面から入る。1〜10階は自由に何度でも周回可能で、
+     * 突入のたびに踏破率0%から始まる(退出時に必ず0へ戻すため)。
+     * レベルは階数×10固定。武器・防具は一切ドロップしない。
+     * --------------------------------------------------------------- */
+    {
+      id:'prism_f1', name:'プリズムタワー 1F', pool:'prism', requires:null, isPrismTower:true, floorNum:1,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'1F',
+      level:10,
+      boss:{ name:'反射する門衛', hpMult:1.6, atkMult:1.15, defMult:1.25, weakness:'thunder',
+        skills:[{key:'crit', name:'乱反射の一閃', everyNTurns:3, kind:'trueDamage', mult:2.0}] }
+    },
+    {
+      id:'prism_f2', name:'プリズムタワー 2F', pool:'prism', requires:'prism_f1', isPrismTower:true, floorNum:2,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'2F',
+      level:20,
+      boss:{ name:'屈折の番人', hpMult:1.7, atkMult:1.18, defMult:1.29, weakness:'fire',
+        skills:[{key:'crit', name:'屈折の斬撃', everyNTurns:3, kind:'trueDamage', mult:2.1} ] }
+    },
+    {
+      id:'prism_f3', name:'プリズムタワー 3F', pool:'prism', requires:'prism_f2', isPrismTower:true, floorNum:3,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'3F',
+      level:30,
+      boss:{ name:'分光する影', hpMult:1.8, atkMult:1.21, defMult:1.33, weakness:'ice',
+        skills:[
+          {key:'crit', name:'分光の一撃', everyNTurns:3, kind:'trueDamage', mult:2.2},
+          {key:'charge', name:'収束光の奔流', everyNTurns:6, kind:'telegraphed', mult:3.2,
+            warnText:'{name}の周囲に光が収束していく……', executeText:'収束した光の奔流が撃ち込まれた！'}
+        ] }
+    },
+    {
+      id:'prism_f4', name:'プリズムタワー 4F', pool:'prism', requires:'prism_f3', isPrismTower:true, floorNum:4,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'4F',
+      level:40,
+      boss:{ name:'虹色の憑依体', hpMult:1.9, atkMult:1.24, defMult:1.37, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'虹色の侵蝕', everyNTurns:3, kind:'trueDamage', mult:2.3},
+          {key:'charge', name:'憑依の残光', everyNTurns:6, kind:'telegraphed', mult:3.4, element:'ice',
+            warnText:'{name}の輪郭が虹色に滲み始めた……', executeText:'滲んだ輪郭から残光が撃ち込まれた！'}
+        ] }
+    },
+    {
+      id:'prism_f5', name:'プリズムタワー 5F', pool:'prism', requires:'prism_f4', isPrismTower:true, floorNum:5,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'5F',
+      level:50,
+      boss:{ name:'プリズムの守護者', hpMult:2.0, atkMult:1.27, defMult:1.41, weakness:'fire',
+        skills:[
+          {key:'crit', name:'守護の断截光', everyNTurns:3, kind:'trueDamage', mult:2.4},
+          {key:'charge', name:'全反射の壁', everyNTurns:6, kind:'telegraphed', mult:3.6, element:'thunder',
+            warnText:'{name}が全身を鏡面に変え始めた……', executeText:'跳ね返った光が何倍にもなって突き刺さった！'}
+        ] }
+    },
+    {
+      id:'prism_f6', name:'プリズムタワー 6F', pool:'prism', requires:'prism_f5', isPrismTower:true, floorNum:6,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'6F',
+      level:60,
+      boss:{ name:'万華の巨兵', hpMult:2.1, atkMult:1.30, defMult:1.45, weakness:'ice',
+        skills:[
+          {key:'crit', name:'万華の一撃', everyNTurns:3, kind:'trueDamage', mult:2.5},
+          {key:'charge', name:'砕け散る万華鏡', everyNTurns:6, kind:'telegraphed', mult:3.8,
+            warnText:'{name}の体表が無数のかけらに軋み始めた……', executeText:'砕け散った破片が全身に突き刺さった！'}
+        ] }
+    },
+    {
+      id:'prism_f7', name:'プリズムタワー 7F', pool:'prism', requires:'prism_f6', isPrismTower:true, floorNum:7,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'7F',
+      level:70,
+      boss:{ name:'光断つ幻影卿', hpMult:2.2, atkMult:1.33, defMult:1.49, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'幻影の斬光', everyNTurns:3, kind:'trueDamage', mult:2.6},
+          {key:'charge', name:'光断つ一閃', everyNTurns:6, kind:'telegraphed', mult:4.0, element:'fire',
+            warnText:'{name}が光そのものを刃に変え始めた……', executeText:'光を断つ一閃が全てを切り裂いた！'}
+        ] }
+    },
+    {
+      id:'prism_f8', name:'プリズムタワー 8F', pool:'prism', requires:'prism_f7', isPrismTower:true, floorNum:8,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'8F',
+      level:80,
+      boss:{ name:'七色を纏う者', hpMult:2.3, atkMult:1.36, defMult:1.53, weakness:'fire',
+        skills:[
+          {key:'crit', name:'七色の断罪', everyNTurns:3, kind:'trueDamage', mult:2.7},
+          {key:'charge', name:'極彩の奔流', everyNTurns:6, kind:'telegraphed', mult:4.2, element:'ice',
+            warnText:'{name}を極彩色の輝きが包み始めた……', executeText:'極彩の奔流が全身を貫いた！'}
+        ] }
+    },
+    {
+      id:'prism_f9', name:'プリズムタワー 9F', pool:'prism', requires:'prism_f8', isPrismTower:true, floorNum:9,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'9F',
+      level:90,
+      boss:{ name:'虹霓の支配者', hpMult:2.4, atkMult:1.39, defMult:1.57, weakness:'ice',
+        skills:[
+          {key:'crit', name:'虹霓の裁光', everyNTurns:3, kind:'trueDamage', mult:2.8},
+          {key:'charge', name:'支配せし虹の環', everyNTurns:6, kind:'telegraphed', mult:4.4, element:'thunder',
+            warnText:'{name}の周囲に虹の環が形成されていく……', executeText:'収縮した虹の環が押し潰した！'}
+        ] }
+    },
+    {
+      id:'prism_f10', name:'プリズムタワー 10F', pool:'prism', requires:'prism_f9', isPrismTower:true, floorNum:10,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'10F',
+      level:100,
+      boss:{ name:'プリズムタワーの主', hpMult:2.6, atkMult:1.42, defMult:1.62, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'虹色の終焉', everyNTurns:3, kind:'trueDamage', mult:3.0},
+          {key:'charge', name:'七彩崩壊', everyNTurns:6, kind:'telegraphed', mult:4.6, element:'fire',
+            warnText:'{name}を中心に七色の光が渦を巻き始めた……', executeText:'渦巻いた七色の光が全てを飲み込んだ！'}
+        ] }
     }
   ];
   const PROGRESS_PER_STEP = 9; // 1回の成功した行動あたりの踏破率上昇(%)
@@ -1752,7 +1941,26 @@
     const visible = [];
     let shownLocked = false;
     for(const def of DUNGEON_DEFS){
-      if(def.hidden) continue; // チュートリアル専用ダンジョン等、一覧に一切出さないもの
+      if(def.hidden || def.isPrismTower) continue; // チュートリアル専用/プリズムタワーは通常の一覧に出さない
+      if(isDungeonUnlocked(def.id)){
+        visible.push(def);
+      } else if(!shownLocked){
+        visible.push(def);
+        shownLocked = true;
+      } else {
+        break;
+      }
+    }
+    return visible;
+  }
+  /* プリズムタワー専用の一覧。通常ダンジョンと同じ「解放済み+次の1個先まで」
+   * のルールだが、解放済みの階は(通常ダンジョンと違い)何度でも自由に
+   * 選び直して周回できる(visiblePrismDefs自体はそのための表示範囲のみ担当)。 */
+  function visiblePrismDefs(){
+    const visible = [];
+    let shownLocked = false;
+    for(const def of DUNGEON_DEFS){
+      if(!def.isPrismTower) continue;
       if(isDungeonUnlocked(def.id)){
         visible.push(def);
       } else if(!shownLocked){
@@ -2097,7 +2305,9 @@
   const CRIT_CHANCE = 0.03;
   const CRIT_MULT = 2.0;
   function rollCrit(casterId){
-    const bonus = casterId ? (liverAccessoryEffects(casterId).critChance||0)/100 : 0;
+    const bonus = casterId
+      ? (liverAccessoryEffects(casterId).critChance||0)/100
+      : (combatEnemy && combatEnemy.critBonus) || 0; // ミミック等、敵側の特殊なクリティカル率上昇に使う
     return Math.random() < (CRIT_CHANCE + bonus);
   }
 
@@ -2889,7 +3099,9 @@
       rift: null, // { startedAt, partyIds } / 非アクティブならnull
       towerRun: null, // { towerId, floor } / 非アクティブならnull
       towerBestFloor: {}, // 塔ごとの過去最高到達フロア(他の塔の解放条件に使う)
-      lastTowerResult: null // リザルト画面表示用。永続化はしない
+      lastTowerResult: null, // リザルト画面表示用。永続化はしない
+      prismRun: null, // { floorId } / 非アクティブならnull(リロード時の再開判定に使う)
+      lastPrismResult: null // リザルト画面表示用。永続化はしない
     };
   }
 
@@ -3122,6 +3334,11 @@
     const mainStat = jobStatPotential(activeJob, activeLevel);
     mainStat.atk += snap.equippedWeapon ? itemEffectiveValue(snap.equippedWeapon) : 0;
     mainStat.def += snap.equippedArmor ? itemEffectiveValue(snap.equippedArmor) : 0;
+    const accEff = foreignAccessoryEffects(snap);
+    mainStat.hp  = Math.round(mainStat.hp  * (1 + (accEff.hpPct ||0)/100));
+    mainStat.mp  = Math.round(mainStat.mp  * (1 + (accEff.mpPct ||0)/100));
+    mainStat.atk = Math.round(mainStat.atk * (1 + (accEff.atkPct||0)/100));
+    mainStat.def = Math.round(mainStat.def * (1 + (accEff.defPct||0)/100));
     let total = weightedStatSum(mainStat, CP_MAIN_WEIGHT);
     Object.keys(JOB_DEFS).forEach(jobId=>{
       if(jobId === activeJob) return;
@@ -3133,12 +3350,14 @@
   function foreignLiverAtk(liverId, snap, partySize){
     const level = (snap.jobProgress[snap.job] || {}).level || 1;
     const atk = jobBaseAtk(snap.job, level) + (snap.equippedWeapon ? itemEffectiveValue(snap.equippedWeapon) : 0);
-    return Math.round(atk * foreignPassiveStatMult(liverId, snap, partySize, 'atk'));
+    const atkPct = foreignAccessoryEffects(snap).atkPct || 0;
+    return Math.round(atk * foreignPassiveStatMult(liverId, snap, partySize, 'atk') * (1 + atkPct/100));
   }
   function foreignLiverDefStat(liverId, snap, partySize){
     const level = (snap.jobProgress[snap.job] || {}).level || 1;
     const def = jobBaseDef(snap.job, level) + (snap.equippedArmor ? itemEffectiveValue(snap.equippedArmor) : 0);
-    return Math.max(1, Math.round(def * foreignPassiveStatMult(liverId, snap, partySize, 'def')));
+    const defPct = foreignAccessoryEffects(snap).defPct || 0;
+    return Math.max(1, Math.round(def * foreignPassiveStatMult(liverId, snap, partySize, 'def') * (1 + defPct/100)));
   }
   function foreignLiverResistances(snap){
     const res = {};
@@ -3147,6 +3366,10 @@
       if(item && item.resist && res.hasOwnProperty(item.resist.element)){
         res[item.resist.element] += item.resist.value;
       }
+    });
+    const accEff = foreignAccessoryEffects(snap);
+    Object.keys(ACCESSORY_RESIST_ELEMENT).forEach(effType=>{
+      if(accEff[effType]) res[ACCESSORY_RESIST_ELEMENT[effType]] += accEff[effType];
     });
     return res;
   }
@@ -3559,7 +3782,8 @@
         p_stamina_updated_at: new Date(state.staminaUpdatedAt).toISOString(),
         p_tools: state.tools || {},
         p_tower_run: state.towerRun || null,
-        p_tower_best_floor: state.towerBestFloor || {}
+        p_tower_best_floor: state.towerBestFloor || {},
+        p_prism_run: state.prismRun || null
       });
       if(error) console.error('save_full_state failed', error);
 
@@ -3685,6 +3909,7 @@
       // (screen/activeDungeonId自体は永続化していないため、ここで代わりに判定する)。
       const tutorialDone = playerRow.tutorial_done !== false;
       const towerRun = (playerRow.tower_run && playerRow.tower_run.towerId) ? playerRow.tower_run : null;
+      const prismRun = (playerRow.prism_run && playerRow.prism_run.floorId) ? playerRow.prism_run : null;
 
       return {
         name: playerRow.name, gold: playerRow.gold,
@@ -3692,8 +3917,8 @@
         roster, party: Array.isArray(playerRow.party) ? playerRow.party : [],
         inventory,
         log: [], history: [],
-        screen: towerRun ? 'towerRun' : (tutorialDone ? 'town' : 'dungeon'),
-        activeDungeonId: tutorialDone ? null : 'tutorial',
+        screen: prismRun ? 'dungeon' : (towerRun ? 'towerRun' : (tutorialDone ? 'town' : 'dungeon')),
+        activeDungeonId: prismRun ? prismRun.floorId : (tutorialDone ? null : 'tutorial'),
         tutorialDone,
         home: { furniture: playerRow.home_furniture || [] },
         ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
@@ -3721,7 +3946,9 @@
           : null,
         towerRun: towerRun ? { towerId: towerRun.towerId, floor: towerRun.floor || 0 } : null,
         towerBestFloor: (playerRow.tower_best_floor && typeof playerRow.tower_best_floor === 'object') ? playerRow.tower_best_floor : {},
-        lastTowerResult: null
+        lastTowerResult: null,
+        prismRun: prismRun ? { floorId: prismRun.floorId } : null,
+        lastPrismResult: null
       };
     }catch(e){
       console.error('load failed', e);
@@ -4187,6 +4414,25 @@
         pushLog(`${combatEnemy.name}を倒した。`, 'reward');
         grantExpToParty(combatEnemy.exp);
         const ds = currentDungeonState();
+        const dungeonDefForVictory = currentDungeonDef();
+
+        if(dungeonDefForVictory && dungeonDefForVictory.isPrismTower){
+          if(combatEnemy.isPrismBoss){
+            resolvePrismBossVictory(dungeonDefForVictory, ds);
+            return;
+          }
+          if(combatEnemy.isMimic){
+            const drop = prismRollEquip(['rare','epic'], dungeonDefForVictory.floorNum);
+            if(addItemToInventory(drop)) pushLog(`ミミックを退け、「${drop.name}」を手に入れた！`, 'reward');
+          } else {
+            maybeDropPrismItem(dungeonDefForVictory.floorNum, false);
+          }
+          if(combatEnemy.pendingProgressOnWin) addDungeonProgress(PROGRESS_PER_STEP);
+          inCombat = false; combatPhase = null; combatEnemy = null;
+          saveGame(); render();
+          return;
+        }
+
         maybeDropItem(ds.depth);
 
         if(combatEnemy.isDungeonBoss){
@@ -4415,6 +4661,14 @@
       return;
     }
 
+    if(state.prismRun){
+      // プリズムタワーは救済措置なし(通常の全滅ペナルティをそのまま適用する)。
+      // ただし退出時ルールに従い、踏破率・深度だけは必ず0に戻す。
+      const ds = currentDungeonState();
+      if(ds){ ds.progress = 0; ds.depth = 0; }
+      state.prismRun = null;
+    }
+
     if(state.activeDungeonId === 'tutorial' && !state.tutorialDone){
       state.tutorialDone = true;
       state.destinyTickets += 1;
@@ -4439,6 +4693,7 @@
     const ds = currentDungeonState();
     if(!dungeonDef || !ds) return;
     if(!alivePartyIds().length) return; // 全員戦闘不能では進めない
+    if(dungeonDef.isPrismTower){ prismAdvance(dungeonDef, ds); return; }
     recomputeStamina();
     if(state.stamina < 1){
       pushLog('スタミナが足りない。時間経過で回復するのを待とう。', 'system');
@@ -4499,6 +4754,12 @@
     const dungeonDef = currentDungeonDef();
     const ds = currentDungeonState();
     if(!dungeonDef || !ds || ds.progress < 100) return;
+    if(dungeonDef.isPrismTower){
+      const enemy = spawnEnemy(dungeonDef, ds.depth, true);
+      enemy.isPrismBoss = true;
+      startCombat(enemy);
+      return;
+    }
     recomputeStamina();
     if(state.stamina < 1){
       pushLog('スタミナが足りない。時間経過で回復するのを待とう。', 'system');
@@ -4509,6 +4770,125 @@
     const enemy = spawnEnemy(dungeonDef, ds.depth, true);
     enemy.isDungeonBoss = true;
     startCombat(enemy);
+  }
+
+  /* プリズムタワー内の探索1手。通常ダンジョンのadvance()と違い、
+   * スタミナは突入時にまとめて消費済みのためここでは消費しない。
+   * イベント確率: 戦闘80%/素材宝箱15%/装備品宝箱4%/ミミック1%。 */
+  function prismAdvance(dungeonDef, ds){
+    if(ds.progress < 100) ds.depth += 1;
+    const roll = Math.random();
+    if(roll < 0.80){
+      const enemy = spawnEnemy(dungeonDef, ds.depth, false);
+      enemy.pendingProgressOnWin = true;
+      startCombat(enemy);
+    } else if(roll < 0.95){
+      grantPrismMaterial(1);
+      pushLog(`「${MATERIAL_DEFS[PRISM_MATERIAL_KEY].name}」の宝箱を見つけた。`, 'reward');
+      addDungeonProgress(PROGRESS_PER_STEP);
+      saveGame(); render();
+    } else if(roll < 0.99){
+      const item = prismRollEquip(Math.random()<0.5 ? ['common','uncommon'] : ['rare','epic'], dungeonDef.floorNum);
+      if(addItemToInventory(item)) pushLog(`宝箱の中に「${item.name}」を見つけた！`, 'reward');
+      addDungeonProgress(PROGRESS_PER_STEP);
+      saveGame(); render();
+    } else {
+      const mimic = spawnPrismMimic(dungeonDef);
+      mimic.pendingProgressOnWin = true;
+      startMimicCombat(mimic);
+    }
+  }
+
+  /* ミミック: 見た目は宝箱だが、その階のボス級の戦闘力を持つ特殊な敵。
+   * 戦闘開始と同時に(プレイヤーが行動する前に)確率無視の状態異常を
+   * 1つ確定で刻んでくる。撃破時は必ず高レアリティ枠の装備品を落とす。 */
+  function spawnPrismMimic(dungeonDef){
+    const level = Math.max(1, dungeonDef.level + BOSS_LEVEL_PREMIUM);
+    const base = statsForLevel(level);
+    const hp = Math.max(5, Math.round(base.hp * 1.6 * partySizeHpMult()));
+    const atk = Math.max(1, Math.round(base.atk * 1.25));
+    const def = Math.max(0, Math.round(base.def * 1.2));
+    const exp = Math.round(base.exp * 1.6);
+    return {name:'化けた宝箱', level, hp, maxHp:hp, atk, def, exp, boss:false, isMimic:true, critBonus:0.15, skills:[], weakness:null};
+  }
+  function startMimicCombat(enemy){
+    startCombat(enemy);
+    const target = pickRandomAliveTarget();
+    if(!target) return;
+    const type = ['poison','stun','silence'][Math.floor(Math.random()*3)];
+    const amount = type==='poison' ? 0.1 : 1;
+    const duration = type==='poison' ? 3 : 2;
+    applyStatusEffect(statusEffectsMapFor(target), type, amount, duration, false);
+    pushLog(`ミミックの奇襲！ ${liverDef(target).name}に「${statusEffectLabel(type)}」が問答無用で刻まれた！`, 'danger', true);
+    render(); // startCombat()内で既に一度描画済みだが、その後に追加したこの奇襲ログ・状態異常を画面に反映するため再描画する
+  }
+
+  /* ボス撃破後: 七彩の塔と同様、リザルトを挟んで町へ強制送還する。
+   * 到達済みフラグ(cleared)自体は通常ダンジョンと同じく永続するが、
+   * 踏破率・深度はここで必ず0に戻す(再突入時は常に0から)。 */
+  function resolvePrismBossVictory(dungeonDef, ds){
+    const firstClear = !ds.cleared;
+    if(firstClear){
+      ds.cleared = true;
+      state.destinyTickets += 1;
+    }
+    ds.bossKillCount = (ds.bossKillCount||0) + 1;
+    ds.progress = 0; ds.depth = 0;
+
+    let reward = null;
+    const roll = Math.random();
+    if(roll < 0.06) reward = prismRollEquip(['common','uncommon'], dungeonDef.floorNum);
+    else if(roll < 0.10) reward = prismRollEquip(['rare','epic'], dungeonDef.floorNum);
+    if(reward) addItemToInventory(reward);
+
+    state.lastPrismResult = { floorName: dungeonDef.name, firstClear, reward };
+    state.prismRun = null;
+    state.activeDungeonId = null;
+    state.screen = 'prismResult';
+    inCombat = false; combatPhase = null; combatEnemy = null;
+    saveGame(); render();
+  }
+  function closePrismResult(){
+    state.lastPrismResult = null;
+    state.screen = 'materialDungeons';
+    saveGame(); render();
+  }
+  function enterPrismFloor(id){
+    if(inCombat) return;
+    if(!isDungeonUnlocked(id)) return;
+    if(!state.party.length){
+      pushLog('パーティが編成されていない。町で編成してから向かおう。', 'system');
+      render();
+      return;
+    }
+    const def = dungeonDefById(id);
+    recomputeStamina();
+    const cost = def.floorNum * 10;
+    if(state.stamina < cost){
+      pushLog(`スタミナが足りない(必要: ${cost})。時間経過で回復するのを待とう。`, 'system');
+      render();
+      return;
+    }
+    state.stamina -= cost;
+    const ds = state.dungeons[id];
+    ds.progress = 0; ds.depth = 0;
+    state.activeDungeonId = id;
+    state.prismRun = { floorId: id };
+    state.screen = 'dungeon';
+    state.log = [];
+    pushLog(`${def.name}に突入した。`, 'system');
+    saveGame(); render();
+  }
+  /* 探索を切り上げて出る(自主撤退)。全滅時と同じく、退出時は必ず
+   * 踏破率0%に戻す(救済措置は行わない)。 */
+  function leavePrismFloor(){
+    if(inCombat || !state.activeDungeonId) return;
+    const ds = currentDungeonState();
+    if(ds){ ds.progress = 0; ds.depth = 0; }
+    state.prismRun = null;
+    state.activeDungeonId = null;
+    state.screen = 'materialDungeons';
+    saveGame(); render();
   }
 
   /* 装備の変更は町(ダンジョン探索中でない状態)でのみ許可する。 */
@@ -4965,6 +5345,8 @@
     if(state.screen==='towerSelect') return '七彩の塔';
     if(state.screen==='towerRun' && state.towerRun) return `${currentTowerDef().name} ${state.towerRun.floor}F`;
     if(state.screen==='towerResult') return '……';
+    if(state.screen==='materialDungeons') return '素材ダンジョン';
+    if(state.screen==='prismResult') return '……';
     return '灯火の町';
   }
 
@@ -5017,6 +5399,13 @@
       '全100階で構成され、塔を出るたびに1階から挑む必要がある。',
       '果たして登頂することは出来るのか...。',
       '※強力な装備・素材を入手することのできるエンドコンテンツです。'
+    ],
+    materialDungeons: [
+      'アクセサリー・クリスタル、およびその錬金素材が狙えるダンジョン群。武器・防具は一切ドロップしない。',
+      '現在は「プリズムタワー」のみ収録。1〜10階まであり、階のボスを倒すと次の階が解放される。',
+      '解放済みの階は何度でも自由に選んで周回できるが、勝敗を問わずダンジョンを出るたびに踏破率は0%に戻る。',
+      '突入時に(階数×10)のスタミナをまとめて消費する代わりに、探索中の追加消費は無い。',
+      '宝箱に見せかけたミミックに注意。その階のボス級の強さを持ち、戦闘開始と同時に確率を無視した状態異常を仕掛けてくるが、倒せば必ず質の良いアクセサリーかクリスタルを落とす。'
     ],
     rankings: ['キャラごとの戦闘力を他のユーザーと競おう'],
     market: [
@@ -5171,11 +5560,15 @@
 
     const bossReady = ds.progress >= 100;
     const isTutorial = dungeonDef.id === 'tutorial';
+    const isPrism = !!dungeonDef.isPrismTower;
+    // プリズムタワーは突入時にスタミナを前払い済みのため、探索中はスタミナ切れで
+    // 止まらない(進行可否はパーティの生存状況だけで決める)。
+    const advDisabled = !alivePartyIds().length || (!isPrism && state.stamina<1);
     const actionsHtml = `
       <div class="actions">
-        ${(bossReady && isTutorial) ? '' : `<button class="primary" id="advBtn" ${(!alivePartyIds().length || state.stamina<1)?'disabled':''}>奥へ進む</button>`}
-        ${bossReady ? `<button class="danger" id="bossBtn" ${(!alivePartyIds().length || state.stamina<1)?'disabled':''}>${ds.cleared ? 'ボスに再挑戦' : 'ボスに挑む'}</button>` : ''}
-        ${isTutorial ? '' : `<button id="backTownBtn">町に戻る</button>`}
+        ${(bossReady && isTutorial) ? '' : `<button class="primary" id="advBtn" ${advDisabled?'disabled':''}>奥へ進む</button>`}
+        ${bossReady ? `<button class="danger" id="bossBtn" ${advDisabled?'disabled':''}>${ds.cleared ? 'ボスに再挑戦' : 'ボスに挑む'}</button>` : ''}
+        ${isTutorial ? '' : (isPrism ? `<button id="leavePrismBtn">撤退する</button>` : `<button id="backTownBtn">町に戻る</button>`)}
       </div>`;
     return `
       <div class="scene-text">
@@ -5209,6 +5602,7 @@
         <button class="danger" id="gotoColosseumBtn">コロシアムタワー</button>
         <button class="danger" id="gotoRiftBtn">次元断層ポモ・ドーロ</button>
         <button class="danger" id="gotoTowersBtn">七彩の塔</button>
+        <button class="danger" id="gotoMaterialDungeonsBtn">素材ダンジョン</button>
       </div>
       <div class="section-block">
         <p class="section-label">ダンジョン</p>
@@ -5343,6 +5737,66 @@
       </div>
       <div class="actions" style="justify-content:center;">
         <button class="primary" id="towerResultCloseBtn">街に戻る</button>
+      </div>
+    `;
+  }
+
+  /* 素材ダンジョン一覧画面。現状はプリズムタワーのみを収録するが、
+   * 今後別のダンジョンを追加する余地を持たせて「カテゴリ画面」として
+   * 独立させてある(七彩の塔のtowerSelect画面と同じ位置づけ)。 */
+  function renderMaterialDungeonsInner(){
+    const rows = visiblePrismDefs().map(def=>{
+      const unlocked = isDungeonUnlocked(def.id);
+      const ds = state.dungeons[def.id];
+      const status = !unlocked
+        ? `${uiIcon('lock')} 未解放`
+        : `踏破率 ${dungeonProgressLabelAndPct(ds).label}`;
+      const cost = def.floorNum * 10;
+      const actionHtml = unlocked
+        ? `<button data-enter-prism="${def.id}" ${(!state.party.length || state.stamina<cost)?'disabled':''}>入る(スタミナ${cost}消費)</button>`
+        : '';
+      return `
+        <div class="inv-item" style="${unlocked?'':'opacity:.55;'}">
+          <span class="inv-item-name">${esc(def.floorLabel)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${status}</span></span>
+          <span class="inv-item-actions">${actionHtml}</span>
+        </div>`;
+    }).join('');
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('素材ダンジョン', helpButtonHtml('materialDungeons'))}
+      </div>
+      <div class="actions">
+        <button id="backTownBtn">町に戻る</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">プリズムタワー</p>
+        <p class="log-entry system">アクセサリー・クリスタル、およびその錬金素材を狙えるダンジョン。武器・防具はドロップしない。階は何度でも自由に周回できるが、退出のたびに踏破率は0%に戻る。</p>
+        ${rows}
+      </div>
+    `;
+  }
+
+  function renderPrismResultInner(){
+    const result = state.lastPrismResult;
+    if(!result) return renderMaterialDungeonsInner();
+    const rewardLine = result.reward
+      ? `<p class="log-entry reward">「${esc(result.reward.name)}」を手に入れた！</p>`
+      : `<p class="log-entry system">今回、装備品の入手は無かった。</p>`;
+    const firstClearLine = result.firstClear
+      ? `<p class="log-entry reward">初回撃破報酬として「運命のチケット」を手に入れた。</p>`
+      : '';
+    return `
+      <div class="scene-text" style="text-align:center;padding:24px 0 8px;">
+        <p style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--gold);text-shadow:2px 2px 0 #2c5c2c;margin:0 0 16px;">
+          ${esc(result.floorName)}のボスを撃破した！
+        </p>
+        <div style="text-align:left;display:inline-block;">
+          ${firstClearLine}
+          ${rewardLine}
+        </div>
+      </div>
+      <div class="actions" style="justify-content:center;">
+        <button class="primary" id="prismResultCloseBtn">街に戻る</button>
       </div>
     `;
   }
@@ -6976,7 +7430,8 @@
       costume: raw.costume,
       unlockedCostumes: raw.unlocked_costumes || [],
       equippedWeapon: raw.equipped_weapon || null,
-      equippedArmor: raw.equipped_armor || null
+      equippedArmor: raw.equipped_armor || null,
+      equippedAccessory: raw.equipped_accessory || null
     };
   }
 
@@ -7346,6 +7801,10 @@
       <div class="equip-row">
         <span class="equip-slot">防具</span>
         <span>${snap.equippedArmor ? `${esc(snap.equippedArmor.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(snap.equippedArmor))}</span>` : '未装備'}</span>
+      </div>
+      <div class="equip-row">
+        <span class="equip-slot">アクセサリー</span>
+        <span>${snap.equippedAccessory ? `${esc(snap.equippedAccessory.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(snap.equippedAccessory))}</span>` : '未装備'}</span>
       </div>`;
 
     const allowedWeaponLabel = Array.from(foreignAllowedWeaponTypes(liverId, snap)).map(t=>WEAPON_TYPES[t].name).join('・') || 'なし';
@@ -7456,6 +7915,8 @@
     else if(state.screen === 'towerSelect') inner = renderTowerSelectInner();
     else if(state.screen === 'towerRun') inner = renderTowerRunInner();
     else if(state.screen === 'towerResult') inner = renderTowerResultInner();
+    else if(state.screen === 'materialDungeons') inner = renderMaterialDungeonsInner();
+    else if(state.screen === 'prismResult') inner = renderPrismResultInner();
     else if(state.screen === 'home') inner = renderHomeInner();
     else if(state.screen === 'market') inner = renderMarketInner();
     else if(state.screen === 'rankings') inner = renderRankingsInner();
@@ -7738,6 +8199,12 @@
     on('towerAdvanceBtn', towerAdvance);
     on('towerRetreatBtn', retreatFromTower);
     on('towerResultCloseBtn', closeTowerResult);
+    on('gotoMaterialDungeonsBtn', ()=>gotoScreen('materialDungeons'));
+    on('prismResultCloseBtn', closePrismResult);
+    on('leavePrismBtn', leavePrismFloor);
+    document.querySelectorAll('[data-enter-prism]').forEach(b=>{
+      b.addEventListener('click', ()=>enterPrismFloor(b.getAttribute('data-enter-prism')));
+    });
     on('helpPopupCloseBtn', closeHelpPopup);
     document.querySelectorAll('[data-open-help]').forEach(b=>{
       b.addEventListener('click', ()=>openHelpPopup(b.getAttribute('data-open-help')));
