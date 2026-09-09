@@ -616,6 +616,15 @@
         skills:[{key:'judgement', name:'神罰の降臨', everyNTurns:5, kind:'telegraphed', mult:3.6,
           warnText:'{name}の光輪が眩く輝き始めた……', executeText:'神罰が降り注いだ！'}]},
     ],
+    prism: [
+      {key:'prism_wisp',   name:'虹光の残滓',       hpMult:0.85, atkMult:1.15, defMult:0.80, weakness:'thunder'},
+      {key:'prism_knight', name:'屈折する騎士像',   hpMult:1.20, atkMult:1.05, defMult:1.20, weakness:'fire',
+        skills:[{key:'refract', name:'乱反射の斬撃', everyNTurns:3, kind:'trueDamage', mult:2.2}]},
+      {key:'prism_moth',   name:'七色蛾',           hpMult:0.90, atkMult:1.20, defMult:0.85, weakness:'ice',
+        skills:[{key:'glare', name:'幻惑の光鱗', everyNTurns:4, kind:'telegraphed', mult:2.8,
+          warnText:'{name}が七色の鱗粉を撒き散らし始めた……', executeText:'幻惑する光の奔流が突き刺さった！'}]},
+      {key:'prism_golem',  name:'結晶の巨兵',       hpMult:1.35, atkMult:0.90, defMult:1.30, weakness:'thunder'},
+    ],
   };
   const ELEMENT_LABELS = {fire:'火', ice:'氷', thunder:'雷'};
 
@@ -692,6 +701,190 @@
     epic:     {label:'エピック', cls:'epic',     mult:3.2, weight:3},
   };
 
+  /* ---------------------------------------------------------------
+   * アクセサリー・クリスタル
+   * 武器・防具とは別枠の装備(1人1個まで)。アクセサリー本体は「主効果」
+   * 1つと「クリスタルスロット」(0〜5)を持ち、スロットには「消費スロット数」
+   * (1〜3)を持つクリスタルを、合計消費が枠を超えない範囲で何個でも装備できる。
+   * 主効果と同じ種類の効果を持つクリスタルを装備すると、その主効果自体・
+   * 該当クリスタル自体、それぞれの数値が同種ボーナス倍率だけ上乗せされる
+   * (計算はcomputeAccessoryEffects()に集約)。
+   *
+   * 効果の種類は、ステータス系(HP/MP/攻撃力/防御力の%上昇)・属性耐性系
+   * (既存の武器防具と同じ+N方式)・特殊系(ドロップ率/クリティカル率/
+   * 状態異常耐性)の10種。数値の振れ幅は種類ごとに固定(レアリティでは
+   * 変えない。レアリティが効くのはアクセサリーのスロット数だけ)。
+   * --------------------------------------------------------------- */
+  const SAME_EFFECT_BONUS_MULT = 1.1;
+  const ACCESSORY_EFFECT_DEFS = {
+    hpPct:         { label:'HP',           unit:'%', min:1, max:3 },
+    mpPct:         { label:'MP',           unit:'%', min:1, max:3 },
+    atkPct:        { label:'攻撃力',       unit:'%', min:1, max:3 },
+    defPct:        { label:'防御力',       unit:'%', min:1, max:3 },
+    fireResist:    { label:'火属性耐性',   unit:'',  min:1, max:10 },
+    iceResist:     { label:'氷属性耐性',   unit:'',  min:1, max:10 },
+    thunderResist: { label:'雷属性耐性',   unit:'',  min:1, max:10 },
+    dropRate:      { label:'ドロップ率',   unit:'%', min:1, max:3 },
+    critChance:    { label:'クリティカル率', unit:'%', min:1, max:3 },
+    ailmentResist: { label:'状態異常耐性', unit:'%', min:1, max:10 },
+  };
+  /* アクセサリー名は、にじさんじの配信システムにある「アクセサリー」機能
+   * (配信者が顔周りに着ける装飾)のイメージに倣った名称プール。 */
+  const ACCESSORY_NAME_POOL = [
+    'うさ耳','王冠','集中線','天使の輪','悪魔の角','猫耳','星のかんむり',
+    'リボン','ヘッドセット','眼鏡','蝶リボン','花冠','ちょうちょ髪飾り'
+  ];
+  const CRYSTAL_NAME_BY_EFFECT = {
+    hpPct:'生命のクリスタル', mpPct:'精神のクリスタル',
+    atkPct:'剛力のクリスタル', defPct:'守護のクリスタル',
+    fireResist:'紅蓮のクリスタル', iceResist:'氷結のクリスタル', thunderResist:'雷光のクリスタル',
+    dropRate:'強奪のクリスタル', critChance:'会心のクリスタル', ailmentResist:'加護のクリスタル'
+  };
+  function pickAccessoryEffectType(){
+    const keys = Object.keys(ACCESSORY_EFFECT_DEFS);
+    return keys[Math.floor(Math.random()*keys.length)];
+  }
+  /* valueMultは通常1(補正無し)。プリズムタワー産のみ、到達階に応じて
+   * ここに1より大きい値を渡し、レアリティ表記(=市場価値の指標)には
+   * 一切触れずに数値だけを底上げする(階層が上がるほど「同じレアリティ
+   * でもより強い個体が出やすい」を実現するための唯一の掛かり所)。 */
+  function rollAccessoryEffectValue(effectType, valueMult){
+    const def = ACCESSORY_EFFECT_DEFS[effectType];
+    if(!def) return 1;
+    const base = rnd(def.min, def.max);
+    return valueMult ? Math.max(def.min, Math.round(base * valueMult)) : base;
+  }
+  const ACCESSORY_SLOT_COUNT_RANGE = { common:[0,1], uncommon:[1,2], rare:[2,4], epic:[3,5] };
+  function makeAccessory(rarityKey, valueMult){
+    rarityKey = rarityKey || rollRarity();
+    const rarity = RARITY[rarityKey];
+    const effectType = pickAccessoryEffectType();
+    const range = ACCESSORY_SLOT_COUNT_RANGE[rarityKey] || [0,1];
+    return {
+      id: 'itm_'+Math.random().toString(36).slice(2,9),
+      type:'accessory', rarity:rarityKey, rarityLabel:rarity.cls,
+      name: ACCESSORY_NAME_POOL[Math.floor(Math.random()*ACCESSORY_NAME_POOL.length)],
+      mainEffect: { type: effectType, value: rollAccessoryEffectValue(effectType, valueMult) },
+      slotCount: rnd(range[0], range[1]),
+      crystals: []
+    };
+  }
+  function makeCrystal(rarityKey, valueMult){
+    rarityKey = rarityKey || rollRarity();
+    const rarity = RARITY[rarityKey];
+    const effectType = pickAccessoryEffectType();
+    return {
+      id: 'itm_'+Math.random().toString(36).slice(2,9),
+      type:'crystal', rarity:rarityKey, rarityLabel:rarity.cls,
+      name: CRYSTAL_NAME_BY_EFFECT[effectType] || 'クリスタル',
+      effect: { type: effectType, value: rollAccessoryEffectValue(effectType, valueMult) },
+      slotCost: rnd(1,3)
+    };
+  }
+  function accessoryEffectLabel(effect){
+    const def = effect && ACCESSORY_EFFECT_DEFS[effect.type];
+    if(!def) return '';
+    const sign = effect.value > 0 ? '+' : '';
+    return `${def.label}${sign}${effect.value}${def.unit}`;
+  }
+  /* アクセサリー本体の装備効果を集計する。同種ボーナス(主効果と同じ種類の
+   * クリスタルが装備されている場合、主効果・該当クリスタルの両方に効く)は
+   * ここに集約する。他プレイヤーのプロフィール閲覧(foreignAccessoryEffects)
+   * でも同じロジックを使う。 */
+  function computeAccessoryEffects(accessory){
+    const totals = {};
+    if(!accessory || !accessory.mainEffect) return totals;
+    const crystals = accessory.crystals || [];
+    const hasMatch = crystals.some(c=>c.effect && c.effect.type === accessory.mainEffect.type);
+    const mainValue = accessory.mainEffect.value * (hasMatch ? SAME_EFFECT_BONUS_MULT : 1);
+    totals[accessory.mainEffect.type] = (totals[accessory.mainEffect.type]||0) + mainValue;
+    crystals.forEach(c=>{
+      if(!c.effect) return;
+      const matches = c.effect.type === accessory.mainEffect.type;
+      const value = c.effect.value * (matches ? SAME_EFFECT_BONUS_MULT : 1);
+      totals[c.effect.type] = (totals[c.effect.type]||0) + value;
+    });
+    return totals;
+  }
+  function liverAccessoryEffects(id){
+    const ls = liverState(id);
+    return computeAccessoryEffects(ls && ls.equipped && ls.equipped.accessory);
+  }
+  function foreignAccessoryEffects(snap){
+    return computeAccessoryEffects(snap && snap.equippedAccessory);
+  }
+
+  /* ---------------------------------------------------------------
+   * プリズムタワー(素材ダンジョン)
+   * 1〜10階の各階が独立したDUNGEON_DEFSエントリ(isPrismTower:true)。
+   * 中身の探索ループ自体は通常ダンジョンのadvance()/challengeBoss()を
+   * 流用しつつ、以下の点だけ差し替える:
+   *   ・イベント確率(戦闘80%/素材宝箱15%/装備品宝箱4%/ミミック1%)
+   *   ・ドロップ内容(武器防具は出ず、専用素材・アクセサリー・クリスタルのみ)
+   *   ・突入時にスタミナを(階数×10)まとめて消費し、以降は探索中無消費
+   *   ・踏破率は勝敗撤退を問わずダンジョンを出るたびに必ず0へ戻す
+   *   ・ボス撃破後は七彩の塔と同様、リザルト画面を挟んで町へ強制送還
+   * レアリティ自体は通常通りランダム(rollRarity())のままにし、階層による
+   * 底上げは「同じレアリティの中での数値の強さ」だけに掛ける
+   * (rollAccessoryEffectValueのvalueMult引数)。これによりレアリティは
+   * 引き続き「相対的な希少さ」を表す指標として市場価値と直結したまま、
+   * 「上の階ほど数字が伸びやすい」という報酬感を両立させる狙い。
+   * --------------------------------------------------------------- */
+  const PRISM_FLOOR_COUNT = 10;
+  const PRISM_MATERIAL_KEY = 'prism_shard';
+  function prismValueMult(floorNum){ return 1 + (floorNum-1) * 0.1; } // 1F:1.0倍 〜 10F:1.9倍
+  function prismFloorDef(id){ return dungeonDefById(id); }
+
+  /* tierPool: ['common','uncommon'](普遍的枠) または ['rare','epic'](レア目枠)。
+   * アクセサリーとクリスタルは五分五分で抽選する。 */
+  /* tierPool内のレア度を、均等ではなく通常のRARITY.weightに従って重み付き
+   * 抽選する(均等抽選だとエピックがレアと同じ確率で出てしまい、「レア目枠」
+   * のはずが実質エピック確定枠のようになってしまうため)。 */
+  function prismPickRarityFromPool(tierPool){
+    const total = tierPool.reduce((s,k)=>s+(RARITY[k].weight||0), 0);
+    let r = Math.random()*total;
+    for(const k of tierPool){
+      if(r < RARITY[k].weight) return k;
+      r -= RARITY[k].weight;
+    }
+    return tierPool[0];
+  }
+  function prismRollEquip(tierPool, floorNum){
+    const rarityKey = prismPickRarityFromPool(tierPool);
+    const valueMult = prismValueMult(floorNum);
+    return Math.random() < 0.5 ? makeAccessory(rarityKey, valueMult) : makeCrystal(rarityKey, valueMult);
+  }
+  function grantPrismMaterial(qty){
+    state.materials[PRISM_MATERIAL_KEY] = materialCount(PRISM_MATERIAL_KEY) + qty;
+  }
+  /* 通常戦闘・ボス戦、両方のドロップ抽選をここに集約する。
+   * 通常戦闘(80%枠)勝利時: 全体10%(素材5%/普遍的枠3%/レア目枠2%)、
+   * 外れの90%は何も出ない。
+   * ボス撃破時: 全体10%(普遍的枠6%/レア目枠4%、素材無し)だが、外れの
+   * 90%は「何も出ない」代わりに専用素材を3個渡す(ボス戦でハズレだけは
+   * 味気ないため、通常戦闘とは違いここだけ救済する)。 */
+  function rollPrismDrop(floorNum, isBoss){
+    const roll = Math.random();
+    if(isBoss){
+      if(roll < 0.06) return { equip: prismRollEquip(['common','uncommon'], floorNum), materialQty: 0 };
+      if(roll < 0.10) return { equip: prismRollEquip(['rare','epic'], floorNum), materialQty: 0 };
+      return { equip: null, materialQty: 3 };
+    }
+    if(roll < 0.05) return { equip: null, materialQty: 1 };
+    if(roll < 0.08) return { equip: prismRollEquip(['common','uncommon'], floorNum), materialQty: 0 };
+    if(roll < 0.10) return { equip: prismRollEquip(['rare','epic'], floorNum), materialQty: 0 };
+    return { equip: null, materialQty: 0 }; // 通常戦闘の外れ(90%)は何もドロップしない(ボス戦のみ素材で救済する)
+  }
+  function maybeDropPrismItem(floorNum){
+    const drop = rollPrismDrop(floorNum, false);
+    if(drop.equip){
+      if(addItemToInventory(drop.equip)) pushLog(`「${drop.equip.name}」を手に入れた。`, 'reward');
+    } else if(drop.materialQty > 0){
+      grantPrismMaterial(drop.materialQty);
+      pushLog(`「${MATERIAL_DEFS[PRISM_MATERIAL_KEY].name}」を${drop.materialQty}個手に入れた。`, 'reward');
+    }
+  }
+
   /* 合成(装備強化)。強化値+1ごとに基礎値の5%を加算(5%分が1未満なら
    * 最低+1を保証)。最大+10まで(基礎値が十分大きい装備ではおよそ+50%)。 */
   const ENHANCE_MAX_LEVEL = 10;
@@ -725,6 +918,7 @@
     crimson_crystal:{ name:'紅蓮の結晶',  desc:'紅蓮の塔の奥で採れる結晶。塔の装備や強力な品の錬金に大量に使う。' },
     azure_frost:    { name:'紺碧の氷晶',  desc:'紺碧の塔でのみ見つかる、極寒の力を宿した鉱石。' },
     azure_crystal:  { name:'紺碧の結晶',  desc:'紺碧の塔の奥で採れる結晶。塔の装備や強力な品の錬金に大量に使う。' },
+    prism_shard:    { name:'虹晶の欠片',  desc:'プリズムタワーでのみ見つかる、七色に輝く欠片。上質なアクセサリー錬成に使う。' },
   };
 
   /* 錬金の大成功: 出来上がったアイテムが装備(武器・防具)の時だけ判定する。
@@ -770,6 +964,18 @@
         rarity:'common', rarityLabel:'common', name:'獣皮の鎧', value:10, resist:null
       }) }
     },
+    {
+      id:'craft_accessory', category:'アクセサリー',
+      name:'アクセサリー錬成',
+      materials:[{key:'fine_iron_ore', qty:2}, {key:'mana_residue', qty:3}],
+      output:{ type:'item', make: () => makeAccessory() }
+    },
+    {
+      id:'craft_accessory_prism', category:'アクセサリー',
+      name:'上質なアクセサリー錬成',
+      materials:[{key:'prism_shard', qty:3}, {key:'mana_residue', qty:5}],
+      output:{ type:'item', make: () => makeAccessory(null, 1.3) }
+    },
   ];
 
   /* カーソルを合わせた時に表示する、錬成結果アイテムの説明。装備は
@@ -814,10 +1020,12 @@
       pushLog(`錬金に成功し、「${RARITY[key].label}のオーブ」を${recipe.output.qty}個手に入れた。`, 'reward');
     } else if(recipe.output.type === 'item'){
       const item = recipe.output.make();
-      const grade = rollAlchemyGrade();
-      if(grade > 0) item.enhanceLevel = grade;
+      let gradeLabel = '';
+      if(item.type === 'weapon' || item.type === 'armor'){
+        const grade = rollAlchemyGrade();
+        if(grade > 0){ item.enhanceLevel = grade; gradeLabel = ` 大成功！(強化値+${grade})`; }
+      }
       addItemToInventory(item);
-      const gradeLabel = grade > 0 ? ` 大成功！(強化値+${grade})` : '';
       pushLog(`錬金に成功し、「${item.name}」を手に入れた。${gradeLabel}`, 'reward');
     }
 
@@ -903,6 +1111,13 @@
   }
 
   function itemValueLabel(item){
+    if(item.type === 'accessory'){
+      const used = (item.crystals||[]).reduce((s,c)=>s+(c.slotCost||0), 0);
+      return `[${accessoryEffectLabel(item.mainEffect)}] スロット${used}/${item.slotCount||0}`;
+    }
+    if(item.type === 'crystal'){
+      return `[${accessoryEffectLabel(item.effect)}] 消費${item.slotCost}`;
+    }
     let s = `(+${itemEffectiveValue(item)})`;
     if(item.enhanceLevel) s += ` [強化+${item.enhanceLevel}]`;
     if(item.weaponType) s += ` [${WEAPON_TYPES[item.weaponType].name}]`;
@@ -917,6 +1132,19 @@
   }
 
   function itemDetailText(item){
+    if(item.type === 'accessory'){
+      const rarityLabel = (RARITY[item.rarity] && RARITY[item.rarity].label) || '';
+      const used = (item.crystals||[]).reduce((s,c)=>s+(c.slotCost||0), 0);
+      let text = `${item.name} / ${rarityLabel} / アクセサリー / 主効果 ${accessoryEffectLabel(item.mainEffect)} / クリスタルスロット ${used}/${item.slotCount||0}`;
+      if((item.crystals||[]).length){
+        text += ` / 装着中: ${item.crystals.map(c=>`${c.name}(${accessoryEffectLabel(c.effect)})`).join('・')}`;
+      }
+      return text;
+    }
+    if(item.type === 'crystal'){
+      const rarityLabel = (RARITY[item.rarity] && RARITY[item.rarity].label) || '';
+      return `${item.name} / ${rarityLabel} / クリスタル / 効果 ${accessoryEffectLabel(item.effect)} / 消費スロット${item.slotCost}`;
+    }
     const typeLabel = item.weaponType ? WEAPON_TYPES[item.weaponType].name : (item.type==='weapon' ? '武器' : '防具');
     const rarityLabel = (RARITY[item.rarity] && RARITY[item.rarity].label) || '';
     let text = `${item.name} / ${rarityLabel} / ${typeLabel} / 効果値 +${itemEffectiveValue(item)}`;
@@ -976,7 +1204,10 @@
             effects:[
               {type:'damage', target:'enemyRandom', amount:1.3},
               {type:'poison', target:'enemyRandom', amount:0.08, duration:3}
-            ] }
+            ] },
+          { key:'petrify_gaze', name:'石化の一睨み', everyNTurns:5,
+            announceText:'{name}が石の視線を放った！',
+            effects:[ {type:'stun', target:'enemyRandom', amount:1, duration:1} ] }
         ] },
       firstClearReward:{name:'守護者の心臓', type:'armor'}
     },
@@ -985,7 +1216,15 @@
       group:'spire', groupName:'星詠みの尖塔', floorLabel:'1F',
       level:2, rewardMult:1.1,
       boss:{ name:'尖塔の門番', hpMult:1.6, atkMult:1.1, defMult:1.3, weakness:'fire',
-        skills:[{key:'crit', name:'閃光の一閃', everyNTurns:3, kind:'trueDamage', mult:2.0, element:'fire'}] },
+        skills:[
+          {key:'crit', name:'閃光の一閃', everyNTurns:3, kind:'trueDamage', mult:2.0, element:'fire'},
+          { key:'seal_voice', name:'静寂の一睨み', everyNTurns:4,
+            announceText:'{name}の「静寂の一睨み」！',
+            effects:[
+              {type:'damage', target:'enemyRandom', amount:1.0},
+              {type:'silence', target:'enemyRandom', amount:1, duration:2}
+            ] }
+        ] },
       firstClearReward:{name:'門番の鍵爪', type:'weapon'}
     },
     {
@@ -1320,6 +1559,115 @@
             warnText:'{name}が最後の審判を告げた……', executeText:'終焉の裁きが全てを飲み込んだ！'}
         ] },
       firstClearReward:{name:'堕神の審判剣', type:'weapon'}
+    },
+    /* ---------------------------------------------------------------
+     * プリズムタワー(素材ダンジョン)。町の通常ダンジョン一覧には出さず
+     * (isPrismTower:trueをvisibleDungeonDefs()側で除外)、専用の
+     * 「素材ダンジョン」画面から入る。1〜10階は自由に何度でも周回可能で、
+     * 突入のたびに踏破率0%から始まる(退出時に必ず0へ戻すため)。
+     * レベルは階数×10固定。武器・防具は一切ドロップしない。
+     * --------------------------------------------------------------- */
+    {
+      id:'prism_f1', name:'プリズムタワー 1F', pool:'prism', requires:null, isPrismTower:true, floorNum:1,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'1F',
+      level:10,
+      boss:{ name:'反射する門衛', hpMult:1.6, atkMult:1.15, defMult:1.25, weakness:'thunder',
+        skills:[{key:'crit', name:'乱反射の一閃', everyNTurns:3, kind:'trueDamage', mult:2.0}] }
+    },
+    {
+      id:'prism_f2', name:'プリズムタワー 2F', pool:'prism', requires:'prism_f1', isPrismTower:true, floorNum:2,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'2F',
+      level:20,
+      boss:{ name:'屈折の番人', hpMult:1.7, atkMult:1.18, defMult:1.29, weakness:'fire',
+        skills:[{key:'crit', name:'屈折の斬撃', everyNTurns:3, kind:'trueDamage', mult:2.1} ] }
+    },
+    {
+      id:'prism_f3', name:'プリズムタワー 3F', pool:'prism', requires:'prism_f2', isPrismTower:true, floorNum:3,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'3F',
+      level:30,
+      boss:{ name:'分光する影', hpMult:1.8, atkMult:1.21, defMult:1.33, weakness:'ice',
+        skills:[
+          {key:'crit', name:'分光の一撃', everyNTurns:3, kind:'trueDamage', mult:2.2},
+          {key:'charge', name:'収束光の奔流', everyNTurns:6, kind:'telegraphed', mult:3.2,
+            warnText:'{name}の周囲に光が収束していく……', executeText:'収束した光の奔流が撃ち込まれた！'}
+        ] }
+    },
+    {
+      id:'prism_f4', name:'プリズムタワー 4F', pool:'prism', requires:'prism_f3', isPrismTower:true, floorNum:4,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'4F',
+      level:40,
+      boss:{ name:'虹色の憑依体', hpMult:1.9, atkMult:1.24, defMult:1.37, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'虹色の侵蝕', everyNTurns:3, kind:'trueDamage', mult:2.3},
+          {key:'charge', name:'憑依の残光', everyNTurns:6, kind:'telegraphed', mult:3.4, element:'ice',
+            warnText:'{name}の輪郭が虹色に滲み始めた……', executeText:'滲んだ輪郭から残光が撃ち込まれた！'}
+        ] }
+    },
+    {
+      id:'prism_f5', name:'プリズムタワー 5F', pool:'prism', requires:'prism_f4', isPrismTower:true, floorNum:5,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'5F',
+      level:50,
+      boss:{ name:'プリズムの守護者', hpMult:2.0, atkMult:1.27, defMult:1.41, weakness:'fire',
+        skills:[
+          {key:'crit', name:'守護の断截光', everyNTurns:3, kind:'trueDamage', mult:2.4},
+          {key:'charge', name:'全反射の壁', everyNTurns:6, kind:'telegraphed', mult:3.6, element:'thunder',
+            warnText:'{name}が全身を鏡面に変え始めた……', executeText:'跳ね返った光が何倍にもなって突き刺さった！'}
+        ] }
+    },
+    {
+      id:'prism_f6', name:'プリズムタワー 6F', pool:'prism', requires:'prism_f5', isPrismTower:true, floorNum:6,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'6F',
+      level:60,
+      boss:{ name:'万華の巨兵', hpMult:2.1, atkMult:1.30, defMult:1.45, weakness:'ice',
+        skills:[
+          {key:'crit', name:'万華の一撃', everyNTurns:3, kind:'trueDamage', mult:2.5},
+          {key:'charge', name:'砕け散る万華鏡', everyNTurns:6, kind:'telegraphed', mult:3.8,
+            warnText:'{name}の体表が無数のかけらに軋み始めた……', executeText:'砕け散った破片が全身に突き刺さった！'}
+        ] }
+    },
+    {
+      id:'prism_f7', name:'プリズムタワー 7F', pool:'prism', requires:'prism_f6', isPrismTower:true, floorNum:7,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'7F',
+      level:70,
+      boss:{ name:'光断つ幻影卿', hpMult:2.2, atkMult:1.33, defMult:1.49, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'幻影の斬光', everyNTurns:3, kind:'trueDamage', mult:2.6},
+          {key:'charge', name:'光断つ一閃', everyNTurns:6, kind:'telegraphed', mult:4.0, element:'fire',
+            warnText:'{name}が光そのものを刃に変え始めた……', executeText:'光を断つ一閃が全てを切り裂いた！'}
+        ] }
+    },
+    {
+      id:'prism_f8', name:'プリズムタワー 8F', pool:'prism', requires:'prism_f7', isPrismTower:true, floorNum:8,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'8F',
+      level:80,
+      boss:{ name:'七色を纏う者', hpMult:2.3, atkMult:1.36, defMult:1.53, weakness:'fire',
+        skills:[
+          {key:'crit', name:'七色の断罪', everyNTurns:3, kind:'trueDamage', mult:2.7},
+          {key:'charge', name:'極彩の奔流', everyNTurns:6, kind:'telegraphed', mult:4.2, element:'ice',
+            warnText:'{name}を極彩色の輝きが包み始めた……', executeText:'極彩の奔流が全身を貫いた！'}
+        ] }
+    },
+    {
+      id:'prism_f9', name:'プリズムタワー 9F', pool:'prism', requires:'prism_f8', isPrismTower:true, floorNum:9,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'9F',
+      level:90,
+      boss:{ name:'虹霓の支配者', hpMult:2.4, atkMult:1.39, defMult:1.57, weakness:'ice',
+        skills:[
+          {key:'crit', name:'虹霓の裁光', everyNTurns:3, kind:'trueDamage', mult:2.8},
+          {key:'charge', name:'支配せし虹の環', everyNTurns:6, kind:'telegraphed', mult:4.4, element:'thunder',
+            warnText:'{name}の周囲に虹の環が形成されていく……', executeText:'収縮した虹の環が押し潰した！'}
+        ] }
+    },
+    {
+      id:'prism_f10', name:'プリズムタワー 10F', pool:'prism', requires:'prism_f9', isPrismTower:true, floorNum:10,
+      group:'prism_tower', groupName:'プリズムタワー', floorLabel:'10F',
+      level:100,
+      boss:{ name:'プリズムタワーの主', hpMult:2.6, atkMult:1.42, defMult:1.62, weakness:'thunder',
+        skills:[
+          {key:'crit', name:'虹色の終焉', everyNTurns:3, kind:'trueDamage', mult:3.0},
+          {key:'charge', name:'七彩崩壊', everyNTurns:6, kind:'telegraphed', mult:4.6, element:'fire',
+            warnText:'{name}を中心に七色の光が渦を巻き始めた……', executeText:'渦巻いた七色の光が全てを飲み込んだ！'}
+        ] }
     }
   ];
   const PROGRESS_PER_STEP = 9; // 1回の成功した行動あたりの踏破率上昇(%)
@@ -1347,8 +1695,8 @@
 
   /* ---------------------------------------------------------------
    * スタミナ: ダンジョン探索に必要な、ライバー単位ではなくプレイヤー
-   * (アカウント)単位のリソース。上限100固定、1分に1回復。時間経過以外の
-   * 回復手段(アイテム消費・広告視聴など)は今のところ設けない。
+   * (アカウント)単位のリソース。上限100固定、1分に1回復。時間経過以外にも、
+   * 回復薬の使用・広告視聴(ヘッダーの+ボタンから)でも回復できる。
    *
    * 他の資源(ゴールド・チケットなど)と同じ信頼モデルで、サーバー側の
    * 厳密な検証はせず、state.stamina/staminaUpdatedAtをクライアント側で
@@ -1410,6 +1758,37 @@
     saveGame(); render();
   }
 
+  /* ---------------- スタミナ回復ポップアップ ----------------
+   * ヘッダーの+ボタンから開く。回復薬の消費(既存のuseToolItemをそのまま
+   * 使う)と、広告視聴による回復の2手段を1箇所にまとめる。 */
+  const STAMINA_AD_RECOVER_AMOUNT = 50;
+  function openStaminaPopup(){
+    if(!state || !state.ui) return;
+    recomputeStamina();
+    state.ui.staminaPopupOpen = true;
+    render();
+  }
+  function closeStaminaPopup(){
+    if(!state || !state.ui) return;
+    state.ui.staminaPopupOpen = false;
+    render();
+  }
+  /* 広告視聴によるスタミナ回復。現時点では実際の広告SDKが未導入のため、
+   * 引き直しガチャの広告演出と同様、数秒待たせる疑似演出で代用している。
+   * 広告SDK導入時はここを差し替える。 */
+  async function watchAdForStamina(){
+    if(staminaAdWatching) return;
+    recomputeStamina();
+    if(state.stamina >= STAMINA_MAX) return;
+    staminaAdWatching = true;
+    render();
+    await sleep(2000);
+    state.stamina = Math.min(STAMINA_MAX, state.stamina + STAMINA_AD_RECOVER_AMOUNT);
+    staminaAdWatching = false;
+    pushLog(`広告視聴でスタミナを${STAMINA_AD_RECOVER_AMOUNT}回復した。`, 'reward');
+    saveGame(); render();
+  }
+
   /* ---------------------------------------------------------------
    * マーケット: どの装備・素材・道具が出品可能かはすべてクライアント側の
    * 定義のみで決める(DB側は所有権・個数の整合性だけを見る)。
@@ -1427,6 +1806,10 @@
   function marketEquipEligible(item){
     if(!item) return false;
     if(MARKET_EXCLUDED_EQUIPMENT_NAMES.has(item.name)) return false;
+    // クリスタルが挿さったままのアクセサリーは出品不可(先に外してもらう)。
+    // 装着中のクリスタル自体はstate.inventoryに現れないので、ここでの
+    // クリスタル側のガードは実質不要だが念のため明示しておく。
+    if(item.type === 'accessory' && (item.crystals||[]).length > 0) return false;
     return (MARKET_EQUIP_RARITY_RANK[item.rarity] || 0) >= MARKET_MIN_EQUIP_RARITY_RANK;
   }
   function marketStackDefFor(bucket, key){
@@ -1453,6 +1836,7 @@
    * 優先して左側に、装備種別(武器種別)は最右に置く。他画面の表記には
    * 影響させないよう、あえて別関数として持つ。 */
   function marketEquipMetaLabel(item){
+    if(item.type === 'accessory' || item.type === 'crystal') return itemValueLabel(item);
     let s = `効果値 +${itemEffectiveValue(item)}`;
     if(item.enhanceLevel) s += ` [強化+${item.enhanceLevel}]`;
     if(item.affix && item.affix.kind==='element'){
@@ -1601,7 +1985,26 @@
     const visible = [];
     let shownLocked = false;
     for(const def of DUNGEON_DEFS){
-      if(def.hidden) continue; // チュートリアル専用ダンジョン等、一覧に一切出さないもの
+      if(def.hidden || def.isPrismTower) continue; // チュートリアル専用/プリズムタワーは通常の一覧に出さない
+      if(isDungeonUnlocked(def.id)){
+        visible.push(def);
+      } else if(!shownLocked){
+        visible.push(def);
+        shownLocked = true;
+      } else {
+        break;
+      }
+    }
+    return visible;
+  }
+  /* プリズムタワー専用の一覧。通常ダンジョンと同じ「解放済み+次の1個先まで」
+   * のルールだが、解放済みの階は(通常ダンジョンと違い)何度でも自由に
+   * 選び直して周回できる(visiblePrismDefs自体はそのための表示範囲のみ担当)。 */
+  function visiblePrismDefs(){
+    const visible = [];
+    let shownLocked = false;
+    for(const def of DUNGEON_DEFS){
+      if(!def.isPrismTower) continue;
       if(isDungeonUnlocked(def.id)){
         visible.push(def);
       } else if(!shownLocked){
@@ -1937,11 +2340,20 @@
   let combatPassiveFlags = {}; // { liverId: {...} } 条件付きパッシブの発動状態・ログ済みフラグ。戦闘開始時にリセット
   let playerStatusEffects = {}; // { liverId: { [effectType]: {amount, turnsLeft, freshlyGranted} } } 戦闘中のみ・保存しない
 
-  /* 通常攻撃(スキルを使わなかった場合の攻撃)時、低確率で防御力を無視した
-   * 大ダメージが発生する。プレイヤー側は「会心の一撃」、敵側は「痛恨の一撃」
-   * と呼び分ける。スキルによる攻撃には影響しない(通常攻撃専用の演出)。 */
+  /* 低確率で防御力を無視した大ダメージが発生する(プレイヤー側は「会心の
+   * 一撃」、敵側は「痛恨の一撃」)。元々は通常攻撃専用だったが、アクセサリー
+   * の「クリティカル率」効果を活かすため、スキルによる攻撃にも同じ判定を
+   * 適用する(applyEffectToTargetのdamage分岐)。casterIdを渡すとその
+   * ライバーのアクセサリー加算込みの確率になり、null(敵の行動)なら
+   * 基礎値のみになる。 */
   const CRIT_CHANCE = 0.03;
   const CRIT_MULT = 2.0;
+  function rollCrit(casterId){
+    const bonus = casterId
+      ? (liverAccessoryEffects(casterId).critChance||0)/100
+      : (combatEnemy && combatEnemy.critBonus) || 0; // ミミック等、敵側の特殊なクリティカル率上昇に使う
+    return Math.random() < (CRIT_CHANCE + bonus);
+  }
 
   const STATUS_EFFECT_LABELS = {
     atkBuff:'攻撃力上昇', defBuff:'防御力上昇', atkDebuff:'攻撃力低下', defDebuff:'防御力低下',
@@ -2122,11 +2534,12 @@
       let raw;
       if(casterIsEnemy){
         const atk = effectiveEnemyAtk();
-        raw = effect.ignoreDef
-          ? Math.max(1, Math.round(atk * effect.amount) + rnd(-1,2))
+        const isCrit = rollCrit(null);
+        raw = (effect.ignoreDef || isCrit)
+          ? Math.max(1, Math.round(atk * effect.amount * (isCrit?CRIT_MULT:1)) + rnd(-1,2))
           : Math.max(1, Math.round(atk * effect.amount) - liverDefStat(target) + rnd(-1,1));
         const dmg = applyDamageToLiver(target, raw, effect.element);
-        pushLog(`${combatEnemy.name}の攻撃！ ${targetName}が ${dmg} のダメージを受けた。`, 'danger', true);
+        pushLog(`${isCrit?'痛恨の一撃！ ':''}${combatEnemy.name}の攻撃！ ${targetName}が ${dmg} のダメージを受けた。`, 'danger', true);
         if(effect.drainRatio){
           const healed = Math.max(0, Math.round(dmg * effect.drainRatio));
           if(healed > 0){
@@ -2140,14 +2553,15 @@
         const casterName = liverDef(casterId).name;
         const atk = combatAtk(casterId);
         const affixMult = weaponAffixDamageMult(casterId);
+        const isCrit = rollCrit(casterId);
         let mult = effect.amount;
         let isWeak = null;
         if(effect.weaknessMult != null){
           isWeak = (combatEnemy.weakness === effect.element);
           mult = isWeak ? effect.weaknessMult : effect.offMult;
         }
-        if(effect.ignoreDef){
-          raw = Math.max(1, Math.round(atk * mult * affixMult) + rnd(-1,3));
+        if(effect.ignoreDef || isCrit){
+          raw = Math.max(1, Math.round(atk * mult * affixMult * (isCrit?CRIT_MULT:1)) + rnd(-1,3));
         } else {
           const def = effectiveEnemyDef() * (effect.defMult != null ? effect.defMult : 1);
           raw = Math.max(1, Math.round((atk - def) * mult * affixMult) + rnd(-1,2));
@@ -2155,14 +2569,15 @@
         combatEnemyHp -= raw;
         const drained = applyOnHitMpDrain(casterId, raw);
         const drainSuffix = drained > 0 ? ` (MP+${drained})` : '';
+        const critPrefix = isCrit ? '会心の一撃！ ' : '';
         let line;
         if(isWeak === true){
           const elLabel = ELEMENT_LABELS[effect.element] || '';
-          line = `${casterName}の攻撃！ 弱点(${elLabel})を突き、${raw} のダメージ！`;
+          line = `${critPrefix}${casterName}の攻撃！ 弱点(${elLabel})を突き、${raw} のダメージ！`;
         } else if(isWeak === false){
-          line = `${casterName}の攻撃！ ${raw} のダメージ(弱点不一致)。`;
-        } else if(effect.ignoreDef){
-          line = `${casterName}の攻撃！ 防御を貫く ${raw} のダメージ。`;
+          line = `${critPrefix}${casterName}の攻撃！ ${raw} のダメージ(弱点不一致)。`;
+        } else if(effect.ignoreDef || isCrit){
+          line = `${critPrefix}${casterName}の攻撃！ 防御を貫く ${raw} のダメージ。`;
         } else {
           line = `${casterName}の攻撃！ ${combatEnemy.name}に ${raw} のダメージ。`;
         }
@@ -2183,6 +2598,18 @@
         pushLog(`${targetName}のHPが ${heal} 回復した。`, 'reward', true);
       }
       return;
+    }
+
+    // 状態異常耐性: 敵からプレイヤーへの状態異常付与(毒/行動不能/沈黙)だけを
+    // 対象に、一定確率で付与そのものを防ぐ(すでに付いている効果を弱める
+    // 「軽減」とは別の仕組み。軽減は今後実装する場合、別の効果名で区別する)。
+    if(casterIsEnemy && target !== 'enemy'
+      && STATUS_EFFECT_ICONS[effect.type] && STATUS_EFFECT_ICONS[effect.type].category === 'ailment'){
+      const resist = (liverAccessoryEffects(target).ailmentResist||0)/100;
+      if(resist > 0 && Math.random() < resist){
+        pushLog(`${targetName}は「${statusEffectLabel(effect.type)}」の付与を防いだ！`, 'system', true);
+        return;
+      }
     }
 
     // バフ/デバフ・状態異常はここでまとめて登録するだけ
@@ -2552,6 +2979,11 @@
     const mainStat = jobStatPotential(activeJob, activeLevel);
     mainStat.atk += ls.equipped.weapon ? itemEffectiveValue(ls.equipped.weapon) : 0;
     mainStat.def += ls.equipped.armor ? itemEffectiveValue(ls.equipped.armor) : 0;
+    const accEff = liverAccessoryEffects(liverId);
+    mainStat.hp  = Math.round(mainStat.hp  * (1 + (accEff.hpPct ||0)/100));
+    mainStat.mp  = Math.round(mainStat.mp  * (1 + (accEff.mpPct ||0)/100));
+    mainStat.atk = Math.round(mainStat.atk * (1 + (accEff.atkPct||0)/100));
+    mainStat.def = Math.round(mainStat.def * (1 + (accEff.defPct||0)/100));
 
     let total = weightedStatSum(mainStat, CP_MAIN_WEIGHT);
     Object.keys(JOB_DEFS).forEach(jobId=>{
@@ -2637,8 +3069,9 @@
   function recomputeLiverMaxStats(id, fullRestore){
     const ls = liverState(id);
     const jp = jobProgressFor(id);
-    const newMaxHp = Math.round(jobMaxHp(ls.job, jp.level) * passiveStatMult(id, 'hp'));
-    const newMaxMp = Math.round(jobMaxMp(ls.job, jp.level) * passiveStatMult(id, 'mp'));
+    const accEff = liverAccessoryEffects(id);
+    const newMaxHp = Math.round(jobMaxHp(ls.job, jp.level) * passiveStatMult(id, 'hp') * (1 + (accEff.hpPct||0)/100));
+    const newMaxMp = Math.round(jobMaxMp(ls.job, jp.level) * passiveStatMult(id, 'mp') * (1 + (accEff.mpPct||0)/100));
     ls.maxHp = newMaxHp;
     ls.maxMp = newMaxMp;
     if(fullRestore){
@@ -2666,7 +3099,7 @@
     return {
       job, jobProgress,
       hp:maxHp, maxHp, mp:maxMp, maxMp,
-      equipped: {weapon:null, armor:null},
+      equipped: {weapon:null, armor:null, accessory:null},
       unlocked: !!liverDefObj.startUnlocked,
       unlockedAt: liverDefObj.startUnlocked ? Date.now() : null,
       costume: defaultCostume,
@@ -2698,7 +3131,8 @@
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
         rosterDetailId: null, rosterDetailFrom: 'roster',
         profileViewId: null, profileFrom: 'town', profileLiverId: null,
-        profileLiverFrom: 'profile', profileCommentEditing: false },
+        profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null,
+        staminaPopupOpen: false },
       pendingDefeatGoldLoss: 0,
       dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
@@ -2710,7 +3144,9 @@
       rift: null, // { startedAt, partyIds } / 非アクティブならnull
       towerRun: null, // { towerId, floor } / 非アクティブならnull
       towerBestFloor: {}, // 塔ごとの過去最高到達フロア(他の塔の解放条件に使う)
-      lastTowerResult: null // リザルト画面表示用。永続化はしない
+      lastTowerResult: null, // リザルト画面表示用。永続化はしない
+      prismRun: null, // { floorId } / 非アクティブならnull(リロード時の再開判定に使う)
+      lastPrismResult: null // リザルト画面表示用。永続化はしない
     };
   }
 
@@ -2718,14 +3154,16 @@
     const ls = liverState(id);
     const w = ls.equipped.weapon;
     const atk = jobBaseAtk(ls.job, jobProgressFor(id).level) + (w ? itemEffectiveValue(w) : 0);
-    return Math.round(atk * passiveStatMult(id, 'atk'));
+    const atkPct = liverAccessoryEffects(id).atkPct || 0;
+    return Math.round(atk * passiveStatMult(id, 'atk') * (1 + atkPct/100));
   }
   function liverDefStat(id){
     const ls = liverState(id);
     const a = ls.equipped.armor;
     const def = jobBaseDef(ls.job, jobProgressFor(id).level) + (a ? itemEffectiveValue(a) : 0);
     const statusMult = statusStatMult(playerStatusEffects[id], 'defBuff', 'defDebuff');
-    return Math.max(1, Math.round(def * passiveStatMult(id, 'def') * statusMult));
+    const defPct = liverAccessoryEffects(id).defPct || 0;
+    return Math.max(1, Math.round(def * passiveStatMult(id, 'def') * statusMult * (1 + defPct/100)));
   }
 
   /* 条件付きパッシブによる「戦闘中のみ」の与ダメージ倍率。
@@ -2804,6 +3242,8 @@
         dropMult *= (p.dropRateMult || 1);
         goldMult *= (p.goldMult || 1);
       }
+      const dropPct = liverAccessoryEffects(id).dropRate || 0;
+      if(dropPct) dropMult *= (1 + dropPct/100);
     });
     return { dropMult, goldMult };
   }
@@ -2885,6 +3325,7 @@
 
   /* ライバーの属性耐性。レベルアップでは伸びず、装備(・将来的にはスキル等の
    * 一時効果)によってのみ変動する。数値1につき被ダメージ±3%。 */
+  const ACCESSORY_RESIST_ELEMENT = { fireResist:'fire', iceResist:'ice', thunderResist:'thunder' };
   function liverResistances(id){
     const ls = liverState(id);
     const res = {};
@@ -2893,6 +3334,10 @@
       if(item && item.resist && res.hasOwnProperty(item.resist.element)){
         res[item.resist.element] += item.resist.value;
       }
+    });
+    const accEff = liverAccessoryEffects(id);
+    Object.keys(ACCESSORY_RESIST_ELEMENT).forEach(effType=>{
+      if(accEff[effType]) res[ACCESSORY_RESIST_ELEMENT[effType]] += accEff[effType];
     });
     return res;
   }
@@ -2934,6 +3379,11 @@
     const mainStat = jobStatPotential(activeJob, activeLevel);
     mainStat.atk += snap.equippedWeapon ? itemEffectiveValue(snap.equippedWeapon) : 0;
     mainStat.def += snap.equippedArmor ? itemEffectiveValue(snap.equippedArmor) : 0;
+    const accEff = foreignAccessoryEffects(snap);
+    mainStat.hp  = Math.round(mainStat.hp  * (1 + (accEff.hpPct ||0)/100));
+    mainStat.mp  = Math.round(mainStat.mp  * (1 + (accEff.mpPct ||0)/100));
+    mainStat.atk = Math.round(mainStat.atk * (1 + (accEff.atkPct||0)/100));
+    mainStat.def = Math.round(mainStat.def * (1 + (accEff.defPct||0)/100));
     let total = weightedStatSum(mainStat, CP_MAIN_WEIGHT);
     Object.keys(JOB_DEFS).forEach(jobId=>{
       if(jobId === activeJob) return;
@@ -2945,12 +3395,14 @@
   function foreignLiverAtk(liverId, snap, partySize){
     const level = (snap.jobProgress[snap.job] || {}).level || 1;
     const atk = jobBaseAtk(snap.job, level) + (snap.equippedWeapon ? itemEffectiveValue(snap.equippedWeapon) : 0);
-    return Math.round(atk * foreignPassiveStatMult(liverId, snap, partySize, 'atk'));
+    const atkPct = foreignAccessoryEffects(snap).atkPct || 0;
+    return Math.round(atk * foreignPassiveStatMult(liverId, snap, partySize, 'atk') * (1 + atkPct/100));
   }
   function foreignLiverDefStat(liverId, snap, partySize){
     const level = (snap.jobProgress[snap.job] || {}).level || 1;
     const def = jobBaseDef(snap.job, level) + (snap.equippedArmor ? itemEffectiveValue(snap.equippedArmor) : 0);
-    return Math.max(1, Math.round(def * foreignPassiveStatMult(liverId, snap, partySize, 'def')));
+    const defPct = foreignAccessoryEffects(snap).defPct || 0;
+    return Math.max(1, Math.round(def * foreignPassiveStatMult(liverId, snap, partySize, 'def') * (1 + defPct/100)));
   }
   function foreignLiverResistances(snap){
     const res = {};
@@ -2959,6 +3411,10 @@
       if(item && item.resist && res.hasOwnProperty(item.resist.element)){
         res[item.resist.element] += item.resist.value;
       }
+    });
+    const accEff = foreignAccessoryEffects(snap);
+    Object.keys(ACCESSORY_RESIST_ELEMENT).forEach(effType=>{
+      if(accEff[effType]) res[ACCESSORY_RESIST_ELEMENT[effType]] += accEff[effType];
     });
     return res;
   }
@@ -3058,6 +3514,7 @@
   const DESTINY_EXCHANGE_COST = 5;
   const DESTINY_MAX_REROLLS = 3;
   let pendingGacha = null; // { candidateId, rerollsUsed, rolling }
+  let staminaAdWatching = false; // スタミナ回復ポップアップの「広告視聴」演出中フラグ
 
   function unclaimedLiverDefs(){ return LIVER_DEFS.filter(d=>!liverState(d.id).unlocked); }
 
@@ -3301,6 +3758,7 @@
           hp: r.hp, max_hp: r.maxHp, mp: r.mp, max_mp: r.maxMp,
           equipped_weapon_id: r.equipped.weapon ? r.equipped.weapon.id : null,
           equipped_armor_id: r.equipped.armor ? r.equipped.armor.id : null,
+          equipped_accessory_id: r.equipped.accessory ? r.equipped.accessory.id : null,
           loadout: jp.loadout.enabled, unlocked: !!r.unlocked,
           job_progress: r.jobProgress,
           costume: r.costume || defaultCostumeKeyFor(def.id),
@@ -3308,21 +3766,38 @@
         };
       });
 
-      const allItems = [...state.inventory];
+      /* アクセサリーに装備したクリスタルは、アクセサリー本体とは別行として
+       * 保存する(socketed_intoで親アクセサリーのidを持つ)。所持品リスト・
+       * 装備中のアクセサリーの両方について、装備されているクリスタルを
+       * 再帰的に取り出す。 */
+      const inventoryRows = [];
+      const pushInventoryRow = (item, socketedInto) => {
+        if(!item) return;
+        inventoryRows.push({
+          id: item.id, item_type: item.type, name: item.name, rarity: item.rarity,
+          value: item.value || 0,
+          resist_element: item.resist ? item.resist.element : null,
+          resist_value: item.resist ? item.resist.value : null,
+          weapon_type: item.weaponType || null,
+          affix: item.affix || null,
+          enhance_level: item.enhanceLevel || 0,
+          effect_type: item.mainEffect ? item.mainEffect.type : (item.effect ? item.effect.type : null),
+          effect_value: item.mainEffect ? item.mainEffect.value : (item.effect ? item.effect.value : null),
+          slot_count: item.type === 'accessory' ? (item.slotCount||0) : null,
+          slot_cost: item.type === 'crystal' ? (item.slotCost||1) : null,
+          socketed_into: socketedInto || null
+        });
+        if(item.type === 'accessory' && Array.isArray(item.crystals)){
+          item.crystals.forEach(c => pushInventoryRow(c, item.id));
+        }
+      };
+      state.inventory.forEach(item => pushInventoryRow(item, null));
       LIVER_DEFS.forEach(def=>{
         const r = state.roster[def.id];
-        if(r.equipped.weapon) allItems.push(r.equipped.weapon);
-        if(r.equipped.armor) allItems.push(r.equipped.armor);
+        pushInventoryRow(r.equipped.weapon, null);
+        pushInventoryRow(r.equipped.armor, null);
+        pushInventoryRow(r.equipped.accessory, null);
       });
-      const inventoryRows = allItems.map(i=>({
-        id: i.id, item_type: i.type, name: i.name, rarity: i.rarity,
-        value: i.value,
-        resist_element: i.resist ? i.resist.element : null,
-        resist_value: i.resist ? i.resist.value : null,
-        weapon_type: i.weaponType || null,
-        affix: i.affix || null,
-        enhance_level: i.enhanceLevel || 0
-      }));
 
       const dungeonRows = DUNGEON_DEFS.map(d=>{
         const ds = state.dungeons[d.id];
@@ -3353,7 +3828,8 @@
         p_stamina_updated_at: new Date(state.staminaUpdatedAt).toISOString(),
         p_tools: state.tools || {},
         p_tower_run: state.towerRun || null,
-        p_tower_best_floor: state.towerBestFloor || {}
+        p_tower_best_floor: state.towerBestFloor || {},
+        p_prism_run: state.prismRun || null
       });
       if(error) console.error('save_full_state failed', error);
 
@@ -3396,8 +3872,29 @@
           affix: i.affix || null,
           enhanceLevel: i.enhance_level || 0
         };
+        if(i.item_type === 'accessory'){
+          item.mainEffect = i.effect_type ? { type: i.effect_type, value: i.effect_value } : null;
+          item.slotCount = i.slot_count || 0;
+          item.crystals = [];
+        } else if(i.item_type === 'crystal'){
+          item.effect = i.effect_type ? { type: i.effect_type, value: i.effect_value } : null;
+          item.slotCost = i.slot_cost || 1;
+        }
         itemById[i.id] = item;
         inventory.push(item);
+      });
+      // アクセサリーに装備されているクリスタルを、親アクセサリーのcrystals配列へ
+      // 埋め込み、所持品リストからは外す(装備中のアイテムと同じ扱い)。
+      invRows.forEach(i=>{
+        if(i.item_type === 'crystal' && i.socketed_into){
+          const parent = itemById[i.socketed_into];
+          const crystal = itemById[i.id];
+          if(parent && parent.type === 'accessory' && crystal){
+            parent.crystals.push(crystal);
+            const idx = inventory.findIndex(x=>x.id===crystal.id);
+            if(idx>=0) inventory.splice(idx,1);
+          }
+        }
       });
 
       const roster = {};
@@ -3425,7 +3922,8 @@
           hp: r.hp, maxHp: r.max_hp, mp: r.mp, maxMp: r.max_mp,
           equipped: {
             weapon: r.equipped_weapon_id ? (itemById[r.equipped_weapon_id]||null) : null,
-            armor: r.equipped_armor_id ? (itemById[r.equipped_armor_id]||null) : null
+            armor: r.equipped_armor_id ? (itemById[r.equipped_armor_id]||null) : null,
+            accessory: r.equipped_accessory_id ? (itemById[r.equipped_accessory_id]||null) : null
           },
           unlocked: r.unlocked,
           costume: r.costume || defaultCostumeKeyFor(r.liver_id),
@@ -3436,7 +3934,7 @@
       });
       // 装備中のアイテムは所持品リストからは除外する(以前のwindow.storage版と同じ表現)
       Object.values(roster).forEach(r=>{
-        [r.equipped.weapon, r.equipped.armor].forEach(item=>{
+        [r.equipped.weapon, r.equipped.armor, r.equipped.accessory].forEach(item=>{
           if(!item) return;
           const idx = inventory.findIndex(x=>x.id===item.id);
           if(idx>=0) inventory.splice(idx,1);
@@ -3457,6 +3955,7 @@
       // (screen/activeDungeonId自体は永続化していないため、ここで代わりに判定する)。
       const tutorialDone = playerRow.tutorial_done !== false;
       const towerRun = (playerRow.tower_run && playerRow.tower_run.towerId) ? playerRow.tower_run : null;
+      const prismRun = (playerRow.prism_run && playerRow.prism_run.floorId) ? playerRow.prism_run : null;
 
       return {
         name: playerRow.name, gold: playerRow.gold,
@@ -3464,8 +3963,8 @@
         roster, party: Array.isArray(playerRow.party) ? playerRow.party : [],
         inventory,
         log: [], history: [],
-        screen: towerRun ? 'towerRun' : (tutorialDone ? 'town' : 'dungeon'),
-        activeDungeonId: tutorialDone ? null : 'tutorial',
+        screen: prismRun ? 'dungeon' : (towerRun ? 'towerRun' : (tutorialDone ? 'town' : 'dungeon')),
+        activeDungeonId: prismRun ? prismRun.floorId : (tutorialDone ? null : 'tutorial'),
         tutorialDone,
         home: { furniture: playerRow.home_furniture || [] },
         ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
@@ -3473,7 +3972,8 @@
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
         rosterDetailId: null, rosterDetailFrom: 'roster',
         profileViewId: null, profileFrom: 'town', profileLiverId: null,
-        profileLiverFrom: 'profile', profileCommentEditing: false },
+        profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null,
+        staminaPopupOpen: false },
         pendingDefeatGoldLoss: 0,
         dungeons,
         colosseum: {
@@ -3493,7 +3993,9 @@
           : null,
         towerRun: towerRun ? { towerId: towerRun.towerId, floor: towerRun.floor || 0 } : null,
         towerBestFloor: (playerRow.tower_best_floor && typeof playerRow.tower_best_floor === 'object') ? playerRow.tower_best_floor : {},
-        lastTowerResult: null
+        lastTowerResult: null,
+        prismRun: prismRun ? { floorId: prismRun.floorId } : null,
+        lastPrismResult: null
       };
     }catch(e){
       console.error('load failed', e);
@@ -3517,6 +4019,15 @@
     createSelectedLiver = null; createNameDraft = '';
     colosseumView = { loading: true, floor: 1, record: null, isDummy: true };
     render();
+  }
+
+  /* デバッグ用: クリスタルは本来「特殊なダンジョン」(未実装)限定のドロップ
+   * だが、アクセサリーへの着脱・同種ボーナスなどの動作確認ができるよう、
+   * 実装までの繋ぎとしてランダムなクリスタルを直接付与する機能を用意する。 */
+  function debugGrantCrystals(){
+    for(let i=0;i<3;i++) addItemToInventory(makeCrystal());
+    pushLog('デバッグ: テスト用クリスタルを3個入手した。', 'reward');
+    saveGame(); render();
   }
 
   /* ---------------- コロシアムタワー: Supabase I/O ---------------- */
@@ -3588,6 +4099,10 @@
         const newSkill = JOB_DEFS[ls.job].skills.find(s=>s.unlockLevel === jp.level);
         if(newSkill){
           pushLog(`${liverDef(id).name}は新しいスキル「${newSkill.name}」を習得した!`, 'reward');
+          // 有効スキル枠にまだ空きがあれば、習得したスキルは自動的に有効化する。
+          if(jp.loadout.enabled.length < SKILL_LOADOUT_MAX){
+            jp.loadout.enabled.push(newSkill.key);
+          }
         }
       }
     });
@@ -3612,7 +4127,7 @@
     if(Math.random() < 0.3){
       const g = Math.round((4 + depth*1.5 + Math.random()*6) * goldMult);
       state.gold += g;
-      pushLog(`${g} 枚の古い硬貨を見つけた。`, 'reward');
+      pushLog(`${g}ゴールド手に入れた。`, 'reward');
     }
   }
 
@@ -3687,7 +4202,7 @@
     const affixMult = weaponAffixDamageMult(liverId);
 
     if(!chosen){
-      if(Math.random() < CRIT_CHANCE){
+      if(rollCrit(liverId)){
         const dmg = Math.max(1, Math.round(combatAtk(liverId) * CRIT_MULT * affixMult) + rnd(-1,3));
         combatEnemyHp -= dmg;
         pushLog(`${name}の攻撃が会心の一撃となった！ ${combatEnemy.name}に防御を貫く ${dmg} の大ダメージ！${drainSuffix(dmg)}`, 'reward', true);
@@ -3851,7 +4366,7 @@
       return;
     }
 
-    if(Math.random() < CRIT_CHANCE){
+    if(rollCrit(null)){
       const raw = Math.max(1, Math.round(effectiveEnemyAtk() * CRIT_MULT) + rnd(-1,2));
       const dmg = applyDamageToLiver(target, raw);
       pushLog(`${combatEnemy.name}の痛恨の一撃！ ${targetName}が防御を貫く ${dmg} の大ダメージを受けた！`, 'danger', true);
@@ -3950,6 +4465,25 @@
         pushLog(`${combatEnemy.name}を倒した。`, 'reward');
         grantExpToParty(combatEnemy.exp);
         const ds = currentDungeonState();
+        const dungeonDefForVictory = currentDungeonDef();
+
+        if(dungeonDefForVictory && dungeonDefForVictory.isPrismTower){
+          if(combatEnemy.isPrismBoss){
+            resolvePrismBossVictory(dungeonDefForVictory, ds);
+            return;
+          }
+          if(combatEnemy.isMimic){
+            const drop = prismRollEquip(['rare','epic'], dungeonDefForVictory.floorNum);
+            if(addItemToInventory(drop)) pushLog(`ミミックを退け、「${drop.name}」を手に入れた！`, 'reward');
+          } else {
+            maybeDropPrismItem(dungeonDefForVictory.floorNum);
+          }
+          if(combatEnemy.pendingProgressOnWin) addDungeonProgress(PROGRESS_PER_STEP);
+          inCombat = false; combatPhase = null; combatEnemy = null;
+          saveGame(); render();
+          return;
+        }
+
         maybeDropItem(ds.depth);
 
         if(combatEnemy.isDungeonBoss){
@@ -4178,6 +4712,14 @@
       return;
     }
 
+    if(state.prismRun){
+      // プリズムタワーは救済措置なし(通常の全滅ペナルティをそのまま適用する)。
+      // ただし退出時ルールに従い、踏破率・深度だけは必ず0に戻す。
+      const ds = currentDungeonState();
+      if(ds){ ds.progress = 0; ds.depth = 0; }
+      state.prismRun = null;
+    }
+
     if(state.activeDungeonId === 'tutorial' && !state.tutorialDone){
       state.tutorialDone = true;
       state.destinyTickets += 1;
@@ -4202,6 +4744,7 @@
     const ds = currentDungeonState();
     if(!dungeonDef || !ds) return;
     if(!alivePartyIds().length) return; // 全員戦闘不能では進めない
+    if(dungeonDef.isPrismTower){ prismAdvance(dungeonDef, ds); return; }
     recomputeStamina();
     if(state.stamina < 1){
       pushLog('スタミナが足りない。時間経過で回復するのを待とう。', 'system');
@@ -4262,6 +4805,12 @@
     const dungeonDef = currentDungeonDef();
     const ds = currentDungeonState();
     if(!dungeonDef || !ds || ds.progress < 100) return;
+    if(dungeonDef.isPrismTower){
+      const enemy = spawnEnemy(dungeonDef, ds.depth, true);
+      enemy.isPrismBoss = true;
+      startCombat(enemy);
+      return;
+    }
     recomputeStamina();
     if(state.stamina < 1){
       pushLog('スタミナが足りない。時間経過で回復するのを待とう。', 'system');
@@ -4272,6 +4821,121 @@
     const enemy = spawnEnemy(dungeonDef, ds.depth, true);
     enemy.isDungeonBoss = true;
     startCombat(enemy);
+  }
+
+  /* プリズムタワー内の探索1手。通常ダンジョンのadvance()と違い、
+   * スタミナは突入時にまとめて消費済みのためここでは消費しない。
+   * イベント確率: 戦闘80%/素材宝箱15%/装備品宝箱4%/ミミック1%。 */
+  function prismAdvance(dungeonDef, ds){
+    if(ds.progress < 100) ds.depth += 1;
+    const roll = Math.random();
+    if(roll < 0.80){
+      const enemy = spawnEnemy(dungeonDef, ds.depth, false);
+      enemy.pendingProgressOnWin = true;
+      startCombat(enemy);
+    } else if(roll < 0.95){
+      grantPrismMaterial(1);
+      pushLog(`宝箱から「${MATERIAL_DEFS[PRISM_MATERIAL_KEY].name}」を見つけた！`, 'reward');
+      addDungeonProgress(PROGRESS_PER_STEP);
+      saveGame(); render();
+    } else if(roll < 0.99){
+      // この宝箱は「確定ドロップ」というだけで、レア目枠のような偏りの
+      // 指定は無いため、通常の(4段階の重み付きに従う)抽選をそのまま使う。
+      const item = prismRollEquip(Object.keys(RARITY), dungeonDef.floorNum);
+      if(addItemToInventory(item)) pushLog(`宝箱から「${item.name}」を見つけた！`, 'reward');
+      addDungeonProgress(PROGRESS_PER_STEP);
+      saveGame(); render();
+    } else {
+      const mimic = spawnPrismMimic(dungeonDef);
+      mimic.pendingProgressOnWin = true;
+      startMimicCombat(mimic);
+    }
+  }
+
+  /* ミミック: 見た目は宝箱だが、その階のボス級の戦闘力を持つ特殊な敵。
+   * 戦闘開始と同時に(プレイヤーが行動する前に)確率無視の状態異常を
+   * 1つ確定で刻んでくる。撃破時は必ず高レアリティ枠の装備品を落とす。 */
+  function spawnPrismMimic(dungeonDef){
+    const level = Math.max(1, dungeonDef.level + BOSS_LEVEL_PREMIUM);
+    const base = statsForLevel(level);
+    const hp = Math.max(5, Math.round(base.hp * 1.6 * partySizeHpMult()));
+    const atk = Math.max(1, Math.round(base.atk * 1.25));
+    const def = Math.max(0, Math.round(base.def * 1.2));
+    const exp = Math.round(base.exp * 1.6);
+    return {name:'化けた宝箱', level, hp, maxHp:hp, atk, def, exp, boss:false, isMimic:true, critBonus:0.15, skills:[], weakness:null};
+  }
+  function startMimicCombat(enemy){
+    startCombat(enemy);
+    const target = pickRandomAliveTarget();
+    if(!target) return;
+    const type = ['poison','stun','silence'][Math.floor(Math.random()*3)];
+    const amount = type==='poison' ? 0.1 : 1;
+    const duration = type==='poison' ? 3 : 2;
+    applyStatusEffect(statusEffectsMapFor(target), type, amount, duration, false);
+    pushLog(`ミミックの奇襲！ ${liverDef(target).name}に「${statusEffectLabel(type)}」が問答無用で刻まれた！`, 'danger', true);
+    render(); // startCombat()内で既に一度描画済みだが、その後に追加したこの奇襲ログ・状態異常を画面に反映するため再描画する
+  }
+
+  /* ボス撃破後: 七彩の塔と同様、リザルトを挟んで町へ強制送還する。
+   * 到達済みフラグ(cleared)自体は通常ダンジョンと同じく永続するが、
+   * 踏破率・深度はここで必ず0に戻す(再突入時は常に0から)。 */
+  function resolvePrismBossVictory(dungeonDef, ds){
+    ds.cleared = true;
+    ds.bossKillCount = (ds.bossKillCount||0) + 1;
+    ds.progress = 0; ds.depth = 0;
+
+    const drop = rollPrismDrop(dungeonDef.floorNum, true);
+    if(drop.equip) addItemToInventory(drop.equip);
+    if(drop.materialQty > 0) grantPrismMaterial(drop.materialQty);
+
+    state.lastPrismResult = { floorName: dungeonDef.name, reward: drop.equip, materialQty: drop.materialQty };
+    state.prismRun = null;
+    state.activeDungeonId = null;
+    state.screen = 'prismResult';
+    inCombat = false; combatPhase = null; combatEnemy = null;
+    saveGame(); render();
+  }
+  function closePrismResult(){
+    state.lastPrismResult = null;
+    state.screen = 'materialDungeons';
+    saveGame(); render();
+  }
+  function enterPrismFloor(id){
+    if(inCombat) return;
+    if(!isDungeonUnlocked(id)) return;
+    if(!state.party.length){
+      pushLog('パーティが編成されていない。町で編成してから向かおう。', 'system');
+      render();
+      return;
+    }
+    const def = dungeonDefById(id);
+    recomputeStamina();
+    const cost = def.floorNum * 10;
+    if(state.stamina < cost){
+      pushLog(`スタミナが足りない(必要: ${cost})。時間経過で回復するのを待とう。`, 'system');
+      render();
+      return;
+    }
+    state.stamina -= cost;
+    const ds = state.dungeons[id];
+    ds.progress = 0; ds.depth = 0;
+    state.activeDungeonId = id;
+    state.prismRun = { floorId: id };
+    state.screen = 'dungeon';
+    state.log = [];
+    pushLog(`${def.name}に突入した。`, 'system');
+    saveGame(); render();
+  }
+  /* 探索を切り上げて出る(自主撤退)。全滅時と同じく、退出時は必ず
+   * 踏破率0%に戻す(救済措置は行わない)。 */
+  function leavePrismFloor(){
+    if(inCombat || !state.activeDungeonId) return;
+    const ds = currentDungeonState();
+    if(ds){ ds.progress = 0; ds.depth = 0; }
+    state.prismRun = null;
+    state.activeDungeonId = null;
+    state.screen = 'materialDungeons';
+    saveGame(); render();
   }
 
   /* 装備の変更は町(ダンジョン探索中でない状態)でのみ許可する。 */
@@ -4309,13 +4973,15 @@
     const ls = liverState(liverId);
     const prev = ls.equipped[slot];
     state.inventory.splice(idx,1);
-    if(prev) state.inventory.push(prev); // 元々装備していた物は所持品に戻す
+    if(prev) state.inventory.push(prev); // 元々装備していた物は所持品に戻す(クリスタルも装着したまま付いてくる)
     ls.equipped[slot] = item;
     pushLog(`${liverDef(liverId).name}が「${item.name}」を装備した。`, 'system');
     state.ui.equipPickerSlot = null;
+    recomputeLiverMaxStats(liverId, false);
     saveGame(); render();
   }
 
+  const EQUIP_SLOT_LABELS = { weapon:'武器', armor:'防具', accessory:'アクセサリー' };
   function unequipSlot(slot, liverId){
     if(!canManageEquipment()) return;
     if(!liverId || !liverState(liverId) || !liverState(liverId).unlocked) return;
@@ -4324,7 +4990,8 @@
     if(!item) return;
     ls.equipped[slot] = null;
     state.inventory.push(item);
-    pushLog(`${liverDef(liverId).name}の${slot==='weapon' ? '武器':'防具'}を外した。`, 'system');
+    pushLog(`${liverDef(liverId).name}の${EQUIP_SLOT_LABELS[slot]||slot}を外した。`, 'system');
+    recomputeLiverMaxStats(liverId, false);
     saveGame(); render();
   }
 
@@ -4340,7 +5007,67 @@
     render();
   }
 
+  /* ---------------- クリスタルの着脱 ----------------
+   * クリスタルは所持品からアクセサリーのスロットへ「移動」する形で扱う
+   * (装備品と同じ考え方: 装備した瞬間に所持品リストからは消え、外すと戻る)。 */
+  function socketCrystal(liverId, crystalId){
+    if(!canManageEquipment()) return;
+    const ls = liverState(liverId);
+    if(!ls || !ls.unlocked) return;
+    const accessory = ls.equipped.accessory;
+    if(!accessory) return;
+    const idx = state.inventory.findIndex(i=>i.id===crystalId && i.type==='crystal');
+    if(idx<0) return;
+    const crystal = state.inventory[idx];
+    const used = (accessory.crystals||[]).reduce((s,c)=>s+(c.slotCost||0), 0);
+    if(used + crystal.slotCost > (accessory.slotCount||0)){
+      pushLog(`「${accessory.name}」のスロットが足りない。`, 'system');
+      render();
+      return;
+    }
+    state.inventory.splice(idx,1);
+    if(!accessory.crystals) accessory.crystals = [];
+    accessory.crystals.push(crystal);
+    pushLog(`「${accessory.name}」に「${crystal.name}」を装備した。`, 'system');
+    state.ui.crystalPickerSlot = null;
+    recomputeLiverMaxStats(liverId, false);
+    saveGame(); render();
+  }
+  function unsocketCrystal(liverId, crystalIndex){
+    if(!canManageEquipment()) return;
+    const ls = liverState(liverId);
+    if(!ls || !ls.unlocked) return;
+    const accessory = ls.equipped.accessory;
+    if(!accessory || !accessory.crystals) return;
+    const crystal = accessory.crystals[crystalIndex];
+    if(!crystal) return;
+    accessory.crystals.splice(crystalIndex, 1);
+    state.inventory.push(crystal);
+    pushLog(`「${accessory.name}」から「${crystal.name}」を外した。`, 'system');
+    recomputeLiverMaxStats(liverId, false);
+    saveGame(); render();
+  }
+  function openCrystalPicker(liverId){
+    const ls = liverState(liverId);
+    if(!canManageEquipment() || !ls || !ls.unlocked || !ls.equipped.accessory) return;
+    state.ui.crystalPickerSlot = { liverId };
+    render();
+  }
+  function closeCrystalPicker(){
+    state.ui.crystalPickerSlot = null;
+    render();
+  }
+
   function discardItem(id){
+    const item = state.inventory.find(i=>i.id===id);
+    if(!item) return;
+    // レア以上(マーケットに出品できる価値がある装備)を破棄する時だけ、
+    // 誤操作防止の確認を挟む。
+    const isHighRarity = (MARKET_EQUIP_RARITY_RANK[item.rarity]||0) >= MARKET_MIN_EQUIP_RARITY_RANK;
+    if(isHighRarity){
+      const ok = confirm(`「${item.name}」は${RARITY[item.rarity].label}の装備です。破棄すると元に戻せません。本当に破棄しますか？`);
+      if(!ok) return;
+    }
     state.inventory = state.inventory.filter(i=>i.id!==id);
     saveGame(); render();
   }
@@ -4404,8 +5131,21 @@
   function isPartyFull(){ return state.party.every(id=>{ const ls=liverState(id); return ls.hp>=ls.maxHp && ls.mp>=ls.maxMp; }); }
 
   /* ---------------- 宿屋 ---------------- */
+  /* 宿代は「回復するHP×1+回復するMP×1」をパーティ全員分合計する。
+   * 戦闘不能(HP0)のキャラだけは、その本人の回復量(HP・MP分とも)を
+   * まとめて1.5倍にする(他のキャラの回復量には影響しない)。 */
+  function innStayCost(){
+    return state.party.reduce((sum, id)=>{
+      const ls = liverState(id);
+      if(!ls) return sum;
+      const missingHp = Math.max(0, ls.maxHp - ls.hp);
+      const missingMp = Math.max(0, ls.maxMp - ls.mp);
+      const charCost = Math.round((missingHp + missingMp) * (ls.hp <= 0 ? 1.5 : 1));
+      return sum + charCost;
+    }, 0);
+  }
   function stayAtInn(){
-    const cost = Math.max(5, partyLevel()*3);
+    const cost = innStayCost();
     if(state.gold < cost || isPartyFull() || !state.party.length) return;
     state.gold -= cost;
     state.party.forEach(id=>{
@@ -4418,14 +5158,50 @@
   }
 
   /* ---------------- 商店 ---------------- */
+  /* アクセサリー・クリスタルはvalueを持たないため、レアリティとスロット
+   * 数/消費数から簡易的に売却額を出す(武器・防具のitem.value*3とは別式)。 */
+  function itemSellPrice(item){
+    if(item.type === 'accessory' || item.type === 'crystal'){
+      const rarityMult = (RARITY[item.rarity] && RARITY[item.rarity].mult) || 1;
+      const sizeFactor = item.type === 'accessory' ? (item.slotCount||0) : (item.slotCost||1);
+      return Math.max(1, Math.round(rarityMult*10 + sizeFactor*5));
+    }
+    return Math.max(1, Math.round(item.value*3));
+  }
   function sellItem(id){
     const idx = state.inventory.findIndex(i=>i.id===id);
     if(idx<0) return;
     const item = state.inventory[idx];
-    const price = Math.max(1, Math.round(item.value*3));
+    const price = itemSellPrice(item);
     state.gold += price;
     state.inventory.splice(idx,1);
     pushLog(`「${item.name}」を ${price}G で売却した。`, 'system');
+    saveGame(); render();
+  }
+
+  /* 商店で買える固定効果のアクセサリー。錬金・(将来の)特殊ダンジョン産と
+   * 違い、効果・スロット数が固定な代わりに数値は控えめ(狙った効果を
+   * 確実に手に入れたい人向け)。 */
+  const ACCESSORY_SHOP_DEFS = [
+    { key:'shop_acc_hp',   name:'うさ耳',   effectType:'hpPct',  value:1, slotCount:0, price:300 },
+    { key:'shop_acc_mp',   name:'王冠',     effectType:'mpPct',  value:1, slotCount:0, price:300 },
+    { key:'shop_acc_atk',  name:'集中線',   effectType:'atkPct', value:1, slotCount:0, price:350 },
+    { key:'shop_acc_def',  name:'リボン',   effectType:'defPct', value:1, slotCount:0, price:350 },
+    { key:'shop_acc_drop', name:'猫耳',     effectType:'dropRate', value:1, slotCount:1, price:450 },
+  ];
+  function buyAccessoryFromShop(key){
+    const def = ACCESSORY_SHOP_DEFS.find(d=>d.key===key);
+    if(!def || state.gold < def.price) return;
+    state.gold -= def.price;
+    addItemToInventory({
+      id: 'itm_'+Math.random().toString(36).slice(2,9),
+      type:'accessory', rarity:'common', rarityLabel:'common',
+      name: def.name,
+      mainEffect: { type: def.effectType, value: def.value },
+      slotCount: def.slotCount,
+      crystals: []
+    });
+    pushLog(`「${def.name}」を購入した。`, 'reward');
     saveGame(); render();
   }
 
@@ -4638,6 +5414,8 @@
     if(state.screen==='towerSelect') return '七彩の塔';
     if(state.screen==='towerRun' && state.towerRun) return `${currentTowerDef().name} ${state.towerRun.floor}F`;
     if(state.screen==='towerResult') return '……';
+    if(state.screen==='materialDungeons') return '素材ダンジョン';
+    if(state.screen==='prismResult') return '……';
     return '灯火の町';
   }
 
@@ -4658,7 +5436,7 @@
       <div class="depth-badge">
         <div class="badge-row badge-location">${esc(locationLabel())}</div>
         <div class="badge-resources">
-          <span class="badge-resource" title="スタミナ(1分に1回復、上限${STAMINA_MAX})">${uiIcon('stamina')}${state.stamina}/${STAMINA_MAX}</span>
+          <span class="badge-resource" title="スタミナ(1分に1回復、上限${STAMINA_MAX})">${uiIcon('stamina')}${state.stamina}/${STAMINA_MAX}<button id="openStaminaPopupBtn" title="スタミナを回復する" style="margin-left:4px;padding:0 6px;font-size:11px;line-height:1.5;">+</button></span>
           <span class="badge-resource" title="所持金">${uiIcon('gold')}${state.gold}</span>
           <span class="badge-resource" title="運命のチケット">${uiIcon('ticket')}${state.destinyTickets}</span>
           <span class="badge-resource" title="コロシアムメダル">${uiIcon('medal')}${state.colosseum.medals}</span>
@@ -4690,6 +5468,13 @@
       '全100階で構成され、塔を出るたびに1階から挑む必要がある。',
       '果たして登頂することは出来るのか...。',
       '※強力な装備・素材を入手することのできるエンドコンテンツです。'
+    ],
+    materialDungeons: [
+      'アクセサリー・クリスタル、およびその錬金素材が狙えるダンジョン群。武器・防具は一切ドロップしない。',
+      '現在は「プリズムタワー」のみ収録。1〜10階まであり、階のボスを倒すと次の階が解放される。',
+      '解放済みの階は何度でも自由に選んで周回できるが、勝敗を問わずダンジョンを出るたびに踏破率は0%に戻る。',
+      '突入時に(階数×10)のスタミナをまとめて消費する代わりに、探索中の追加消費は無い。',
+      '宝箱に見せかけたミミックに注意。その階のボス級の強さを持ち、戦闘開始と同時に確率を無視した状態異常を仕掛けてくるが、倒せば必ず質の良いアクセサリーかクリスタルを落とす。'
     ],
     rankings: ['キャラごとの戦闘力を他のユーザーと競おう'],
     market: [
@@ -4729,6 +5514,7 @@
     ],
     inn: [
       'ゴールドを支払うことで休息が出来る。',
+      '料金は、回復するHPの量とMPの量(いずれも×1)をパーティ全員分合計した金額。戦闘不能のキャラがいる場合、その本人の回復量(HP・MP分とも)だけ1.5倍になる。',
       '時には休息も必要だ。'
     ],
     alchemy: [
@@ -4761,6 +5547,32 @@
           ${bodyHtml}
           <div class="actions" style="justify-content:center;margin-top:14px;">
             <button class="primary" id="helpPopupCloseBtn">閉じる</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderStaminaPopup(){
+    if(!state || !state.ui || !state.ui.staminaPopupOpen) return '';
+    const potionDef = TOOL_DEFS.stamina_potion_10;
+    const potionCount = toolCount('stamina_potion_10');
+    const full = state.stamina >= STAMINA_MAX;
+    return `
+      <div class="help-popup-backdrop" id="staminaPopupBackdrop">
+        <div class="help-popup">
+          <p class="section-label" style="margin-top:0;">スタミナ回復</p>
+          <p class="log-entry system" style="margin:0 0 10px;">現在 ${state.stamina}/${STAMINA_MAX}</p>
+          <div class="market-popup-row">
+            <span>${esc(potionDef.name)} (所持数${potionCount})</span>
+            <button id="staminaUsePotionBtn" ${(potionCount<1||full)?'disabled':''}>使う(+10)</button>
+          </div>
+          <div class="market-popup-row" style="border-bottom:none;">
+            <span>広告を見て回復</span>
+            <button id="staminaWatchAdBtn" ${(full||staminaAdWatching)?'disabled':''}>${staminaAdWatching?'視聴中…':`広告を見る(+${STAMINA_AD_RECOVER_AMOUNT})`}</button>
+          </div>
+          <p style="color:var(--text-muted);font-size:11px;margin:6px 0 0;">※広告視聴は現在仮の演出です。実際の広告は後日導入予定。</p>
+          <div class="actions" style="justify-content:center;margin-top:14px;">
+            <button id="staminaPopupCloseBtn">閉じる</button>
           </div>
         </div>
       </div>`;
@@ -4844,11 +5656,15 @@
 
     const bossReady = ds.progress >= 100;
     const isTutorial = dungeonDef.id === 'tutorial';
+    const isPrism = !!dungeonDef.isPrismTower;
+    // プリズムタワーは突入時にスタミナを前払い済みのため、探索中はスタミナ切れで
+    // 止まらない(進行可否はパーティの生存状況だけで決める)。
+    const advDisabled = !alivePartyIds().length || (!isPrism && state.stamina<1);
     const actionsHtml = `
       <div class="actions">
-        ${(bossReady && isTutorial) ? '' : `<button class="primary" id="advBtn" ${(!alivePartyIds().length || state.stamina<1)?'disabled':''}>奥へ進む</button>`}
-        ${bossReady ? `<button class="danger" id="bossBtn" ${(!alivePartyIds().length || state.stamina<1)?'disabled':''}>${ds.cleared ? 'ボスに再挑戦' : 'ボスに挑む'}</button>` : ''}
-        ${isTutorial ? '' : `<button id="backTownBtn">町に戻る</button>`}
+        ${(bossReady && (isTutorial || isPrism)) ? '' : `<button class="primary" id="advBtn" ${advDisabled?'disabled':''}>奥へ進む</button>`}
+        ${bossReady ? `<button class="danger" id="bossBtn" ${advDisabled?'disabled':''}>${ds.cleared ? 'ボスに再挑戦' : 'ボスに挑む'}</button>` : ''}
+        ${isTutorial ? '' : (isPrism ? `<button id="leavePrismBtn">撤退する</button>` : `<button id="backTownBtn">町に戻る</button>`)}
       </div>`;
     return `
       <div class="scene-text">
@@ -4882,6 +5698,7 @@
         <button class="danger" id="gotoColosseumBtn">コロシアムタワー</button>
         <button class="danger" id="gotoRiftBtn">次元断層ポモ・ドーロ</button>
         <button class="danger" id="gotoTowersBtn">七彩の塔</button>
+        <button class="danger" id="gotoMaterialDungeonsBtn">素材ダンジョン</button>
       </div>
       <div class="section-block">
         <p class="section-label">ダンジョン</p>
@@ -5020,6 +5837,65 @@
     `;
   }
 
+  /* 素材ダンジョン一覧画面。現状はプリズムタワーのみを収録するが、
+   * 今後別のダンジョンを追加する余地を持たせて「カテゴリ画面」として
+   * 独立させてある(七彩の塔のtowerSelect画面と同じ位置づけ)。 */
+  function renderMaterialDungeonsInner(){
+    const rows = visiblePrismDefs().map(def=>{
+      const unlocked = isDungeonUnlocked(def.id);
+      const ds = state.dungeons[def.id];
+      const status = !unlocked
+        ? `${uiIcon('lock')} 未解放`
+        : `踏破率 ${dungeonProgressLabelAndPct(ds).label}`;
+      const cost = def.floorNum * 10;
+      const actionHtml = unlocked
+        ? `<button data-enter-prism="${def.id}" ${(!state.party.length || state.stamina<cost)?'disabled':''}>入る(スタミナ${cost}消費)</button>`
+        : '';
+      return `
+        <div class="inv-item" style="${unlocked?'':'opacity:.55;'}">
+          <span class="inv-item-name">${esc(def.floorLabel)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${status}</span></span>
+          <span class="inv-item-actions">${actionHtml}</span>
+        </div>`;
+    }).join('');
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('素材ダンジョン', helpButtonHtml('materialDungeons'))}
+      </div>
+      <div class="actions">
+        <button id="backTownBtn">町に戻る</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">プリズムタワー</p>
+        ${rows}
+      </div>
+    `;
+  }
+
+  function renderPrismResultInner(){
+    const result = state.lastPrismResult;
+    if(!result) return renderMaterialDungeonsInner();
+    const rewardLine = result.reward
+      ? `<p class="log-entry reward">「${esc(result.reward.name)}」を手に入れた！</p>`
+      : '';
+    const materialLine = result.materialQty > 0
+      ? `<p class="log-entry reward">「${esc(MATERIAL_DEFS[PRISM_MATERIAL_KEY].name)}」を${result.materialQty}個手に入れた。</p>`
+      : '';
+    return `
+      <div class="scene-text" style="text-align:center;padding:24px 0 8px;">
+        <p style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--gold);text-shadow:2px 2px 0 #2c5c2c;margin:0 0 16px;">
+          ${esc(result.floorName)}のボスを撃破した！
+        </p>
+        <div style="text-align:left;display:inline-block;">
+          ${rewardLine}
+          ${materialLine}
+        </div>
+      </div>
+      <div class="actions" style="justify-content:center;">
+        <button class="primary" id="prismResultCloseBtn">街に戻る</button>
+      </div>
+    `;
+  }
+
   function renderRankingRow(row, index, highlight){
     const liverLabel = row.liver_id ? (liverDef(row.liver_id) ? liverDef(row.liver_id).name : row.liver_id) : '';
     return `
@@ -5065,7 +5941,7 @@
    * itemDetailText/itemValueLabelがそのまま使えるクライアント側の
    * アイテム形(loadGame()での変換と同じ形)に直す。 */
   function marketItemFromSnapshot(snap){
-    return {
+    const item = {
       id: snap.id, type: snap.item_type, name: snap.name,
       rarity: snap.rarity, rarityLabel: snap.rarity, value: snap.value,
       resist: snap.resist_element ? { element: snap.resist_element, value: snap.resist_value } : null,
@@ -5073,6 +5949,15 @@
       affix: snap.affix || null,
       enhanceLevel: snap.enhance_level || 0
     };
+    if(snap.item_type === 'accessory'){
+      item.mainEffect = snap.effect_type ? { type: snap.effect_type, value: snap.effect_value } : null;
+      item.slotCount = snap.slot_count || 0;
+      item.crystals = [];
+    } else if(snap.item_type === 'crystal'){
+      item.effect = snap.effect_type ? { type: snap.effect_type, value: snap.effect_value } : null;
+      item.slotCost = snap.slot_cost || 1;
+    }
+    return item;
   }
   function applyMarketItemSnapshotToInventory(snap){
     state.inventory.push(marketItemFromSnapshot(snap));
@@ -6149,6 +7034,18 @@
     `;
   }
 
+  /* クリスタルスロットの使用状況を、数字だけでなく一目でわかる四角の
+   * 目盛り(ピップ)としても表示する。1マス=スロット1消費分。 */
+  function renderSlotPips(total, used){
+    if(total <= 0) return `<span style="color:var(--text-muted);font-size:11px;">(スロット無し)</span>`;
+    let html = '';
+    for(let i=0;i<total;i++){
+      const filled = i < used;
+      html += `<span style="display:inline-block;width:9px;height:9px;margin-right:2px;border:1px solid var(--win-border);background:${filled?'var(--gold)':'transparent'};vertical-align:middle;"></span>`;
+    }
+    return html;
+  }
+
   function renderLiverDetailInner(){
     const id = state.ui.rosterDetailId;
     const def = id && liverDef(id);
@@ -6161,6 +7058,7 @@
     const inParty = state.party.includes(id);
     const weapon = ls.equipped.weapon;
     const armor = ls.equipped.armor;
+    const accessory = ls.equipped.accessory;
 
     const { atkRate, actions } = computeActionRates(id);
     const actualRateOf = key => {
@@ -6221,6 +7119,33 @@
         </div>`;
     }).join('');
 
+    /* クリスタルは所持品扱いの独立セクションではなく、装備中のアクセサリー
+     * の真下にぶら下がる形で表示する(「アクセサリーに付属するもの」だと
+     * 一目でわかるように)。スロット使用量は数字だけでなく目盛り(ピップ)
+     * でも表す。 */
+    const crystalSocketsHtml = (unlocked && accessory) ? (() => {
+      const crystals = accessory.crystals || [];
+      const used = crystals.reduce((s,c)=>s+(c.slotCost||0), 0);
+      const total = accessory.slotCount || 0;
+      const rows = crystals.length ? crystals.map((c,idx)=>`
+        <div class="inv-item ${c.rarityLabel}" style="margin-top:4px;" title="${esc(itemDetailText(c))}">
+          <span class="inv-item-name">${esc(c.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(c))}</span></span>
+          <span class="inv-item-actions"><button data-unsocket-crystal="${id}:${idx}">外す</button></span>
+        </div>`).join('') : `<p style="color:var(--text-muted);font-size:12px;margin:4px 0 0;">未装備</p>`;
+      const addBtn = used < total
+        ? `<div style="margin-top:6px;"><button data-open-crystal-picker="${id}" style="padding:4px 10px;font-size:11px;">クリスタルを装備する</button></div>` : '';
+      return `
+        <div style="margin:0 0 10px 18px;padding:6px 10px 8px;border-left:2px solid var(--win-border-inner);">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="color:var(--text-muted);font-size:11px;">クリスタル</span>
+            ${renderSlotPips(total, used)}
+            <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${used}/${total}</span>
+          </div>
+          ${rows}
+          ${addBtn}
+        </div>`;
+    })() : '';
+
     const equipHtml = unlocked ? `
       <div class="equip-row">
         <span class="equip-slot">武器</span>
@@ -6235,22 +7160,48 @@
           ${armor ? `<button data-unequip="armor" data-unequip-for="${id}">外す</button>` : ''}
           <button data-open-equip-picker="${id}:armor">変更</button>
         </span>
-      </div>` : `<p style="color:var(--text-muted);font-size:12px;">仲間になると装備を変更できるようになる。</p>`;
+      </div>
+      <div class="equip-row" style="${accessory?'border-bottom:none;':''}">
+        <span class="equip-slot">アクセサリー</span>
+        <span>${accessory ? `${esc(accessory.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(accessory))}</span>` : '未装備'}
+          ${accessory ? `<button data-unequip="accessory" data-unequip-for="${id}">外す</button>` : ''}
+          <button data-open-equip-picker="${id}:accessory">変更</button>
+        </span>
+      </div>
+      ${crystalSocketsHtml}` : `<p style="color:var(--text-muted);font-size:12px;">仲間になると装備を変更できるようになる。</p>`;
 
     const lockedBanner = !unlocked ? `<p class="log-entry system" style="margin-top:10px;">${uiIcon('lock')} まだ仲間になっていない。「召喚」で運命のチケットを使うと仲間になる。</p>` : '';
 
     const allowedWeaponLabel = Array.from(allowedWeaponTypes(id)).map(t=>WEAPON_TYPES[t].name).join('・') || 'なし';
 
+    /* アクセサリー・クリスタルによる上昇分は、ステータス欄では基礎値の
+     * 横に小さく「(+N)」として添えるだけにとどめ、基礎値そのものを
+     * 書き換えない(あくまで表示上の内訳。実際の計算では既存のliverAtk等が
+     * 返す上昇込みの値がそのまま使われ続ける)。 */
+    const accEff = liverAccessoryEffects(id);
+    const boostSpan = (n) => n > 0 ? ` <span style="color:var(--rare-uncommon);font-size:11px;">(+${n})</span>` : '';
+    const baseMaxHp = Math.round(jobMaxHp(ls.job, jp.level) * passiveStatMult(id, 'hp'));
+    const hpBoost = ls.maxHp - baseMaxHp;
+    const baseMaxMp = Math.round(jobMaxMp(ls.job, jp.level) * passiveStatMult(id, 'mp'));
+    const mpBoost = ls.maxMp - baseMaxMp;
+    const baseAtk = Math.round((jobBaseAtk(ls.job, jp.level) + (weapon ? itemEffectiveValue(weapon) : 0)) * passiveStatMult(id, 'atk'));
+    const atkBoost = liverAtk(id) - baseAtk;
+    const baseDef = Math.max(1, Math.round((jobBaseDef(ls.job, jp.level) + (armor ? itemEffectiveValue(armor) : 0)) * passiveStatMult(id, 'def') * statusStatMult(playerStatusEffects[id], 'defBuff', 'defDebuff')));
+    const defBoost = liverDefStat(id) - baseDef;
+
     const resistances = liverResistances(id);
     const resistanceTilesHtml = Object.keys(ELEMENT_LABELS).map(el=>{
       const value = resistances[el] || 0;
+      const boostKey = Object.keys(ACCESSORY_RESIST_ELEMENT).find(k=>ACCESSORY_RESIST_ELEMENT[k]===el);
+      const boostPct = ((boostKey && accEff[boostKey]) || 0) * 3;
       const pct = value * 3;
-      const pctLabel = pct === 0 ? '±0%' : (pct > 0 ? `+${pct}%` : `-${Math.abs(pct)}%`);
+      const basePct = pct - boostPct;
+      const pctLabel = basePct === 0 ? '±0%' : (basePct > 0 ? `+${basePct}%` : `-${Math.abs(basePct)}%`);
       const color = value > 0 ? 'var(--rare-uncommon)' : (value < 0 ? 'var(--danger)' : 'var(--text-primary)');
       return `
         <div class="stat-tile">
           <span class="stat-tile-label">${ELEMENT_LABELS[el]}属性耐性</span>
-          <span class="stat-tile-value" style="color:${color};">${pctLabel}</span>
+          <span class="stat-tile-value" style="color:${color};">${pctLabel}${boostPct>0?` <span style="color:var(--rare-uncommon);font-size:11px;">(+${boostPct}%)</span>`:''}</span>
         </div>`;
     }).join('');
     const headlineTile = (label, value) => `
@@ -6258,10 +7209,10 @@
     const statTilesHtml = `
       <div class="stat-tile-grid">
         ${headlineTile('レベル', jp.level)}
-        <div class="stat-tile"><span class="stat-tile-label">HP</span><span class="stat-tile-value">${ls.hp}<span style="color:var(--text-muted);font-size:12px;">/${ls.maxHp}</span></span></div>
-        <div class="stat-tile"><span class="stat-tile-label">MP</span><span class="stat-tile-value">${ls.mp}<span style="color:var(--text-muted);font-size:12px;">/${ls.maxMp}</span></span></div>
-        <div class="stat-tile"><span class="stat-tile-label">攻撃力</span><span class="stat-tile-value">${liverAtk(id)}</span></div>
-        <div class="stat-tile"><span class="stat-tile-label">防御力</span><span class="stat-tile-value">${liverDefStat(id)}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">HP</span><span class="stat-tile-value">${ls.hp}<span style="color:var(--text-muted);font-size:12px;">/${baseMaxHp}</span>${boostSpan(hpBoost)}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">MP</span><span class="stat-tile-value">${ls.mp}<span style="color:var(--text-muted);font-size:12px;">/${baseMaxMp}</span>${boostSpan(mpBoost)}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">攻撃力</span><span class="stat-tile-value">${baseAtk}${boostSpan(atkBoost)}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">防御力</span><span class="stat-tile-value">${baseDef}${boostSpan(defBoost)}</span></div>
         ${headlineTile('戦闘力', combatPower(id))}
         ${resistanceTilesHtml}
         <div class="stat-tile"><span class="stat-tile-label">EXP</span><span class="stat-tile-value">${jp.exp}<span style="color:var(--text-muted);font-size:12px;">/${expToNext(jp.level)}</span></span></div>
@@ -6320,7 +7271,7 @@
     const def = liverDef(liverId);
     const ls = liverState(liverId);
     const current = ls.equipped[slot];
-    const slotLabel = slot === 'weapon' ? '武器' : '防具';
+    const slotLabel = EQUIP_SLOT_LABELS[slot] || slot;
 
     const candidates = state.inventory.filter(i=>i.type===slot);
     const itemsHtml = candidates.length ? candidates.map(i=>{
@@ -6330,7 +7281,6 @@
           <span class="inv-item-name">${esc(i.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(i))}</span></span>
           <span class="inv-item-actions">
             <button data-equip-for="${liverId}:${i.id}" ${equippable?'':'disabled title="このライバーは装備できない武器種"'}>装備</button>
-            <button data-discard="${i.id}">破棄</button>
           </span>
         </div>`;
     }).join('') : `<p class="inv-empty">${slotLabel}として装備できる所持品がない。</p>`;
@@ -6352,6 +7302,54 @@
       <div class="actions">
         ${current ? `<button data-unequip="${slot}" data-unequip-for="${liverId}">外す</button>` : ''}
         <button id="closeEquipPickerBtn">戻る</button>
+      </div>
+      <div class="section-block">
+        <p class="section-label">所持品から選ぶ</p>
+        <div class="scrollbox equip-picker-scroll">${itemsHtml}</div>
+      </div>
+    `;
+  }
+
+  /* クリスタルの着脱ピッカー。装備ピッカーと同じくメインウィンドウを
+   * 差し替える形式(state.ui.crystalPickerSlot = {liverId})で開く。
+   * 装備できるのは「残りスロット数に収まる消費スロット数」のクリスタルのみ。 */
+  function renderCrystalPickerInner(){
+    const { liverId } = state.ui.crystalPickerSlot;
+    const ls = liverState(liverId);
+    const accessory = ls && ls.equipped.accessory;
+    if(!ls || !accessory){
+      state.ui.crystalPickerSlot = null;
+      return renderLiverDetailInner();
+    }
+    const def = liverDef(liverId);
+    const used = (accessory.crystals||[]).reduce((s,c)=>s+(c.slotCost||0), 0);
+    const remaining = (accessory.slotCount||0) - used;
+
+    const candidates = state.inventory.filter(i=>i.type==='crystal');
+    const itemsHtml = candidates.length ? candidates.map(c=>{
+      const fits = c.slotCost <= remaining;
+      return `
+        <div class="inv-item ${c.rarityLabel}" title="${esc(itemDetailText(c))}">
+          <span class="inv-item-name">${esc(c.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(c))}</span></span>
+          <span class="inv-item-actions">
+            <button data-socket-crystal="${liverId}:${c.id}" ${fits?'':'disabled title="スロットが足りない"'}>装備する</button>
+          </span>
+        </div>`;
+    }).join('') : `<p class="inv-empty">クリスタルを所持していない。</p>`;
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml(`${esc(def.name)}のクリスタルを選ぶ`)}
+      </div>
+      <div class="section-block" style="margin-top:0;">
+        <p class="section-label">「${esc(accessory.name)}」のスロット</p>
+        <p style="display:flex;align-items:center;gap:8px;color:var(--text-muted);font-size:12px;margin:0 0 8px;">
+          ${renderSlotPips(accessory.slotCount||0, used)}
+          <span style="font-family:var(--font-mono);">${used}/${accessory.slotCount||0}(残り${remaining})</span>
+        </p>
+      </div>
+      <div class="actions">
+        <button id="closeCrystalPickerBtn">戻る</button>
       </div>
       <div class="section-block">
         <p class="section-label">所持品から選ぶ</p>
@@ -6411,7 +7409,7 @@
 
   function renderInnInner(){
     const line = INNKEEPER_LINES[Math.floor(Math.random()*INNKEEPER_LINES.length)];
-    const cost = Math.max(5, partyLevel()*3);
+    const cost = innStayCost();
     const full = isPartyFull();
     const partyStatusHtml = state.party.map(id=>{
       const ls = liverState(id);
@@ -6436,8 +7434,8 @@
 
     let bodyHtml;
     if(buyActive){
-      const keys = Object.keys(TOOL_DEFS).filter(k=>TOOL_DEFS[k].purchasable);
-      bodyHtml = keys.length ? keys.map(key=>{
+      const toolKeys = Object.keys(TOOL_DEFS).filter(k=>TOOL_DEFS[k].purchasable);
+      const toolsHtml = toolKeys.length ? toolKeys.map(key=>{
         const def = TOOL_DEFS[key];
         return `
           <div class="inv-item" title="${esc(def.desc)}">
@@ -6447,6 +7445,14 @@
             </span>
           </div>`;
       }).join('') : `<p class="inv-empty">購入できるアイテムが無い。</p>`;
+      const accessoriesHtml = ACCESSORY_SHOP_DEFS.map(def=>`
+        <div class="inv-item" title="固定効果のアクセサリー(効果は控えめ)">
+          <span class="inv-item-name">${esc(def.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">[${esc(accessoryEffectLabel({type:def.effectType, value:def.value}))}] スロット${def.slotCount}</span></span>
+          <span class="inv-item-actions">
+            <button data-buy-accessory="${def.key}" ${(state.gold<def.price)?'disabled':''}>${def.price}G 購入</button>
+          </span>
+        </div>`).join('');
+      bodyHtml = `${toolsHtml}<p class="section-label" style="margin:14px 0 8px;">アクセサリー</p>${accessoriesHtml}`;
     } else if(equipActive){
       const equipSort = (state.ui && state.ui.equipSort) || INVENTORY_SORT_DEFAULT;
       const sellList = applyInventorySort(state.inventory, equipSort, i => RARITY_SORT_ORDER[i.rarity] || 0);
@@ -6454,7 +7460,7 @@
         <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
           <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
           <span class="inv-item-actions">
-            <button data-sell="${item.id}">${Math.max(1,Math.round(item.value*3))}G で売る</button>
+            <button data-sell="${item.id}">${itemSellPrice(item)}G で売る</button>
           </span>
         </div>`).join('') : `<p class="inv-empty">売れる装備が無い。</p>`;
     } else {
@@ -6532,6 +7538,8 @@
         <p class="section-label">デバッグ</p>
         <p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">セーブデータを完全に削除し、キャラ作成からやり直す。動作確認用の機能。</p>
         <button class="danger" id="resetGameBtn">セーブデータをリセット</button>
+        <p style="color:var(--text-muted);font-size:11px;margin:14px 0 8px;">クリスタルは現在、特殊ダンジョン(未実装)でのみ入手できる。実装までの動作確認用に、ランダムなクリスタルを3個手に入れる。</p>
+        <button id="debugGrantCrystalsBtn">テスト用クリスタルを3個入手</button>
       </div>
     `;
   }
@@ -6558,7 +7566,8 @@
       costume: raw.costume,
       unlockedCostumes: raw.unlocked_costumes || [],
       equippedWeapon: raw.equipped_weapon || null,
-      equippedArmor: raw.equipped_armor || null
+      equippedArmor: raw.equipped_armor || null,
+      equippedAccessory: raw.equipped_accessory || null
     };
   }
 
@@ -6928,6 +7937,10 @@
       <div class="equip-row">
         <span class="equip-slot">防具</span>
         <span>${snap.equippedArmor ? `${esc(snap.equippedArmor.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(snap.equippedArmor))}</span>` : '未装備'}</span>
+      </div>
+      <div class="equip-row">
+        <span class="equip-slot">アクセサリー</span>
+        <span>${snap.equippedAccessory ? `${esc(snap.equippedAccessory.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(snap.equippedAccessory))}</span>` : '未装備'}</span>
       </div>`;
 
     const allowedWeaponLabel = Array.from(foreignAllowedWeaponTypes(liverId, snap)).map(t=>WEAPON_TYPES[t].name).join('・') || 'なし';
@@ -7022,6 +8035,7 @@
   function renderMainArea(){
     let inner;
     if(state.ui.equipPickerSlot) inner = renderEquipPickerInner();
+    else if(state.ui.crystalPickerSlot) inner = renderCrystalPickerInner();
     else if(state.screen === 'dungeon') inner = renderDungeonInner();
     else if(state.screen === 'party') inner = renderPartyInner();
     else if(state.screen === 'roster') inner = renderRosterInner();
@@ -7037,6 +8051,8 @@
     else if(state.screen === 'towerSelect') inner = renderTowerSelectInner();
     else if(state.screen === 'towerRun') inner = renderTowerRunInner();
     else if(state.screen === 'towerResult') inner = renderTowerResultInner();
+    else if(state.screen === 'materialDungeons') inner = renderMaterialDungeonsInner();
+    else if(state.screen === 'prismResult') inner = renderPrismResultInner();
     else if(state.screen === 'home') inner = renderHomeInner();
     else if(state.screen === 'market') inner = renderMarketInner();
     else if(state.screen === 'rankings') inner = renderRankingsInner();
@@ -7319,6 +8335,12 @@
     on('towerAdvanceBtn', towerAdvance);
     on('towerRetreatBtn', retreatFromTower);
     on('towerResultCloseBtn', closeTowerResult);
+    on('gotoMaterialDungeonsBtn', ()=>gotoScreen('materialDungeons'));
+    on('prismResultCloseBtn', closePrismResult);
+    on('leavePrismBtn', leavePrismFloor);
+    document.querySelectorAll('[data-enter-prism]').forEach(b=>{
+      b.addEventListener('click', ()=>enterPrismFloor(b.getAttribute('data-enter-prism')));
+    });
     on('helpPopupCloseBtn', closeHelpPopup);
     document.querySelectorAll('[data-open-help]').forEach(b=>{
       b.addEventListener('click', ()=>openHelpPopup(b.getAttribute('data-open-help')));
@@ -7326,6 +8348,14 @@
     const helpBackdrop = document.getElementById('helpPopupBackdrop');
     if(helpBackdrop){
       helpBackdrop.addEventListener('click', (e)=>{ if(e.target === helpBackdrop) closeHelpPopup(); });
+    }
+    on('openStaminaPopupBtn', openStaminaPopup);
+    on('staminaPopupCloseBtn', closeStaminaPopup);
+    on('staminaUsePotionBtn', ()=>useToolItem('stamina_potion_10'));
+    on('staminaWatchAdBtn', watchAdForStamina);
+    const staminaBackdrop = document.getElementById('staminaPopupBackdrop');
+    if(staminaBackdrop){
+      staminaBackdrop.addEventListener('click', (e)=>{ if(e.target === staminaBackdrop) closeStaminaPopup(); });
     }
     document.querySelectorAll('[data-enter-tower]').forEach(b=>{
       b.addEventListener('click', ()=>enterTower(b.getAttribute('data-enter-tower')));
@@ -7354,6 +8384,7 @@
     on('stayBtn', stayAtInn);
     on('renameBtn', renameCharacter);
     on('resetGameBtn', resetGameData);
+    on('debugGrantCrystalsBtn', debugGrantCrystals);
     on('returnTownBtn', returnToTownAfterDeath);
     on('sendChatBtn', ()=>{
       const input = document.getElementById('chatInput');
@@ -7432,6 +8463,25 @@
     });
     document.querySelectorAll('[data-buy-tool]').forEach(b=>{
       b.addEventListener('click', ()=>buyToolItem(b.getAttribute('data-buy-tool')));
+    });
+    document.querySelectorAll('[data-buy-accessory]').forEach(b=>{
+      b.addEventListener('click', ()=>buyAccessoryFromShop(b.getAttribute('data-buy-accessory')));
+    });
+    document.querySelectorAll('[data-open-crystal-picker]').forEach(b=>{
+      b.addEventListener('click', ()=>openCrystalPicker(b.getAttribute('data-open-crystal-picker')));
+    });
+    on('closeCrystalPickerBtn', closeCrystalPicker);
+    document.querySelectorAll('[data-socket-crystal]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const [liverId, crystalId] = b.getAttribute('data-socket-crystal').split(':');
+        socketCrystal(liverId, crystalId);
+      });
+    });
+    document.querySelectorAll('[data-unsocket-crystal]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const [liverId, idx] = b.getAttribute('data-unsocket-crystal').split(':');
+        unsocketCrystal(liverId, Number(idx));
+      });
     });
     document.querySelectorAll('[data-sell-tool]').forEach(b=>{
       b.addEventListener('click', ()=>sellToolItem(b.getAttribute('data-sell-tool')));
@@ -7948,6 +8998,7 @@
       </div>
       ${renderBottomPanel()}
       ${renderHelpPopup()}
+      ${renderStaminaPopup()}
       ${renderMarketPopup()}
       ${renderChatReportPopup()}
       ${renderChatUserMenu()}
