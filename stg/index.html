@@ -4127,7 +4127,7 @@
     if(Math.random() < 0.3){
       const g = Math.round((4 + depth*1.5 + Math.random()*6) * goldMult);
       state.gold += g;
-      pushLog(`${g} 枚の古い硬貨を見つけた。`, 'reward');
+      pushLog(`${g}ゴールド手に入れた。`, 'reward');
     }
   }
 
@@ -7168,16 +7168,34 @@
 
     const allowedWeaponLabel = Array.from(allowedWeaponTypes(id)).map(t=>WEAPON_TYPES[t].name).join('・') || 'なし';
 
+    /* アクセサリー・クリスタルによる上昇分は、ステータス欄では基礎値の
+     * 横に小さく「(+N)」として添えるだけにとどめ、基礎値そのものを
+     * 書き換えない(あくまで表示上の内訳。実際の計算では既存のliverAtk等が
+     * 返す上昇込みの値がそのまま使われ続ける)。 */
+    const accEff = liverAccessoryEffects(id);
+    const boostSpan = (n) => n > 0 ? ` <span style="color:var(--rare-uncommon);font-size:11px;">(+${n})</span>` : '';
+    const baseMaxHp = Math.round(jobMaxHp(ls.job, jp.level) * passiveStatMult(id, 'hp'));
+    const hpBoost = ls.maxHp - baseMaxHp;
+    const baseMaxMp = Math.round(jobMaxMp(ls.job, jp.level) * passiveStatMult(id, 'mp'));
+    const mpBoost = ls.maxMp - baseMaxMp;
+    const baseAtk = Math.round((jobBaseAtk(ls.job, jp.level) + (weapon ? itemEffectiveValue(weapon) : 0)) * passiveStatMult(id, 'atk'));
+    const atkBoost = liverAtk(id) - baseAtk;
+    const baseDef = Math.max(1, Math.round((jobBaseDef(ls.job, jp.level) + (armor ? itemEffectiveValue(armor) : 0)) * passiveStatMult(id, 'def') * statusStatMult(playerStatusEffects[id], 'defBuff', 'defDebuff')));
+    const defBoost = liverDefStat(id) - baseDef;
+
     const resistances = liverResistances(id);
     const resistanceTilesHtml = Object.keys(ELEMENT_LABELS).map(el=>{
       const value = resistances[el] || 0;
+      const boostKey = Object.keys(ACCESSORY_RESIST_ELEMENT).find(k=>ACCESSORY_RESIST_ELEMENT[k]===el);
+      const boostPct = ((boostKey && accEff[boostKey]) || 0) * 3;
       const pct = value * 3;
-      const pctLabel = pct === 0 ? '±0%' : (pct > 0 ? `+${pct}%` : `-${Math.abs(pct)}%`);
+      const basePct = pct - boostPct;
+      const pctLabel = basePct === 0 ? '±0%' : (basePct > 0 ? `+${basePct}%` : `-${Math.abs(basePct)}%`);
       const color = value > 0 ? 'var(--rare-uncommon)' : (value < 0 ? 'var(--danger)' : 'var(--text-primary)');
       return `
         <div class="stat-tile">
           <span class="stat-tile-label">${ELEMENT_LABELS[el]}属性耐性</span>
-          <span class="stat-tile-value" style="color:${color};">${pctLabel}</span>
+          <span class="stat-tile-value" style="color:${color};">${pctLabel}${boostPct>0?` <span style="color:var(--rare-uncommon);font-size:11px;">(+${boostPct}%)</span>`:''}</span>
         </div>`;
     }).join('');
     const headlineTile = (label, value) => `
@@ -7185,10 +7203,10 @@
     const statTilesHtml = `
       <div class="stat-tile-grid">
         ${headlineTile('レベル', jp.level)}
-        <div class="stat-tile"><span class="stat-tile-label">HP</span><span class="stat-tile-value">${ls.hp}<span style="color:var(--text-muted);font-size:12px;">/${ls.maxHp}</span></span></div>
-        <div class="stat-tile"><span class="stat-tile-label">MP</span><span class="stat-tile-value">${ls.mp}<span style="color:var(--text-muted);font-size:12px;">/${ls.maxMp}</span></span></div>
-        <div class="stat-tile"><span class="stat-tile-label">攻撃力</span><span class="stat-tile-value">${liverAtk(id)}</span></div>
-        <div class="stat-tile"><span class="stat-tile-label">防御力</span><span class="stat-tile-value">${liverDefStat(id)}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">HP</span><span class="stat-tile-value">${ls.hp}<span style="color:var(--text-muted);font-size:12px;">/${baseMaxHp}</span>${boostSpan(hpBoost)}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">MP</span><span class="stat-tile-value">${ls.mp}<span style="color:var(--text-muted);font-size:12px;">/${baseMaxMp}</span>${boostSpan(mpBoost)}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">攻撃力</span><span class="stat-tile-value">${baseAtk}${boostSpan(atkBoost)}</span></div>
+        <div class="stat-tile"><span class="stat-tile-label">防御力</span><span class="stat-tile-value">${baseDef}${boostSpan(defBoost)}</span></div>
         ${headlineTile('戦闘力', combatPower(id))}
         ${resistanceTilesHtml}
         <div class="stat-tile"><span class="stat-tile-label">EXP</span><span class="stat-tile-value">${jp.exp}<span style="color:var(--text-muted);font-size:12px;">/${expToNext(jp.level)}</span></span></div>
