@@ -837,8 +837,20 @@
 
   /* tierPool: ['common','uncommon'](普遍的枠) または ['rare','epic'](レア目枠)。
    * アクセサリーとクリスタルは五分五分で抽選する。 */
+  /* tierPool内のレア度を、均等ではなく通常のRARITY.weightに従って重み付き
+   * 抽選する(均等抽選だとエピックがレアと同じ確率で出てしまい、「レア目枠」
+   * のはずが実質エピック確定枠のようになってしまうため)。 */
+  function prismPickRarityFromPool(tierPool){
+    const total = tierPool.reduce((s,k)=>s+(RARITY[k].weight||0), 0);
+    let r = Math.random()*total;
+    for(const k of tierPool){
+      if(r < RARITY[k].weight) return k;
+      r -= RARITY[k].weight;
+    }
+    return tierPool[0];
+  }
   function prismRollEquip(tierPool, floorNum){
-    const rarityKey = tierPool[Math.floor(Math.random()*tierPool.length)];
+    const rarityKey = prismPickRarityFromPool(tierPool);
     const valueMult = prismValueMult(floorNum);
     return Math.random() < 0.5 ? makeAccessory(rarityKey, valueMult) : makeCrystal(rarityKey, valueMult);
   }
@@ -4788,7 +4800,9 @@
       addDungeonProgress(PROGRESS_PER_STEP);
       saveGame(); render();
     } else if(roll < 0.99){
-      const item = prismRollEquip(Math.random()<0.5 ? ['common','uncommon'] : ['rare','epic'], dungeonDef.floorNum);
+      // この宝箱は「確定ドロップ」というだけで、レア目枠のような偏りの
+      // 指定は無いため、通常の(4段階の重み付きに従う)抽選をそのまま使う。
+      const item = prismRollEquip(Object.keys(RARITY), dungeonDef.floorNum);
       if(addItemToInventory(item)) pushLog(`宝箱の中に「${item.name}」を見つけた！`, 'reward');
       addDungeonProgress(PROGRESS_PER_STEP);
       saveGame(); render();
@@ -5566,7 +5580,7 @@
     const advDisabled = !alivePartyIds().length || (!isPrism && state.stamina<1);
     const actionsHtml = `
       <div class="actions">
-        ${(bossReady && isTutorial) ? '' : `<button class="primary" id="advBtn" ${advDisabled?'disabled':''}>奥へ進む</button>`}
+        ${(bossReady && (isTutorial || isPrism)) ? '' : `<button class="primary" id="advBtn" ${advDisabled?'disabled':''}>奥へ進む</button>`}
         ${bossReady ? `<button class="danger" id="bossBtn" ${advDisabled?'disabled':''}>${ds.cleared ? 'ボスに再挑戦' : 'ボスに挑む'}</button>` : ''}
         ${isTutorial ? '' : (isPrism ? `<button id="leavePrismBtn">撤退する</button>` : `<button id="backTownBtn">町に戻る</button>`)}
       </div>`;
@@ -5770,7 +5784,6 @@
       </div>
       <div class="section-block">
         <p class="section-label">プリズムタワー</p>
-        <p class="log-entry system">アクセサリー・クリスタル、およびその錬金素材を狙えるダンジョン。武器・防具はドロップしない。階は何度でも自由に周回できるが、退出のたびに踏破率は0%に戻る。</p>
         ${rows}
       </div>
     `;
@@ -5781,7 +5794,7 @@
     if(!result) return renderMaterialDungeonsInner();
     const rewardLine = result.reward
       ? `<p class="log-entry reward">「${esc(result.reward.name)}」を手に入れた！</p>`
-      : `<p class="log-entry system">今回、装備品の入手は無かった。</p>`;
+      : '';
     const firstClearLine = result.firstClear
       ? `<p class="log-entry reward">初回撃破報酬として「運命のチケット」を手に入れた。</p>`
       : '';
