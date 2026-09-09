@@ -7052,9 +7052,9 @@
         <div class="inv-item ${c.rarityLabel}" style="margin-top:4px;" title="${esc(itemDetailText(c))}">
           <span class="inv-item-name">${esc(c.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(c))}</span></span>
           <span class="inv-item-actions"><button data-unsocket-crystal="${id}:${idx}">外す</button></span>
-        </div>`).join('') : `<p class="inv-empty" style="margin:4px 0 0;">クリスタルは装備されていない。</p>`;
+        </div>`).join('') : `<p style="color:var(--text-muted);font-size:12px;margin:4px 0 0;">未装備</p>`;
       const addBtn = used < total
-        ? `<div class="actions" style="margin-top:6px;"><button data-open-crystal-picker="${id}">クリスタルを装備する</button></div>` : '';
+        ? `<div style="margin-top:6px;"><button data-open-crystal-picker="${id}" style="padding:4px 10px;font-size:11px;">クリスタルを装備する</button></div>` : '';
       return `
         <div style="margin:0 0 10px 18px;padding:6px 10px 8px;border-left:2px solid var(--win-border-inner);">
           <div style="display:flex;align-items:center;gap:8px;">
