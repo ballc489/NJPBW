@@ -860,27 +860,30 @@
   /* 通常戦闘(80%枠)勝利時のドロップ。全体10%: 素材5%/普遍的枠3%/レア目枠2%。
    * ボス撃破時は全体10%だが素材は無く、普遍的枠6%/レア目枠4%に配分し直す
    * (ハズレ枠を無くして報酬感を強めるため)。 */
-  function maybeDropPrismItem(floorNum, isBoss){
+  /* 通常戦闘・ボス戦、両方のドロップ抽選をここに集約する。
+   * どちらも「何も出ない外れ」を無くし、装備品(アクセサリーorクリスタル)
+   * が当たらなかった場合は必ず専用素材を代わりに渡す(ボスの方が量が
+   * 多い=3個、通常戦闘は1個)。装備品側の確率自体は従来通り(通常戦闘
+   * 5%/3%/2%、ボス6%/4%)で変えていない。 */
+  function rollPrismDrop(floorNum, isBoss){
     const roll = Math.random();
     if(isBoss){
-      if(roll < 0.06){
-        const item = prismRollEquip(['common','uncommon'], floorNum);
-        if(addItemToInventory(item)) pushLog(`「${item.name}」を手に入れた。`, 'reward');
-      } else if(roll < 0.10){
-        const item = prismRollEquip(['rare','epic'], floorNum);
-        if(addItemToInventory(item)) pushLog(`「${item.name}」を手に入れた。`, 'reward');
-      }
-      return;
+      if(roll < 0.06) return { equip: prismRollEquip(['common','uncommon'], floorNum), materialQty: 0 };
+      if(roll < 0.10) return { equip: prismRollEquip(['rare','epic'], floorNum), materialQty: 0 };
+      return { equip: null, materialQty: 3 };
     }
-    if(roll < 0.05){
-      grantPrismMaterial(1);
-      pushLog(`「${MATERIAL_DEFS[PRISM_MATERIAL_KEY].name}」を手に入れた。`, 'reward');
-    } else if(roll < 0.08){
-      const item = prismRollEquip(['common','uncommon'], floorNum);
-      if(addItemToInventory(item)) pushLog(`「${item.name}」を手に入れた。`, 'reward');
-    } else if(roll < 0.10){
-      const item = prismRollEquip(['rare','epic'], floorNum);
-      if(addItemToInventory(item)) pushLog(`「${item.name}」を手に入れた。`, 'reward');
+    if(roll < 0.05) return { equip: null, materialQty: 1 };
+    if(roll < 0.08) return { equip: prismRollEquip(['common','uncommon'], floorNum), materialQty: 0 };
+    if(roll < 0.10) return { equip: prismRollEquip(['rare','epic'], floorNum), materialQty: 0 };
+    return { equip: null, materialQty: 1 };
+  }
+  function maybeDropPrismItem(floorNum){
+    const drop = rollPrismDrop(floorNum, false);
+    if(drop.equip){
+      if(addItemToInventory(drop.equip)) pushLog(`「${drop.equip.name}」を手に入れた。`, 'reward');
+    } else if(drop.materialQty > 0){
+      grantPrismMaterial(drop.materialQty);
+      pushLog(`「${MATERIAL_DEFS[PRISM_MATERIAL_KEY].name}」を${drop.materialQty}個手に入れた。`, 'reward');
     }
   }
 
@@ -4437,7 +4440,7 @@
             const drop = prismRollEquip(['rare','epic'], dungeonDefForVictory.floorNum);
             if(addItemToInventory(drop)) pushLog(`ミミックを退け、「${drop.name}」を手に入れた！`, 'reward');
           } else {
-            maybeDropPrismItem(dungeonDefForVictory.floorNum, false);
+            maybeDropPrismItem(dungeonDefForVictory.floorNum);
           }
           if(combatEnemy.pendingProgressOnWin) addDungeonProgress(PROGRESS_PER_STEP);
           inCombat = false; combatPhase = null; combatEnemy = null;
@@ -4849,13 +4852,11 @@
     ds.bossKillCount = (ds.bossKillCount||0) + 1;
     ds.progress = 0; ds.depth = 0;
 
-    let reward = null;
-    const roll = Math.random();
-    if(roll < 0.06) reward = prismRollEquip(['common','uncommon'], dungeonDef.floorNum);
-    else if(roll < 0.10) reward = prismRollEquip(['rare','epic'], dungeonDef.floorNum);
-    if(reward) addItemToInventory(reward);
+    const drop = rollPrismDrop(dungeonDef.floorNum, true);
+    if(drop.equip) addItemToInventory(drop.equip);
+    if(drop.materialQty > 0) grantPrismMaterial(drop.materialQty);
 
-    state.lastPrismResult = { floorName: dungeonDef.name, firstClear, reward };
+    state.lastPrismResult = { floorName: dungeonDef.name, firstClear, reward: drop.equip, materialQty: drop.materialQty };
     state.prismRun = null;
     state.activeDungeonId = null;
     state.screen = 'prismResult';
@@ -5795,6 +5796,9 @@
     const rewardLine = result.reward
       ? `<p class="log-entry reward">「${esc(result.reward.name)}」を手に入れた！</p>`
       : '';
+    const materialLine = result.materialQty > 0
+      ? `<p class="log-entry reward">「${esc(MATERIAL_DEFS[PRISM_MATERIAL_KEY].name)}」を${result.materialQty}個手に入れた。</p>`
+      : '';
     const firstClearLine = result.firstClear
       ? `<p class="log-entry reward">初回撃破報酬として「運命のチケット」を手に入れた。</p>`
       : '';
@@ -5806,6 +5810,7 @@
         <div style="text-align:left;display:inline-block;">
           ${firstClearLine}
           ${rewardLine}
+          ${materialLine}
         </div>
       </div>
       <div class="actions" style="justify-content:center;">
