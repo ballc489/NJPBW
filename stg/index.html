@@ -857,14 +857,12 @@
   function grantPrismMaterial(qty){
     state.materials[PRISM_MATERIAL_KEY] = materialCount(PRISM_MATERIAL_KEY) + qty;
   }
-  /* 通常戦闘(80%枠)勝利時のドロップ。全体10%: 素材5%/普遍的枠3%/レア目枠2%。
-   * ボス撃破時は全体10%だが素材は無く、普遍的枠6%/レア目枠4%に配分し直す
-   * (ハズレ枠を無くして報酬感を強めるため)。 */
   /* 通常戦闘・ボス戦、両方のドロップ抽選をここに集約する。
-   * どちらも「何も出ない外れ」を無くし、装備品(アクセサリーorクリスタル)
-   * が当たらなかった場合は必ず専用素材を代わりに渡す(ボスの方が量が
-   * 多い=3個、通常戦闘は1個)。装備品側の確率自体は従来通り(通常戦闘
-   * 5%/3%/2%、ボス6%/4%)で変えていない。 */
+   * 通常戦闘(80%枠)勝利時: 全体10%(素材5%/普遍的枠3%/レア目枠2%)、
+   * 外れの90%は何も出ない。
+   * ボス撃破時: 全体10%(普遍的枠6%/レア目枠4%、素材無し)だが、外れの
+   * 90%は「何も出ない」代わりに専用素材を3個渡す(ボス戦でハズレだけは
+   * 味気ないため、通常戦闘とは違いここだけ救済する)。 */
   function rollPrismDrop(floorNum, isBoss){
     const roll = Math.random();
     if(isBoss){
@@ -875,7 +873,7 @@
     if(roll < 0.05) return { equip: null, materialQty: 1 };
     if(roll < 0.08) return { equip: prismRollEquip(['common','uncommon'], floorNum), materialQty: 0 };
     if(roll < 0.10) return { equip: prismRollEquip(['rare','epic'], floorNum), materialQty: 0 };
-    return { equip: null, materialQty: 1 };
+    return { equip: null, materialQty: 0 }; // 通常戦闘の外れ(90%)は何もドロップしない(ボス戦のみ素材で救済する)
   }
   function maybeDropPrismItem(floorNum){
     const drop = rollPrismDrop(floorNum, false);
@@ -4799,14 +4797,14 @@
       startCombat(enemy);
     } else if(roll < 0.95){
       grantPrismMaterial(1);
-      pushLog(`「${MATERIAL_DEFS[PRISM_MATERIAL_KEY].name}」の宝箱を見つけた。`, 'reward');
+      pushLog(`宝箱から「${MATERIAL_DEFS[PRISM_MATERIAL_KEY].name}」を見つけた！`, 'reward');
       addDungeonProgress(PROGRESS_PER_STEP);
       saveGame(); render();
     } else if(roll < 0.99){
       // この宝箱は「確定ドロップ」というだけで、レア目枠のような偏りの
       // 指定は無いため、通常の(4段階の重み付きに従う)抽選をそのまま使う。
       const item = prismRollEquip(Object.keys(RARITY), dungeonDef.floorNum);
-      if(addItemToInventory(item)) pushLog(`宝箱の中に「${item.name}」を見つけた！`, 'reward');
+      if(addItemToInventory(item)) pushLog(`宝箱から「${item.name}」を見つけた！`, 'reward');
       addDungeonProgress(PROGRESS_PER_STEP);
       saveGame(); render();
     } else {
