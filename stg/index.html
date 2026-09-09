@@ -5135,8 +5135,21 @@
   function isPartyFull(){ return state.party.every(id=>{ const ls=liverState(id); return ls.hp>=ls.maxHp && ls.mp>=ls.maxMp; }); }
 
   /* ---------------- 宿屋 ---------------- */
+  /* 宿代は「回復するHP×1+回復するMP×2」をパーティ全員分合計する。
+   * 戦闘不能(HP0)のキャラだけは、その本人の回復量(HP・MP分とも)を
+   * まとめて2倍にする(他のキャラの回復量には影響しない)。 */
+  function innStayCost(){
+    return state.party.reduce((sum, id)=>{
+      const ls = liverState(id);
+      if(!ls) return sum;
+      const missingHp = Math.max(0, ls.maxHp - ls.hp);
+      const missingMp = Math.max(0, ls.maxMp - ls.mp);
+      const charCost = (missingHp * 1 + missingMp * 2) * (ls.hp <= 0 ? 2 : 1);
+      return sum + charCost;
+    }, 0);
+  }
   function stayAtInn(){
-    const cost = Math.max(5, partyLevel()*3);
+    const cost = innStayCost();
     if(state.gold < cost || isPartyFull() || !state.party.length) return;
     state.gold -= cost;
     state.party.forEach(id=>{
@@ -5505,6 +5518,7 @@
     ],
     inn: [
       'ゴールドを支払うことで休息が出来る。',
+      '料金は、回復するHPの量×1と回復するMPの量×2をパーティ全員分合計した金額。戦闘不能のキャラがいる場合、その本人の回復量(HP・MP分とも)だけ2倍になる。',
       '時には休息も必要だ。'
     ],
     alchemy: [
@@ -7403,7 +7417,7 @@
 
   function renderInnInner(){
     const line = INNKEEPER_LINES[Math.floor(Math.random()*INNKEEPER_LINES.length)];
-    const cost = Math.max(5, partyLevel()*3);
+    const cost = innStayCost();
     const full = isPartyFull();
     const partyStatusHtml = state.party.map(id=>{
       const ls = liverState(id);
