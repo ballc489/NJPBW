@@ -5025,6 +5025,15 @@
   }
 
   function discardItem(id){
+    const item = state.inventory.find(i=>i.id===id);
+    if(!item) return;
+    // レア以上(マーケットに出品できる価値がある装備)を破棄する時だけ、
+    // 誤操作防止の確認を挟む。
+    const isHighRarity = (MARKET_EQUIP_RARITY_RANK[item.rarity]||0) >= MARKET_MIN_EQUIP_RARITY_RANK;
+    if(isHighRarity){
+      const ok = confirm(`「${item.name}」は${RARITY[item.rarity].label}の装備です。破棄すると元に戻せません。本当に破棄しますか？`);
+      if(!ok) return;
+    }
     state.inventory = state.inventory.filter(i=>i.id!==id);
     saveGame(); render();
   }
@@ -7184,7 +7193,6 @@
           <span class="inv-item-name">${esc(i.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(i))}</span></span>
           <span class="inv-item-actions">
             <button data-equip-for="${liverId}:${i.id}" ${equippable?'':'disabled title="このライバーは装備できない武器種"'}>装備</button>
-            <button data-discard="${i.id}">破棄</button>
           </span>
         </div>`;
     }).join('') : `<p class="inv-empty">${slotLabel}として装備できる所持品がない。</p>`;
