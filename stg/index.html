@@ -171,6 +171,7 @@
   .scene-text .log-entry.reward{color:var(--gold);}
   .scene-text .log-entry.danger{color:var(--danger);}
   .scene-text .log-entry.system{color:var(--text-muted);}
+  .scene-text .log-entry.dialogue{color:#c9b8ff;font-style:italic;}
 
   .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;}
   button{
@@ -240,6 +241,7 @@
   .history-log .reward{color:var(--gold);}
   .history-log .danger{color:var(--danger);}
   .history-log .system{color:var(--text-muted);}
+  .history-log .dialogue{color:#c9b8ff;font-style:italic;}
 
   .inventory-scroll{max-height:280px;}
   .equip-picker-scroll{max-height:min(50vh, 420px);}
@@ -2539,6 +2541,7 @@
           ? Math.max(1, Math.round(atk * effect.amount * (isCrit?CRIT_MULT:1)) + rnd(-1,2))
           : Math.max(1, Math.round(atk * effect.amount) - liverDefStat(target) + rnd(-1,1));
         const dmg = applyDamageToLiver(target, raw, effect.element);
+        if(isCrit) playLiverDialogue(target, 'critTaken', combatDialogueFired);
         pushLog(`${isCrit?'痛恨の一撃！ ':''}${combatEnemy.name}の攻撃！ ${targetName}が ${dmg} のダメージを受けた。`, 'danger', true);
         if(effect.drainRatio){
           const healed = Math.max(0, Math.round(dmg * effect.drainRatio));
@@ -2567,6 +2570,8 @@
           raw = Math.max(1, Math.round((atk - def) * mult * affixMult) + rnd(-1,2));
         }
         combatEnemyHp -= raw;
+        lastDamagerId = casterId;
+        if(isCrit) playLiverDialogue(casterId, 'critDeal', combatDialogueFired);
         const drained = applyOnHitMpDrain(casterId, raw);
         const drainSuffix = drained > 0 ? ` (MP+${drained})` : '';
         const critPrefix = isCrit ? '会心の一撃！ ' : '';
@@ -3103,7 +3108,8 @@
       unlocked: !!liverDefObj.startUnlocked,
       unlockedAt: liverDefObj.startUnlocked ? Date.now() : null,
       costume: defaultCostume,
-      unlockedCostumes: defaultCostume ? [defaultCostume] : []
+      unlockedCostumes: defaultCostume ? [defaultCostume] : [],
+      dialogues: {} // 台詞設定。{victory,itemGet,death,critDeal,critTaken,skills:{skillKey:{text,freq}}}
     };
   }
 
@@ -3129,7 +3135,7 @@
       ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
         marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
-        rosterDetailId: null, rosterDetailFrom: 'roster',
+        rosterDetailId: null, rosterDetailFrom: 'roster', liverDetailTab: 'detail',
         profileViewId: null, profileFrom: 'town', profileLiverId: null,
         profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null,
         staminaPopupOpen: false },
@@ -3762,7 +3768,8 @@
           loadout: jp.loadout.enabled, unlocked: !!r.unlocked,
           job_progress: r.jobProgress,
           costume: r.costume || defaultCostumeKeyFor(def.id),
-          unlocked_costumes: r.unlockedCostumes || [defaultCostumeKeyFor(def.id)]
+          unlocked_costumes: r.unlockedCostumes || [defaultCostumeKeyFor(def.id)],
+          dialogues: r.dialogues || {}
         };
       });
 
@@ -3929,7 +3936,8 @@
           costume: r.costume || defaultCostumeKeyFor(r.liver_id),
           unlockedCostumes: (Array.isArray(r.unlocked_costumes) && r.unlocked_costumes.length)
             ? r.unlocked_costumes
-            : [defaultCostumeKeyFor(r.liver_id)]
+            : [defaultCostumeKeyFor(r.liver_id)],
+          dialogues: (r.dialogues && typeof r.dialogues === 'object') ? r.dialogues : {}
         };
       });
       // 装備中のアイテムは所持品リストからは除外する(以前のwindow.storage版と同じ表現)
@@ -3970,7 +3978,7 @@
         ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
         marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
-        rosterDetailId: null, rosterDetailFrom: 'roster',
+        rosterDetailId: null, rosterDetailFrom: 'roster', liverDetailTab: 'detail',
         profileViewId: null, profileFrom: 'town', profileLiverId: null,
         profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null,
         staminaPopupOpen: false },
@@ -4082,6 +4090,63 @@
     if(state.history.length > 100) state.history = state.history.slice(-100);
   }
 
+  /* ---------------- 台詞システム ----------------
+   * ライバーごとに設定された任意の台詞を、条件を満たした時にpushLogで
+   * 先に流してから、本来のアクションのログを続ける演出。設定していない
+   * 項目は何も表示しない(デフォルト未設定)。
+   * 発動頻度は台詞ごとにfreq('once'=1戦闘につき1回 / 'always'=毎回)を
+   * 持ち、'once'の場合のみfiredMapで戦闘(またはダンジョン探索)単位の
+   * 重複発火を防ぐ。敵側(通常の敵・コロシアムタワーの相手など)の行動には
+   * 一切紐付けない(常に自分が操作するパーティの行動時にのみ発生する)。 */
+  let combatDialogueFired = {}; // startCombat()で戦闘ごとにリセット
+  let dungeonItemDialogueFired = {}; // enterDungeon()でダンジョン再突入ごとにリセット
+  let lastDamagerId = null; // 直近で敵にダメージを与えた自パーティのliverId(勝利台詞の話者決定に使う)
+
+  function liverDialogues(id){
+    const ls = liverState(id);
+    return (ls && ls.dialogues) || {};
+  }
+  function liverDialogueSlot(id, triggerKey){
+    const dlgs = liverDialogues(id);
+    const slot = triggerKey.startsWith('skill:')
+      ? (dlgs.skills && dlgs.skills[triggerKey.slice(6)])
+      : dlgs[triggerKey];
+    return (slot && slot.text) ? slot : null;
+  }
+  function playLiverDialogue(id, triggerKey, firedMap){
+    if(!id) return;
+    const slot = liverDialogueSlot(id, triggerKey);
+    if(!slot) return;
+    const fireKey = `${id}:${triggerKey}`;
+    if(slot.freq !== 'always' && firedMap[fireKey]) return;
+    firedMap[fireKey] = true;
+    pushLog(`${liverDef(id).name}「${slot.text}」`, 'dialogue');
+  }
+  /* 台詞タブの保存ボタン。画面上の全行(data-dialogue-row)をまとめて
+   * 読み取り、ls.dialoguesを丸ごと置き換える(空文字の行は保存しない=
+   * 未設定扱いに戻せるようにするため)。 */
+  function saveLiverDialogues(){
+    const id = state.ui.rosterDetailId;
+    const ls = id && liverState(id);
+    if(!ls) return;
+    const newDialogues = { skills: {} };
+    document.querySelectorAll('[data-dialogue-row]').forEach(rowEl=>{
+      const triggerKey = rowEl.getAttribute('data-dialogue-row');
+      const freq = rowEl.getAttribute('data-freq') === 'always' ? 'always' : 'once';
+      const input = rowEl.querySelector('.dialogue-text-input');
+      const text = (input ? input.value : '').trim().slice(0, 30);
+      if(!text) return;
+      if(triggerKey.startsWith('skill:')){
+        newDialogues.skills[triggerKey.slice(6)] = { text, freq };
+      } else {
+        newDialogues[triggerKey] = { text, freq };
+      }
+    });
+    ls.dialogues = newDialogues;
+    pushLog('台詞設定を保存した。', 'system');
+    saveGame(); render();
+  }
+
   /* ---------------- Core actions ---------------- */
   /* 経験値は「現在就いているジョブ」のレベルにのみ加算される
    * (ジョブごとに個別成長するため)。 */
@@ -4114,14 +4179,20 @@
     return true;
   }
 
+  /* 戻り値: 実際にアイテム(武器/防具)を入手できた場合はそのitem、
+   * それ以外(未ドロップ、ゴールドのみ)はnull。呼び出し側で「アイテムを
+   * 手に入れた」ログと台詞(アイテム獲得時)の順序をコントロールするため、
+   * アイテム発見時のpushLog自体は呼び出し側の責務とする(ゴールドは
+   * 台詞の対象外なのでここで即pushLogして問題ない)。 */
   function maybeDropItem(depth){
     const { dropMult, goldMult } = partyLootMult();
     const dungeonLevel = currentDungeonDef().level;
+    let droppedItem = null;
     if(Math.random() < 0.42 * dropMult){
       const type = Math.random() < 0.5 ? 'weapon' : 'armor';
       const item = makeItem(type, dungeonLevel, depth);
       if(addItemToInventory(item)){
-        pushLog(`「${item.name}」を手に入れた。`, 'reward');
+        droppedItem = item;
       }
     }
     if(Math.random() < 0.3){
@@ -4129,6 +4200,7 @@
       state.gold += g;
       pushLog(`${g}ゴールド手に入れた。`, 'reward');
     }
+    return droppedItem;
   }
 
   function startCombat(enemy){
@@ -4145,6 +4217,8 @@
     pendingDefBuffs = {};
     playerStatusEffects = {};
     combatPassiveFlags = {};
+    combatDialogueFired = {};
+    lastDamagerId = null;
     pushLog(`Lv.${enemy.level} ${enemy.name}${enemy.boss?'が行く手を阻んだ！':'が現れた。'}`, 'danger');
     state.party.forEach(id=>{
       const p = equippedPassive(id);
@@ -4205,11 +4279,14 @@
       if(rollCrit(liverId)){
         const dmg = Math.max(1, Math.round(combatAtk(liverId) * CRIT_MULT * affixMult) + rnd(-1,3));
         combatEnemyHp -= dmg;
+        lastDamagerId = liverId;
+        playLiverDialogue(liverId, 'critDeal', combatDialogueFired);
         pushLog(`${name}の攻撃が会心の一撃となった！ ${combatEnemy.name}に防御を貫く ${dmg} の大ダメージ！${drainSuffix(dmg)}`, 'reward', true);
         return;
       }
       const dmg = Math.max(1, Math.round((combatAtk(liverId) - effectiveEnemyDef()) * affixMult) + rnd(-1,2));
       combatEnemyHp -= dmg;
+      lastDamagerId = liverId;
       pushLog(`${name}の攻撃！ ${combatEnemy.name}に ${dmg} のダメージ。${drainSuffix(dmg)}`, 'combat', true);
       return;
     }
@@ -4219,6 +4296,7 @@
 
     if(chosen.effects){
       // 新方式: 複合効果スキル。効果を順に解決する(旧kind形式との判定は排他)。
+      playLiverDialogue(liverId, 'skill:'+chosen.key, combatDialogueFired);
       pushLog(`${name}の「${chosen.name}」！(MP-${mpCost})`, 'combat', true);
       chosen.effects.forEach(effect => resolveEffect(effect, false, liverId));
       return;
@@ -4369,6 +4447,7 @@
     if(rollCrit(null)){
       const raw = Math.max(1, Math.round(effectiveEnemyAtk() * CRIT_MULT) + rnd(-1,2));
       const dmg = applyDamageToLiver(target, raw);
+      playLiverDialogue(target, 'critTaken', combatDialogueFired);
       pushLog(`${combatEnemy.name}の痛恨の一撃！ ${targetName}が防御を貫く ${dmg} の大ダメージを受けた！`, 'danger', true);
       checkLiverKO(target);
       return;
@@ -4399,6 +4478,7 @@
 
   function checkLiverKO(liverId){
     if(liverState(liverId).hp <= 0){
+      playLiverDialogue(liverId, 'death', combatDialogueFired);
       pushLog(`${liverDef(liverId).name}が倒れた……！`, 'danger');
       state.party.forEach(otherId=>{
         if(otherId === liverId) return;
@@ -4446,6 +4526,7 @@
       }
 
       if(combatEnemyHp <= 0){
+        playLiverDialogue(lastDamagerId, 'victory', combatDialogueFired);
         if(combatEnemy.isColosseum){
           await resolveColosseumVictory();
           return;
@@ -4484,7 +4565,8 @@
           return;
         }
 
-        maybeDropItem(ds.depth);
+        const wonItem = maybeDropItem(ds.depth);
+        if(wonItem) pushLog(`「${wonItem.name}」を手に入れた。`, 'reward');
 
         if(combatEnemy.isDungeonBoss){
           const dungeonDef = currentDungeonDef();
@@ -4776,7 +4858,12 @@
       addDungeonProgress(PROGRESS_PER_STEP);
       saveGame(); render();
     } else if(roll < 0.95){
-      maybeDropItem(ds.depth);
+      const foundItem = maybeDropItem(ds.depth);
+      if(foundItem && state.party.length){
+        const speaker = state.party[Math.floor(Math.random()*state.party.length)];
+        playLiverDialogue(speaker, 'itemGet', dungeonItemDialogueFired);
+      }
+      if(foundItem) pushLog(`「${foundItem.name}」を手に入れた。`, 'reward');
       if(state.log.length===0 || state.log[state.log.length-1].text.indexOf('見つけ')<0){
         pushLog('崩れた棚の奥に何かが残っていた。', 'system');
       }
@@ -5125,6 +5212,7 @@
     state.activeDungeonId = id;
     state.screen = 'dungeon';
     state.log = [];
+    dungeonItemDialogueFired = {};
     saveGame(); render();
   }
 
@@ -6963,6 +7051,7 @@
     if(!state.ui) state.ui = {};
     state.ui.rosterDetailId = id;
     state.ui.rosterDetailFrom = from === 'party' ? 'party' : 'roster';
+    state.ui.liverDetailTab = 'detail';
     state.screen = 'liverDetail';
     saveGame(); render();
   }
@@ -7220,6 +7309,27 @@
 
     const headingHtml = `<p class="scene-heading"><span>${esc(def.name)}${inParty ? ' <span style="color:var(--gold);font-weight:400;">(編成中)</span>' : ''}</span>${helpButtonHtml('roster')}</p>`;
 
+    const detailTab = state.ui.liverDetailTab === 'dialogue' ? 'dialogue' : 'detail';
+    const tabSwitcherHtml = `
+      <div class="actions" style="margin-top:0;">
+        <button data-liver-detail-tab="detail" class="${detailTab==='detail'?'primary':''}">詳細</button>
+        <button data-liver-detail-tab="dialogue" class="${detailTab==='dialogue'?'primary':''}">台詞</button>
+      </div>`;
+
+    if(detailTab === 'dialogue'){
+      return `
+        <div class="scene-text">
+          ${headingHtml}
+          ${lockedBanner}
+        </div>
+        <div class="actions">
+          <button id="backFromLiverDetailBtn">${state.ui.rosterDetailFrom === 'party' ? '編成画面に戻る' : 'ライバー一覧に戻る'}</button>
+        </div>
+        ${tabSwitcherHtml}
+        ${renderLiverDialogueInner(id, unlocked)}
+      `;
+    }
+
     return `
       <div class="scene-text">
         ${headingHtml}
@@ -7228,6 +7338,7 @@
       <div class="actions">
         <button id="backFromLiverDetailBtn">${state.ui.rosterDetailFrom === 'party' ? '編成画面に戻る' : 'ライバー一覧に戻る'}</button>
       </div>
+      ${tabSwitcherHtml}
       <div class="section-block">
         <p class="section-label">ステータス</p>
         ${statTilesHtml}
@@ -7255,6 +7366,64 @@
         ${atkRow}
         ${skillRows}
         <p style="color:var(--text-muted);font-size:11px;margin:4px 0 0;">有効スキルは最大${SKILL_LOADOUT_MAX}つまで。希望発動率の合計が50%を超える分は自動的に按分されます。</p>
+      </div>
+    `;
+  }
+
+  /* 台詞タブ: 各トリガーごとに設定できる台詞と頻度(1戦闘/1回の探索に
+   * つき1回 or 毎回)を編集する画面。テキスト入力は保存ボタン押下時に
+   * まとめて読み取る方式とする(1文字入力ごとに再描画すると他の未保存
+   * の入力内容が消えてしまうため)。頻度切り替えボタンだけは再描画せず、
+   * DOM上のdata-freq属性とボタン文言を直接書き換える(saveLiverDialogues
+   * 参照)。 */
+  function renderLiverDialogueInner(id, unlocked){
+    const dlgs = liverDialogues(id);
+    const rowDomId = triggerKey => `dlgText_${triggerKey.replace(/[^a-zA-Z0-9]/g,'_')}`;
+
+    const row = (triggerKey, label, freqUnit) => {
+      const slot = (triggerKey.startsWith('skill:')
+        ? (dlgs.skills && dlgs.skills[triggerKey.slice(6)])
+        : dlgs[triggerKey]) || {};
+      const freq = slot.freq === 'always' ? 'always' : 'once';
+      const text = slot.text || '';
+      return `
+        <div class="inv-item" data-dialogue-row="${triggerKey}" data-freq="${freq}" data-freq-unit="${esc(freqUnit)}">
+          <span class="inv-item-name">
+            ${esc(label)}<br>
+            <input class="name-input dialogue-text-input" id="${rowDomId(triggerKey)}" type="text" maxlength="30" placeholder="未設定(表示しない)" value="${esc(text)}" ${unlocked?'':'disabled'} style="margin-top:4px;">
+          </span>
+          <span class="inv-item-actions">
+            <button data-dialogue-freq-toggle="${triggerKey}" ${unlocked?'':'disabled'}>${freq==='always'?'毎回':`${esc(freqUnit)}に1回`}</button>
+          </span>
+        </div>`;
+    };
+
+    const fixedRowsHtml = [
+      row('victory', '勝利時(最後にダメージを与えたライバーの台詞が表示される)', '1戦闘'),
+      row('itemGet', 'アイテム発見時(戦闘中のドロップは対象外。編成中からランダムで1名)', '1回の探索'),
+      row('death', '戦闘不能になった時', '1戦闘'),
+      row('critDeal', 'クリティカルを与えた時', '1戦闘'),
+      row('critTaken', 'クリティカルを受けた時', '1戦闘'),
+    ].join('');
+
+    const skillRowsHtml = Object.keys(JOB_DEFS).map(jobId=>{
+      const jobDef = JOB_DEFS[jobId];
+      const rows = jobDef.skills.map(s=>row('skill:'+s.key, `${jobDef.name}「${s.name}」使用時`, '1戦闘')).join('');
+      return `
+        <div style="margin-bottom:10px;">
+          <p style="color:var(--text-muted);font-size:11px;margin:0 0 4px;">${esc(jobDef.name)}のスキル</p>
+          ${rows}
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="section-block">
+        <p class="section-label">台詞設定</p>
+        <p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">条件を満たした時、ここで設定した台詞がログに「${esc(liverDef(id).name)}「台詞」」の形式で流れる。未設定の項目は何も表示されない。コロシアムタワーの防衛時は台詞は表示されない。全角30文字まで。</p>
+        ${fixedRowsHtml}
+        <p style="color:var(--text-muted);font-size:11px;margin:10px 0 4px;">スキル使用時の台詞は、現在有効化しているスキルのみ実際にログへ表示される(無効なスキル分もあらかじめ設定しておくことは可能)。</p>
+        ${skillRowsHtml}
+        ${unlocked ? `<div class="actions" style="margin-top:10px;"><button id="saveDialoguesBtn" class="primary">保存する</button></div>` : ''}
       </div>
     `;
   }
@@ -8531,6 +8700,27 @@
     document.querySelectorAll('[data-toggle-party]').forEach(b=>{
       b.addEventListener('click', ()=>togglePartyMember(b.getAttribute('data-toggle-party')));
     });
+    document.querySelectorAll('[data-liver-detail-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        state.ui.liverDetailTab = b.getAttribute('data-liver-detail-tab');
+        render();
+      });
+    });
+    /* 頻度切り替えは再描画せず、DOM上のdata-freq属性とボタン文言だけを
+     * 直接書き換える(再描画すると他の未保存のテキスト入力が消えるため。
+     * saveLiverDialoguesを参照)。 */
+    document.querySelectorAll('[data-dialogue-freq-toggle]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const triggerKey = b.getAttribute('data-dialogue-freq-toggle');
+        const rowEl = b.closest('[data-dialogue-row]');
+        if(!rowEl) return;
+        const newFreq = rowEl.getAttribute('data-freq') === 'always' ? 'once' : 'always';
+        rowEl.setAttribute('data-freq', newFreq);
+        const unit = rowEl.getAttribute('data-freq-unit') || '1戦闘';
+        b.textContent = newFreq === 'always' ? '毎回' : `${unit}に1回`;
+      });
+    });
+    on('saveDialoguesBtn', saveLiverDialogues);
 
     on('gotoMarketBtn', gotoMarket);
     document.querySelectorAll('[data-market-tab]').forEach(b=>{
