@@ -617,29 +617,32 @@
     return `
       <tr>
         <td class="mono">${esc(p.id.slice(0,8))}</td>
-        <td>${esc(p.name)}${banned ? `<span class="badge danger">BAN中</span>` : ''}</td>
+        <td>
+          <button class="chatlog-user-link" data-view-user="${p.id}" data-user-name="${esc(p.name)}">${esc(p.name)}</button>
+          ${banned ? `<span class="badge danger">BAN中</span>` : ''}
+        </td>
         <td class="mono">${p.gold}</td>
         <td class="mono">${new Date(p.created_at).toLocaleDateString('ja-JP')}</td>
         <td>${banned ? `<span class="muted">${esc(p.ban_reason||'')}</span>` : '-'}</td>
-        <td><button data-ban-toggle="${p.id}" data-banned="${banned}" class="${banned?'':'danger'}">${banned?'解除':'BAN'}</button></td>
       </tr>
     `;
   }
 
   function renderPlayersTab(){
     const rows = playerListLoading
-      ? `<tr><td colspan="6">読み込み中……</td></tr>`
+      ? `<tr><td colspan="5">読み込み中……</td></tr>`
       : playerList.length
         ? playerList.map(renderPlayerRow).join('')
-        : `<tr><td colspan="6">該当するプレイヤーがいません。</td></tr>`;
+        : `<tr><td colspan="5">該当するプレイヤーがいません。</td></tr>`;
     return `
       <div class="toolbar">
         <input id="playerSearchInput" type="text" placeholder="名前で検索(部分一致)" value="${esc(playerQuery)}">
         <button id="playerSearchBtn">検索</button>
       </div>
+      <p class="muted" style="margin-bottom:12px;">一覧表示のみです。BAN・利用制限の操作は名前をクリックしてユーザー詳細画面から行ってください。</p>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>ID</th><th>名前</th><th>ゴールド</th><th>作成日</th><th>BAN理由</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>名前</th><th>ゴールド</th><th>作成日</th><th>BAN理由</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -665,7 +668,7 @@
         ? banList.map(renderBanRow).join('')
         : `<tr><td colspan="5">BAN中のプレイヤーはいません。</td></tr>`;
     return `
-      <p class="muted" style="margin-bottom:12px;">閲覧専用です。BANの解除は「プレイヤー」タブから行ってください。</p>
+      <p class="muted" style="margin-bottom:12px;">閲覧専用です。BANの解除は、プレイヤー一覧やチャットログでユーザー名をクリックして開くユーザー詳細画面から行ってください。</p>
       <div class="table-scroll">
         <table>
           <thead><tr><th>ID</th><th>名前</th><th>ゴールド</th><th>BAN日時</th><th>BAN理由</th></tr></thead>
@@ -1116,19 +1119,6 @@
       loadPlayers();
     });
     if(searchInput) searchInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') searchBtn.click(); });
-
-    document.querySelectorAll('[data-ban-toggle]').forEach(b=>{
-      b.addEventListener('click', async ()=>{
-        const id = b.getAttribute('data-ban-toggle');
-        const currentlyBanned = b.getAttribute('data-banned') === 'true';
-        if(currentlyBanned){
-          if(await showConfirm('BANを解除しますか？')) setBan(id, false, null);
-        } else {
-          const reason = await showPrompt('BAN理由を入力してください:');
-          if(reason !== null) setBan(id, true, reason);
-        }
-      });
-    });
 
     document.querySelectorAll('[data-penalty-change]').forEach(b=>{
       b.addEventListener('click', async ()=>{
