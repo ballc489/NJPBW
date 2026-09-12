@@ -62,6 +62,19 @@
   .login-box input{margin-bottom:12px;}
   .recipient-option{padding:6px 8px;border-radius:4px;cursor:pointer;font-size:13px;}
   .recipient-option:hover{background:rgba(255,255,255,0.06);}
+  .btn-sm{padding:4px 10px;font-size:12px;}
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;}
+  .modal-box{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:20px;max-width:420px;width:100%;}
+  .modal-box input{margin-top:12px;}
+  .chatlog-row{display:flex;align-items:flex-start;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border);}
+  .chatlog-row:hover{background:rgba(255,255,255,0.03);}
+  .chatlog-row-main{flex:1;min-width:0;}
+  .chatlog-row-meta{display:flex;align-items:baseline;gap:6px;font-size:11px;}
+  .chatlog-row-body{font-size:13px;margin-top:2px;white-space:pre-wrap;word-break:break-word;}
+  .chatlog-row-actions{display:flex;gap:6px;flex-shrink:0;padding-top:1px;}
+  .chatlog-user-link{color:var(--accent);text-decoration:none;cursor:pointer;font-weight:600;background:none;border:none;padding:0;font-size:inherit;font-family:inherit;}
+  .chatlog-user-link:hover{text-decoration:underline;}
+  .chatlog-row-expand{display:flex;align-items:center;gap:8px;padding:6px 4px 10px;border-bottom:1px solid var(--border);}
 </style>
 </head>
 <body>
@@ -83,6 +96,23 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function showAlert(message){
+    return new Promise(resolve=>{ modal = { kind:'alert', message, resolve }; render(); });
+  }
+  function showConfirm(message){
+    return new Promise(resolve=>{ modal = { kind:'confirm', message, resolve }; render(); });
+  }
+  function showPrompt(message, defaultValue){
+    return new Promise(resolve=>{ modal = { kind:'prompt', message, defaultValue: defaultValue == null ? '' : defaultValue, resolve }; render(); });
+  }
+  function resolveModal(value){
+    if(!modal) return;
+    const r = modal.resolve;
+    modal = null;
+    render();
+    r(value);
   }
 
   let session = null;
@@ -110,6 +140,23 @@
   let reportListLoading = false;
   let reportFilter = 'open'; // 'open' | 'resolved' | 'all'
   let openReportCount = 0;
+  let chatLogChannel = 'general';
+  let chatLogMessages = [];
+  let chatLogLoading = false;
+  let chatLogSinceDays = 30; // 何日前まで遡って表示するか(「さらに遡る」で30ずつ延ばす)
+  let chatLogOpenActionId = null; // 「処分」パネルを開いている投稿のid(1件だけ開ける)
+  let modal = null; // {kind:'alert'|'confirm'|'prompt', message, defaultValue, resolve} — 標準のalert/confirm/promptは
+  // Chromeネイティブのダイアログとして表示され、自動操作ツールからは一切操作できない(クリック待ちで固まる)ため、
+  // 自前のオーバーレイに置き換える。showAlert/showConfirm/showPromptはPromiseを返すので、呼び出し側はawaitする。
+  let userDetail = null; // {id, name} — 設定されている間はどのタブよりも優先してユーザー詳細画面を表示する
+  let userDetailData = null; // {player, messages} — openUserDetail()で非同期に読み込む
+  let userDetailLoading = false;
+
+  const CHAT_LOG_CHANNELS = [
+    { id:'general', name:'総合チャット' },
+    { id:'strategy', name:'攻略チャット' },
+    { id:'casual', name:'雑談チャット' },
+  ];
 
   const REPORT_REASON_LABELS = {
     spam: 'スパム・広告',
@@ -144,7 +191,7 @@
       if(!data){
         await sb.auth.signOut();
         session = null;
-        alert('このアカウントには管理者権限がありません。');
+        await showAlert('このアカウントには管理者権限がありません。');
         return false;
       }
       return true;
@@ -168,7 +215,7 @@
         await Promise.all([loadPlayers(), loadAnnouncements(), loadReports(), loadBanList(), loadPenaltyList()]);
       }
     }catch(e){
-      alert('ログインに失敗しました: ' + e.message);
+      await showAlert('ログインに失敗しました: ' + e.message);
     }
     if(btn) btn.disabled = false;
     render();
@@ -202,7 +249,7 @@
       if(error) throw error;
       await refreshModerationLists();
     }catch(e){
-      alert('BAN処理に失敗しました: ' + e.message);
+      await showAlert('BAN処理に失敗しました: ' + e.message);
     }
   }
 
@@ -244,7 +291,7 @@
       if(error) throw error;
       await refreshModerationLists();
     }catch(e){
-      alert('利用制限の更新に失敗しました: ' + e.message);
+      await showAlert('利用制限の更新に失敗しました: ' + e.message);
     }
   }
 
@@ -286,7 +333,7 @@
       announcementDetail = null;
       await loadAnnouncements();
     }catch(e){
-      alert('保存に失敗しました: ' + e.message);
+      await showAlert('保存に失敗しました: ' + e.message);
     }
   }
 
@@ -310,14 +357,14 @@
   }
 
   async function deleteAnnouncement(id){
-    if(!confirm('このお知らせを削除しますか？')) return;
+    if(!(await showConfirm('このお知らせを削除しますか？'))) return;
     try{
       const { error } = await sb.rpc('admin_delete_announcement', { p_id: id });
       if(error) throw error;
       if(announcementDetail && announcementDetail.id === id) announcementDetail = null;
       await loadAnnouncements();
     }catch(e){
-      alert('削除に失敗しました: ' + e.message);
+      await showAlert('削除に失敗しました: ' + e.message);
     }
   }
 
@@ -350,7 +397,7 @@
       if(error) throw error;
       await loadReports();
     }catch(e){
-      alert('処理に失敗しました: ' + e.message);
+      await showAlert('処理に失敗しました: ' + e.message);
     }
   }
 
@@ -362,32 +409,32 @@
       if(error) throw error;
       await loadReports();
     }catch(e){
-      alert('クローズに失敗しました: ' + e.message);
+      await showAlert('クローズに失敗しました: ' + e.message);
     }
   }
 
   // side: 'reported'(通報された側) | 'reporter'(通報した側)。
   // それぞれ独立して1回だけ選べる(クローズはしない、別ボタンで行う)。
-  function handleReportSideAction(id, side, action, deleteMessage){
+  async function handleReportSideAction(id, side, action, deleteMessage){
     const sideLabel = side === 'reported' ? '対象ユーザー' : '通報者';
     const label = REPORT_ACTION_LABELS[action] || action;
     const deleteNote = deleteMessage ? '対象の投稿も削除されます。' : '';
 
     if(action === 'penalty'){
-      const hoursStr = prompt('利用を制限する時間を入力してください(時間単位):', '24');
+      const hoursStr = await showPrompt('利用を制限する時間を入力してください(時間単位):', '24');
       if(hoursStr === null) return;
       const hours = parseInt(hoursStr, 10);
-      if(!hours || hours <= 0){ alert('有効な時間を入力してください。'); return; }
-      const note = prompt('制限理由を入力してください(空欄可):', '');
+      if(!hours || hours <= 0){ await showAlert('有効な時間を入力してください。'); return; }
+      const note = await showPrompt('制限理由を入力してください(空欄可):', '');
       if(note === null) return;
-      if(!confirm(`${sideLabel}に${label}(${hours}時間)を実行します。${deleteNote}よろしいですか？`)) return;
+      if(!(await showConfirm(`${sideLabel}に${label}(${hours}時間)を実行します。${deleteNote}よろしいですか？`))) return;
       reportAction(id, side, action, deleteMessage, hours, note);
       return;
     }
     if(action === 'ban'){
-      const note = prompt('BAN理由を入力してください:', 'チャットでの通報対応によるBAN');
+      const note = await showPrompt('BAN理由を入力してください:', 'チャットでの通報対応によるBAN');
       if(note === null) return;
-      if(!confirm(`${sideLabel}に${label}を実行します。${deleteNote}よろしいですか？`)) return;
+      if(!(await showConfirm(`${sideLabel}に${label}を実行します。${deleteNote}よろしいですか？`))) return;
       reportAction(id, side, action, deleteMessage, null, note);
       return;
     }
@@ -395,16 +442,144 @@
     const defaultMsg = side === 'reported'
       ? 'チャットへの投稿内容について、運営より警告いたします。利用規約に違反する投稿を繰り返した場合、アカウントの利用を制限することがあります。'
       : 'いただいた通報を運営で確認しましたが、妥当性が認められず、悪意のある通報(嫌がらせ)であると判断いたしました。今後このような通報を繰り返した場合、アカウントの利用を制限することがあります。';
-    const note = prompt('お知らせに表示する警告文を確認・編集してください:', defaultMsg);
+    const note = await showPrompt('お知らせに表示する警告文を確認・編集してください:', defaultMsg);
     if(note === null) return;
-    if(!confirm(`${sideLabel}に${label}を実行します。${deleteNote}よろしいですか？`)) return;
+    if(!(await showConfirm(`${sideLabel}に${label}を実行します。${deleteNote}よろしいですか？`))) return;
     reportAction(id, side, action, deleteMessage, null, note);
   }
 
-  function handleCloseReport(id, deleteMessage){
+  async function handleCloseReport(id, deleteMessage){
     const deleteNote = deleteMessage ? '対象の投稿も削除されます。' : '';
-    if(!confirm(`この通報をクローズします。${deleteNote}よろしいですか？`)) return;
+    if(!(await showConfirm(`この通報をクローズします。${deleteNote}よろしいですか？`))) return;
     closeReport(id, deleteMessage);
+  }
+
+  async function loadChatLog(){
+    chatLogLoading = true; render();
+    try{
+      const since = new Date(Date.now() - chatLogSinceDays*24*60*60*1000).toISOString();
+      const { data, error } = await sb.from('chat_messages')
+        .select('id,player_id,player_name,body,created_at')
+        .eq('channel', chatLogChannel)
+        .gte('created_at', since)
+        .order('created_at', {ascending:false})
+        .limit(500);
+      if(error) throw error;
+      chatLogMessages = data || [];
+    }catch(e){
+      console.error('load chat log failed', e);
+      chatLogMessages = [];
+    }
+    chatLogLoading = false; render();
+  }
+
+  async function deleteChatMessage(id){
+    if(!(await showConfirm('この投稿を削除しますか？(取り消せません)'))) return;
+    try{
+      const { error } = await sb.rpc('admin_delete_chat_message', { p_message_id: id });
+      if(error) throw error;
+      chatLogMessages = chatLogMessages.filter(m=>m.id!==id);
+      chatLogOpenActionId = null;
+      render();
+    }catch(e){
+      await showAlert('削除に失敗しました: ' + e.message);
+    }
+  }
+
+  async function warnPlayerFromChatLog(playerId, playerName){
+    const defaultMsg = 'チャットへの投稿内容について、運営より警告いたします。利用規約に違反する投稿を繰り返した場合、アカウントの利用を制限することがあります。';
+    const note = await showPrompt(`${playerName} に送る警告文を確認・編集してください:`, defaultMsg);
+    if(note === null) return;
+    if(!(await showConfirm(`${playerName} に警告を送信します。よろしいですか？`))) return;
+    try{
+      const { error } = await sb.rpc('admin_warn_player', { p_target_id: playerId, p_note: note });
+      if(error) throw error;
+      chatLogOpenActionId = null;
+      render();
+    }catch(e){
+      await showAlert('警告の送信に失敗しました: ' + e.message);
+    }
+  }
+
+  async function banPlayerFromChatLog(playerId, playerName){
+    const reason = await showPrompt(`${playerName} をBANする理由を入力してください:`, 'チャットでの投稿内容によるBAN');
+    if(reason === null) return;
+    if(!(await showConfirm(`${playerName} をBANします。よろしいですか？`))) return;
+    await setBan(playerId, true, reason);
+    chatLogOpenActionId = null;
+    render();
+  }
+
+  async function penalizePlayerFromChatLog(playerId, playerName){
+    const hoursStr = await showPrompt('利用を制限する時間を入力してください(時間単位):', '24');
+    if(hoursStr === null) return;
+    const hours = parseInt(hoursStr, 10);
+    if(!hours || hours <= 0){ await showAlert('有効な時間を入力してください。'); return; }
+    const reason = await showPrompt(`${playerName} への制限理由を入力してください(空欄可):`, 'チャットでの投稿内容による利用制限');
+    if(reason === null) return;
+    if(!(await showConfirm(`${playerName} に利用制限(${hours}時間)を実行します。よろしいですか？`))) return;
+    await setPenalty(playerId, hours, reason);
+    chatLogOpenActionId = null;
+    render();
+  }
+
+  async function openUserDetail(id, name){
+    userDetail = { id, name };
+    userDetailData = null;
+    userDetailLoading = true;
+    render();
+    try{
+      const [{ data: player, error: pErr }, { data: messages, error: mErr }] = await Promise.all([
+        sb.from('players').select('id,name,gold,created_at,banned_at,ban_reason,penalty_until,penalty_reason,warning_count').eq('id', id).single(),
+        sb.from('chat_messages').select('id,channel,body,created_at').eq('player_id', id).order('created_at', {ascending:false}).limit(50)
+      ]);
+      if(pErr) throw pErr;
+      if(mErr) throw mErr;
+      userDetailData = { player, messages: messages || [] };
+    }catch(e){
+      console.error('load user detail failed', e);
+      userDetailData = { player: null, messages: [] };
+    }
+    userDetailLoading = false;
+    render();
+  }
+
+  function closeUserDetail(){
+    userDetail = null;
+    userDetailData = null;
+    render();
+  }
+
+  async function refreshUserDetail(){
+    if(!userDetail) return;
+    await openUserDetail(userDetail.id, userDetail.name);
+  }
+
+  async function toggleBanFromUserDetail(id, currentlyBanned){
+    if(currentlyBanned){
+      if(await showConfirm('BANを解除しますか？')) await setBan(id, false, null);
+    } else {
+      const reason = await showPrompt('BAN理由を入力してください:');
+      if(reason !== null) await setBan(id, true, reason);
+    }
+    await refreshUserDetail();
+  }
+
+  async function setPenaltyFromUserDetail(id, lift){
+    if(lift){
+      if(!(await showConfirm('この利用制限を解除しますか？'))) return;
+      await setPenalty(id, null, null);
+    } else {
+      const hoursStr = await showPrompt('利用を制限する時間を入力してください(時間単位):', '24');
+      if(hoursStr === null) return;
+      const hours = parseInt(hoursStr, 10);
+      if(!hours || hours <= 0){ await showAlert('有効な時間を入力してください。'); return; }
+      const reason = await showPrompt('制限理由を入力してください(空欄可):', '');
+      if(reason === null) return;
+      if(!(await showConfirm(`${hours}時間後を新しい解除予定として設定します。よろしいですか？`))) return;
+      await setPenalty(id, hours, reason);
+    }
+    await refreshUserDetail();
   }
 
   function toLocalInputValue(iso){
@@ -421,6 +596,7 @@
         <input id="passwordInput" type="password" placeholder="パスワード" autocomplete="current-password">
         <button id="loginBtn" class="primary" style="width:100%;">ログイン</button>
       </div>
+      ${renderModal()}
     `;
     const loginBtn = document.getElementById('loginBtn');
     const passwordInput = document.getElementById('passwordInput');
@@ -433,6 +609,7 @@
     passwordInput.addEventListener('keydown', (e)=>{
       if(e.key === 'Enter') loginBtn.click();
     });
+    bindModalEvents();
   }
 
   function renderPlayerRow(p){
@@ -440,29 +617,32 @@
     return `
       <tr>
         <td class="mono">${esc(p.id.slice(0,8))}</td>
-        <td>${esc(p.name)}${banned ? `<span class="badge danger">BAN中</span>` : ''}</td>
+        <td>
+          <button class="chatlog-user-link" data-view-user="${p.id}" data-user-name="${esc(p.name)}">${esc(p.name)}</button>
+          ${banned ? `<span class="badge danger">BAN中</span>` : ''}
+        </td>
         <td class="mono">${p.gold}</td>
         <td class="mono">${new Date(p.created_at).toLocaleDateString('ja-JP')}</td>
         <td>${banned ? `<span class="muted">${esc(p.ban_reason||'')}</span>` : '-'}</td>
-        <td><button data-ban-toggle="${p.id}" data-banned="${banned}" class="${banned?'':'danger'}">${banned?'解除':'BAN'}</button></td>
       </tr>
     `;
   }
 
   function renderPlayersTab(){
     const rows = playerListLoading
-      ? `<tr><td colspan="6">読み込み中……</td></tr>`
+      ? `<tr><td colspan="5">読み込み中……</td></tr>`
       : playerList.length
         ? playerList.map(renderPlayerRow).join('')
-        : `<tr><td colspan="6">該当するプレイヤーがいません。</td></tr>`;
+        : `<tr><td colspan="5">該当するプレイヤーがいません。</td></tr>`;
     return `
       <div class="toolbar">
         <input id="playerSearchInput" type="text" placeholder="名前で検索(部分一致)" value="${esc(playerQuery)}">
         <button id="playerSearchBtn">検索</button>
       </div>
+      <p class="muted" style="margin-bottom:12px;">一覧表示のみです。BAN・利用制限の操作は名前をクリックしてユーザー詳細画面から行ってください。</p>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>ID</th><th>名前</th><th>ゴールド</th><th>作成日</th><th>BAN理由</th><th></th></tr></thead>
+          <thead><tr><th>ID</th><th>名前</th><th>ゴールド</th><th>作成日</th><th>BAN理由</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -488,7 +668,7 @@
         ? banList.map(renderBanRow).join('')
         : `<tr><td colspan="5">BAN中のプレイヤーはいません。</td></tr>`;
     return `
-      <p class="muted" style="margin-bottom:12px;">閲覧専用です。BANの解除は「プレイヤー」タブから行ってください。</p>
+      <p class="muted" style="margin-bottom:12px;">閲覧専用です。BANの解除は、プレイヤー一覧やチャットログでユーザー名をクリックして開くユーザー詳細画面から行ってください。</p>
       <div class="table-scroll">
         <table>
           <thead><tr><th>ID</th><th>名前</th><th>ゴールド</th><th>BAN日時</th><th>BAN理由</th></tr></thead>
@@ -730,13 +910,142 @@
     `;
   }
 
+  function renderChatLogRow(m){
+    const actionOpen = chatLogOpenActionId === m.id;
+    const hasPlayer = !!m.player_id;
+    const nameHtml = hasPlayer
+      ? `<button class="chatlog-user-link" data-view-user="${m.player_id}" data-user-name="${esc(m.player_name)}">${esc(m.player_name)}</button>`
+      : `<strong>${esc(m.player_name)}</strong>`;
+    const rowHtml = `
+      <div class="chatlog-row">
+        <div class="chatlog-row-main">
+          <div class="chatlog-row-meta">
+            ${nameHtml}
+            <span class="mono muted">#${esc(m.player_id ? m.player_id.slice(0,8) : '-')}</span>
+            <span class="muted mono" style="margin-left:auto;">${new Date(m.created_at).toLocaleString('ja-JP')}</span>
+          </div>
+          <div class="chatlog-row-body">${esc(m.body)}</div>
+        </div>
+        <div class="chatlog-row-actions">
+          <button class="btn-sm danger" data-chatlog-delete="${m.id}">削除</button>
+          <button class="btn-sm" data-chatlog-toggle="${m.id}">${actionOpen ? '閉じる' : '通報'}</button>
+        </div>
+      </div>
+    `;
+    const expandHtml = actionOpen ? `
+      <div class="chatlog-row-expand">
+        ${hasPlayer ? `
+          <span class="muted" style="font-size:12px;">処分:</span>
+          <button class="btn-sm danger" data-chatlog-ban="${m.id}" data-player-id="${m.player_id}" data-player-name="${esc(m.player_name)}">BAN</button>
+          <button class="btn-sm" data-chatlog-penalty="${m.id}" data-player-id="${m.player_id}" data-player-name="${esc(m.player_name)}">ペナルティ</button>
+          <button class="btn-sm" data-chatlog-warn="${m.id}" data-player-id="${m.player_id}" data-player-name="${esc(m.player_name)}">警告</button>
+        ` : `<p class="muted" style="font-size:12px;margin:0;">投稿者アカウントが既に削除されているため、この投稿者への処分は行えません。</p>`}
+      </div>` : '';
+    return rowHtml + expandHtml;
+  }
+
+  function renderChatLogTab(){
+    const channelTabs = CHAT_LOG_CHANNELS.map(c=>
+      `<button data-chatlog-channel="${c.id}" class="${chatLogChannel===c.id?'primary':''}">${esc(c.name)}</button>`
+    ).join('');
+    const rows = chatLogLoading
+      ? '<p class="muted">読み込み中……</p>'
+      : chatLogMessages.length
+        ? chatLogMessages.map(renderChatLogRow).join('')
+        : `<p class="muted">直近${chatLogSinceDays}日以内の投稿はありません。</p>`;
+    return `
+      <div class="actions" style="margin-bottom:16px;">${channelTabs}</div>
+      <p class="muted" style="margin-bottom:12px;">直近${chatLogSinceDays}日分・新着順(最大500件)を表示しています。</p>
+      ${rows}
+      ${!chatLogLoading ? `<div class="actions" style="margin-top:8px;"><button id="chatLogExtendBtn">さらに30日遡る(合計${chatLogSinceDays+30}日分)</button></div>` : ''}
+    `;
+  }
+
+  function renderUserDetailScreen(){
+    const backBtnHtml = `<div class="actions" style="margin-bottom:16px;"><button id="userDetailBackBtn">← 戻る</button></div>`;
+    if(userDetailLoading || !userDetailData){
+      return `${backBtnHtml}<p class="muted">読み込み中……</p>`;
+    }
+    const p = userDetailData.player;
+    if(!p){
+      return `${backBtnHtml}<p class="muted">ユーザー情報を取得できませんでした。</p>`;
+    }
+    const banned = !!p.banned_at;
+    const penaltyActive = p.penalty_until && new Date(p.penalty_until) > new Date();
+    const messagesHtml = userDetailData.messages.length
+      ? userDetailData.messages.map(m=>{
+          const channelName = (CHAT_LOG_CHANNELS.find(c=>c.id===m.channel) || {}).name || m.channel;
+          return `
+            <div class="chatlog-row">
+              <div class="chatlog-row-main">
+                <div class="chatlog-row-meta">
+                  <span class="tag" style="margin:0;">${esc(channelName)}</span>
+                  <span class="muted mono" style="margin-left:auto;">${new Date(m.created_at).toLocaleString('ja-JP')}</span>
+                </div>
+                <div class="chatlog-row-body">${esc(m.body)}</div>
+              </div>
+            </div>
+          `;
+        }).join('')
+      : '<p class="muted">投稿履歴はありません。</p>';
+
+    return `
+      ${backBtnHtml}
+      <div class="panel">
+        <h3>${esc(p.name)} <span class="mono muted" style="font-size:12px;">#${esc(p.id)}</span></h3>
+        <p style="font-size:13px;">
+          ゴールド: <span class="mono">${p.gold}</span> ・
+          作成日: <span class="mono">${new Date(p.created_at).toLocaleDateString('ja-JP')}</span>
+          ${banned ? `<span class="badge danger">BAN中</span>` : ''}
+          ${penaltyActive ? `<span class="badge gold">利用制限中</span>` : ''}
+          ${p.warning_count > 0 ? `<span class="badge gold">警告${p.warning_count}回</span>` : ''}
+        </p>
+        ${banned ? `<p class="muted" style="font-size:12px;">BAN理由: ${esc(p.ban_reason||'')}</p>` : ''}
+        ${penaltyActive ? `<p class="muted" style="font-size:12px;">制限理由: ${esc(p.penalty_reason||'')} / 解除予定: ${new Date(p.penalty_until).toLocaleString('ja-JP')}</p>` : ''}
+        <div class="actions">
+          <button data-userdetail-ban="${p.id}" data-banned="${banned}" class="${banned?'':'danger'}">${banned?'BAN解除':'BAN'}</button>
+          ${penaltyActive
+            ? `<button data-userdetail-penalty-lift="${p.id}">利用制限を解除</button>`
+            : `<button data-userdetail-penalty="${p.id}">利用制限を設定</button>`}
+        </div>
+      </div>
+      <div class="panel">
+        <h3>チャット投稿履歴(直近50件・全チャンネル)</h3>
+        ${messagesHtml}
+      </div>
+    `;
+  }
+
+  function renderModal(){
+    if(!modal) return '';
+    const isAlert = modal.kind === 'alert';
+    const isPrompt = modal.kind === 'prompt';
+    const inputHtml = isPrompt ? `<input id="modalPromptInput" type="text" value="${esc(modal.defaultValue)}">` : '';
+    const buttonsHtml = isAlert
+      ? `<button id="modalOkBtn" class="primary">OK</button>`
+      : `<button id="modalCancelBtn">キャンセル</button><button id="modalOkBtn" class="primary">OK</button>`;
+    return `
+      <div class="modal-backdrop" id="modalBackdrop">
+        <div class="modal-box">
+          <p style="white-space:pre-wrap;margin:0;">${esc(modal.message)}</p>
+          ${inputHtml}
+          <div class="actions" style="justify-content:flex-end;margin-top:16px;">
+            ${buttonsHtml}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderTabContent(){
+    if(userDetail) return renderUserDetailScreen();
     switch(tab){
       case 'players': return renderPlayersTab();
       case 'announcements': return renderAnnouncementsTab();
       case 'reports': return renderReportsTab();
       case 'banlist': return renderBanListTab();
       case 'penaltylist': return renderPenaltyListTab();
+      case 'chatlog': return renderChatLogTab();
       default: return '';
     }
   }
@@ -754,10 +1063,40 @@
         <button data-tab="reports" class="${tab==='reports'?'primary':''}">通報${openReportCount>0 ? `<span class="badge danger">${openReportCount}</span>` : ''}</button>
         <button data-tab="banlist" class="${tab==='banlist'?'primary':''}">BANリスト</button>
         <button data-tab="penaltylist" class="${tab==='penaltylist'?'primary':''}">利用制限リスト</button>
+        <button data-tab="chatlog" class="${tab==='chatlog'?'primary':''}">チャットログ</button>
       </nav>
       <main>${renderTabContent()}</main>
+      ${renderModal()}
     `;
     bindEvents();
+  }
+
+  function bindModalEvents(){
+    if(!modal) return;
+    const backdrop = document.getElementById('modalBackdrop');
+    const okBtn = document.getElementById('modalOkBtn');
+    const cancelBtn = document.getElementById('modalCancelBtn');
+    const input = document.getElementById('modalPromptInput');
+    if(backdrop) backdrop.addEventListener('click', (e)=>{
+      if(e.target === backdrop) resolveModal(modal.kind === 'prompt' ? null : false);
+    });
+    if(okBtn) okBtn.addEventListener('click', ()=>{
+      if(modal.kind === 'prompt') resolveModal(input ? input.value : '');
+      else resolveModal(true);
+    });
+    if(cancelBtn) cancelBtn.addEventListener('click', ()=>{
+      resolveModal(modal.kind === 'prompt' ? null : false);
+    });
+    if(input){
+      input.focus();
+      input.select();
+      input.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){ e.preventDefault(); okBtn.click(); }
+        if(e.key === 'Escape'){ e.preventDefault(); cancelBtn.click(); }
+      });
+    } else if(okBtn){
+      okBtn.focus();
+    }
   }
 
   function bindEvents(){
@@ -765,7 +1104,12 @@
     if(logoutBtn) logoutBtn.addEventListener('click', handleLogout);
 
     document.querySelectorAll('[data-tab]').forEach(b=>{
-      b.addEventListener('click', ()=>{ tab = b.getAttribute('data-tab'); render(); });
+      b.addEventListener('click', ()=>{
+        tab = b.getAttribute('data-tab');
+        userDetail = null; userDetailData = null;
+        render();
+        if(tab === 'chatlog') loadChatLog();
+      });
     });
 
     const searchBtn = document.getElementById('playerSearchBtn');
@@ -776,45 +1120,32 @@
     });
     if(searchInput) searchInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') searchBtn.click(); });
 
-    document.querySelectorAll('[data-ban-toggle]').forEach(b=>{
-      b.addEventListener('click', ()=>{
-        const id = b.getAttribute('data-ban-toggle');
-        const currentlyBanned = b.getAttribute('data-banned') === 'true';
-        if(currentlyBanned){
-          if(confirm('BANを解除しますか？')) setBan(id, false, null);
-        } else {
-          const reason = prompt('BAN理由を入力してください:');
-          if(reason !== null) setBan(id, true, reason);
-        }
-      });
-    });
-
     document.querySelectorAll('[data-penalty-change]').forEach(b=>{
-      b.addEventListener('click', ()=>{
+      b.addEventListener('click', async ()=>{
         const id = b.getAttribute('data-penalty-change');
-        const hoursStr = prompt('新しい制限時間を入力してください(時間単位。今からこの時間後が新しい解除予定になります):', '24');
+        const hoursStr = await showPrompt('新しい制限時間を入力してください(時間単位。今からこの時間後が新しい解除予定になります):', '24');
         if(hoursStr === null) return;
         const hours = parseInt(hoursStr, 10);
-        if(!hours || hours <= 0){ alert('有効な時間を入力してください。'); return; }
-        const reason = prompt('制限理由を入力してください(空欄可):', '');
+        if(!hours || hours <= 0){ await showAlert('有効な時間を入力してください。'); return; }
+        const reason = await showPrompt('制限理由を入力してください(空欄可):', '');
         if(reason === null) return;
-        if(!confirm(`${hours}時間後を新しい解除予定として設定します。よろしいですか？`)) return;
+        if(!(await showConfirm(`${hours}時間後を新しい解除予定として設定します。よろしいですか？`))) return;
         setPenalty(id, hours, reason);
       });
     });
     document.querySelectorAll('[data-penalty-lift]').forEach(b=>{
-      b.addEventListener('click', ()=>{
+      b.addEventListener('click', async ()=>{
         const id = b.getAttribute('data-penalty-lift');
-        if(!confirm('この利用制限を解除しますか？')) return;
+        if(!(await showConfirm('この利用制限を解除しますか？'))) return;
         setPenalty(id, null, null);
       });
     });
     document.querySelectorAll('[data-penalty-ban]').forEach(b=>{
-      b.addEventListener('click', ()=>{
+      b.addEventListener('click', async ()=>{
         const id = b.getAttribute('data-penalty-ban');
-        const reason = prompt('BAN理由を入力してください:', '利用制限中の違反によるBAN');
+        const reason = await showPrompt('BAN理由を入力してください:', '利用制限中の違反によるBAN');
         if(reason === null) return;
-        if(!confirm('このユーザーをBANします。よろしいですか？')) return;
+        if(!(await showConfirm('このユーザーをBANします。よろしいですか？'))) return;
         setBan(id, true, reason);
       });
     });
@@ -916,21 +1247,83 @@
       });
     });
 
+    document.querySelectorAll('[data-chatlog-channel]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        chatLogChannel = b.getAttribute('data-chatlog-channel');
+        chatLogSinceDays = 30;
+        chatLogOpenActionId = null;
+        loadChatLog();
+      });
+    });
+    const chatLogExtendBtn = document.getElementById('chatLogExtendBtn');
+    if(chatLogExtendBtn) chatLogExtendBtn.addEventListener('click', ()=>{
+      chatLogSinceDays += 30;
+      loadChatLog();
+    });
+    document.querySelectorAll('[data-chatlog-delete]').forEach(b=>{
+      b.addEventListener('click', ()=>{ deleteChatMessage(Number(b.getAttribute('data-chatlog-delete'))); });
+    });
+    document.querySelectorAll('[data-chatlog-toggle]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = Number(b.getAttribute('data-chatlog-toggle'));
+        chatLogOpenActionId = chatLogOpenActionId === id ? null : id;
+        render();
+      });
+    });
+    document.querySelectorAll('[data-chatlog-ban]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        banPlayerFromChatLog(b.getAttribute('data-player-id'), b.getAttribute('data-player-name'));
+      });
+    });
+    document.querySelectorAll('[data-chatlog-penalty]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        penalizePlayerFromChatLog(b.getAttribute('data-player-id'), b.getAttribute('data-player-name'));
+      });
+    });
+    document.querySelectorAll('[data-chatlog-warn]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        warnPlayerFromChatLog(b.getAttribute('data-player-id'), b.getAttribute('data-player-name'));
+      });
+    });
+
+    document.querySelectorAll('[data-view-user]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        openUserDetail(b.getAttribute('data-view-user'), b.getAttribute('data-user-name'));
+      });
+    });
+    const userDetailBackBtn = document.getElementById('userDetailBackBtn');
+    if(userDetailBackBtn) userDetailBackBtn.addEventListener('click', closeUserDetail);
+    document.querySelectorAll('[data-userdetail-ban]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        toggleBanFromUserDetail(b.getAttribute('data-userdetail-ban'), b.getAttribute('data-banned') === 'true');
+      });
+    });
+    document.querySelectorAll('[data-userdetail-penalty]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        setPenaltyFromUserDetail(b.getAttribute('data-userdetail-penalty'), false);
+      });
+    });
+    document.querySelectorAll('[data-userdetail-penalty-lift]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        setPenaltyFromUserDetail(b.getAttribute('data-userdetail-penalty-lift'), true);
+      });
+    });
+
     const saveBtn = document.getElementById('annSaveBtn');
-    if(saveBtn) saveBtn.addEventListener('click', ()=>{
+    if(saveBtn) saveBtn.addEventListener('click', async ()=>{
       const title = document.getElementById('annTitle').value.trim();
       const body = document.getElementById('annBody').value.trim();
       const tags = document.getElementById('annTags').value;
       const publishedAt = document.getElementById('annPublishedAt').value;
       const senderName = document.getElementById('annSender').value.trim();
-      if(!title || !body){ alert('タイトルと本文は必須です。'); return; }
+      if(!title || !body){ await showAlert('タイトルと本文は必須です。'); return; }
       if(announcementDetail.isPersonalNew){
         if(recipientSearchQuery.trim()){
-          alert('宛先の入力欄に未確定の文字列が残っています。候補から選択するか、入力欄を空にしてください。');
+          await showAlert('宛先の入力欄に未確定の文字列が残っています。候補から選択するか、入力欄を空にしてください。');
           return;
         }
         if(!announcementDetail.recipients.length){
-          alert('宛先を1人以上選択してください。');
+          await showAlert('宛先を1人以上選択してください。');
           return;
         }
       }
@@ -941,6 +1334,8 @@
     });
     const cancelBtn = document.getElementById('annCancelBtn');
     if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ announcementDetail = null; render(); });
+
+    bindModalEvents();
   }
 
   init();
