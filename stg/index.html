@@ -81,6 +81,21 @@
   .badge-resources{display:flex;align-items:center;gap:12px;}
   .badge-resource{color:var(--gold);font-size:14px;font-weight:700;white-space:nowrap;}
 
+  /* 合成画面のオーブ所持数チップ。装備一覧のレアリティ色(border-left)と
+   * 揃え、名前と数字の役割を色で分離する。 */
+  .orb-chip-row{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0;}
+  .orb-chip{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:5px 10px;font-size:12px;white-space:nowrap;
+    background:var(--win-bg-2);border:1px solid var(--win-border-inner);
+    border-left:3px solid var(--text-muted);
+  }
+  .orb-chip.uncommon{border-left-color:var(--rare-uncommon);}
+  .orb-chip.rare{border-left-color:var(--rare-rare);}
+  .orb-chip.epic{border-left-color:var(--rare-epic);}
+  .orb-chip-label{color:var(--text-muted);}
+  .orb-chip-count{color:var(--gold);font-family:var(--font-mono);font-weight:700;}
+
   .layout{display:grid;grid-template-columns:minmax(0,1fr) 300px 300px;gap:22px;align-items:start;}
   @media (max-width:1180px){.layout{grid-template-columns:minmax(0,1fr) 250px 250px;gap:16px;}}
   @media (max-width:900px){.layout{grid-template-columns:1fr;}}
@@ -6489,8 +6504,7 @@
   function renderMarketBuyEquipList(){
     const sortMode = (state.ui && state.ui.marketEquipSort) || 'rarity_desc';
     const sorted = sortMarketEquipListings(marketData.equipListings, sortMode);
-    const selectHtml = renderMarketEquipSortSelect(sortMode);
-    const rowsHtml = sorted.length ? sorted.map(row=>{
+    return sorted.length ? sorted.map(row=>{
       const snap = row.item_snapshot;
       const item = marketItemFromSnapshot(snap);
       return `
@@ -6499,10 +6513,6 @@
         <span class="inv-item-actions" style="color:var(--gold);font-family:var(--font-mono);font-weight:700;">${row.price_per_unit}G</span>
       </div>`;
     }).join('') : `<p class="inv-empty">現在出品されている装備は無い。</p>`;
-    return `
-      <div class="actions" style="margin-top:0;margin-bottom:14px;">${selectHtml}</div>
-      ${rowsHtml}
-    `;
   }
   function renderMarketBuyPanel(){
     if(!marketData || marketData.loading){
@@ -6513,13 +6523,15 @@
     }
     const subTab = (state.ui && state.ui.marketBuySubTab) || 'stack';
     const bookOpen = !!(state.ui && state.ui.marketStackBookOpen);
+    const equipSortHtml = (subTab === 'equip' && !bookOpen)
+      ? renderMarketEquipSortSelect((state.ui && state.ui.marketEquipSort) || 'rarity_desc') : '';
     const subTabHtml = (subTab === 'stack' && bookOpen) ? '' : `
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
         <div class="tab-strip sub" style="margin-top:0;">
           <button data-market-buy-sub="stack" class="${subTab==='stack'?'active':''}">素材・アイテム</button>
           <button data-market-buy-sub="equip" class="${subTab==='equip'?'active':''}">装備</button>
         </div>
-        <button data-market-refresh style="margin-left:auto;">更新</button>
+        ${equipSortHtml}
       </div>`;
     let contentHtml;
     if(subTab === 'equip') contentHtml = renderMarketBuyEquipList();
@@ -6695,6 +6707,7 @@
       </div>
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
+        <button data-market-refresh style="margin-left:auto;">更新</button>
       </div>
       <div class="tab-strip">
         ${tabBtn('buy','購入する')}
@@ -6975,11 +6988,22 @@
   }
 
   /* ---------------- 合成: 装備強化画面 ---------------- */
+  /* オーブの所持数表示。以前は「コモンオーブ 0 アンコモンオーブ 0 ...」と
+   * 同じ太さのテキストを横に並べていたため、どこが名前でどこが数字か
+   * 読み取りづらかった。装備のレアリティ表示(.inv-item.rarity系クラス)
+   * と同じ配色のチップに分け、名前(控えめな色)と数字(ゴールド)を
+   * 分離することで、幅を抑えつつ一目で数量を追えるようにする。 */
   function renderOrbSummary(){
-    return Object.keys(RARITY).map(key=>{
+    const chips = Object.keys(RARITY).map(key=>{
       const count = (state.orbs && state.orbs[key]) || 0;
-      return `<span class="badge-resource" title="${esc(RARITY[key].label)}のオーブ">${esc(RARITY[key].label)}オーブ ${count}</span>`;
-    }).join(' ');
+      const r = RARITY[key];
+      return `
+        <span class="orb-chip ${r.cls}" title="${esc(r.label)}のオーブ">
+          <span class="orb-chip-label">${esc(r.label)}</span>
+          <span class="orb-chip-count">${count}</span>
+        </span>`;
+    }).join('');
+    return `<div class="orb-chip-row">${chips}</div>`;
   }
 
   function renderEnhanceItemRow({item, equippedBy}){
@@ -7004,26 +7028,34 @@
     state.ui.enhanceTab = tab;
     render();
   }
+  function setEnhanceSort(mode){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.enhanceSort = mode;
+    render();
+  }
   function renderEnhanceInner(){
     const owned = allOwnedItemsWithEquipInfo();
     const weapons = owned.filter(x=>x.item.type==='weapon');
     const armors = owned.filter(x=>x.item.type==='armor');
     const tab = (state.ui && state.ui.enhanceTab) === 'armor' ? 'armor' : 'weapon';
-    const rows = tab === 'armor'
-      ? (armors.length ? armors.map(renderEnhanceItemRow).join('') : '<p class="inv-empty">強化できる防具がない。</p>')
-      : (weapons.length ? weapons.map(renderEnhanceItemRow).join('') : '<p class="inv-empty">強化できる武器がない。</p>');
+    const sortMode = (state.ui && state.ui.enhanceSort) || INVENTORY_SORT_DEFAULT;
+    const sorted = applyInventorySort(tab === 'armor' ? armors : weapons, sortMode, x => RARITY_SORT_ORDER[x.item.rarity] || 0);
+    const rows = sorted.length ? sorted.map(renderEnhanceItemRow).join('') : `<p class="inv-empty">強化できる${tab==='armor'?'防具':'武器'}がない。</p>`;
 
     return `
       <div class="scene-text">
         ${sceneHeadingHtml('合成', helpButtonHtml('enhance'))}
-        <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--gold);">${renderOrbSummary()}</p>
       </div>
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
       </div>
-      <div class="tab-strip">
-        <button data-enhance-tab="weapon" class="${tab==='weapon'?'active':''}">武器</button>
-        <button data-enhance-tab="armor" class="${tab==='armor'?'active':''}">防具</button>
+      ${renderOrbSummary()}
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div class="tab-strip" style="margin-top:0;">
+          <button data-enhance-tab="weapon" class="${tab==='weapon'?'active':''}">武器</button>
+          <button data-enhance-tab="armor" class="${tab==='armor'?'active':''}">防具</button>
+        </div>
+        ${renderSortSelect('enhanceSortSelect', sortMode)}
       </div>
       <div class="section-block">
         ${rows}
@@ -7053,15 +7085,42 @@
     state.ui.alchemyTab = cat;
     render();
   }
+  /* 錬金には「新着順」のような概念が無い(取得順を記録していない)ため、
+   * ソートは独自に「錬成できる順」(材料が揃っているものを先に)と
+   * 「一覧順」(定義順のまま)の2択とする。 */
+  const ALCHEMY_SORT_DEFAULT = 'craftable_first';
+  const ALCHEMY_SORT_OPTIONS = [
+    { value:'craftable_first', label:'錬成できる順' },
+    { value:'default',         label:'一覧順' },
+  ];
+  function renderAlchemySortSelect(current){
+    const options = ALCHEMY_SORT_OPTIONS.map(o=>
+      `<option value="${o.value}" ${current===o.value?'selected':''}>${esc(o.label)}</option>`
+    ).join('');
+    return `<select id="alchemySortSelect" style="margin-left:auto;min-width:0;flex:0 1 auto;font-size:11px;padding:4px 4px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${options}</select>`;
+  }
+  function setAlchemySort(mode){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.alchemySort = mode;
+    render();
+  }
   function renderAlchemyInner(){
     const categories = [];
     ALCHEMY_RECIPES.forEach(r=>{ if(!categories.includes(r.category)) categories.push(r.category); });
     const activeCat = categories.includes(state.ui && state.ui.alchemyTab) ? state.ui.alchemyTab : categories[0];
+    const sortMode = (state.ui && state.ui.alchemySort) || ALCHEMY_SORT_DEFAULT;
     const tabStripHtml = `
-      <div class="tab-strip">
-        ${categories.map(cat=>`<button data-alchemy-tab="${esc(cat)}" class="${activeCat===cat?'active':''}">${esc(cat)}</button>`).join('')}
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div class="tab-strip" style="margin-top:0;">
+          ${categories.map(cat=>`<button data-alchemy-tab="${esc(cat)}" class="${activeCat===cat?'active':''}">${esc(cat)}</button>`).join('')}
+        </div>
+        ${renderAlchemySortSelect(sortMode)}
       </div>`;
-    const rows = ALCHEMY_RECIPES.filter(r=>r.category===activeCat).map(renderRecipeRow).join('');
+    let recipes = ALCHEMY_RECIPES.filter(r=>r.category===activeCat);
+    if(sortMode === 'craftable_first'){
+      recipes = [...recipes].sort((a,b)=> (canAffordRecipe(b)?1:0) - (canAffordRecipe(a)?1:0));
+    }
+    const rows = recipes.map(renderRecipeRow).join('');
 
     return `
       <div class="scene-text">
@@ -8691,6 +8750,10 @@
       state.ui.rosterSort = e.target.value;
       render();
     });
+    const enhanceSortSelect = document.getElementById('enhanceSortSelect');
+    if(enhanceSortSelect) enhanceSortSelect.addEventListener('change', (e)=>setEnhanceSort(e.target.value));
+    const alchemySortSelect = document.getElementById('alchemySortSelect');
+    if(alchemySortSelect) alchemySortSelect.addEventListener('change', (e)=>setAlchemySort(e.target.value));
     document.querySelectorAll('[data-chat-channel]').forEach(b=>{
       b.addEventListener('click', ()=>switchChatChannel(b.getAttribute('data-chat-channel')));
     });
