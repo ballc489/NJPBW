@@ -174,6 +174,24 @@
   .scene-text .log-entry.dialogue{color:#c9b8ff;font-style:italic;}
 
   .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;}
+
+  /* タブ切り替え用のUI。ボタン群(.actions)とは見た目を分け、下線で
+   * 現在位置を示す形にする(詳細/台詞の切り替え、台詞タブ内の
+   * 共通/ジョブ別の切り替えで使用)。 */
+  .tab-strip{display:flex;gap:2px;margin-top:16px;border-bottom:2px solid var(--win-border-inner);flex-wrap:wrap;}
+  .tab-strip button{
+    background:none;border:none;box-shadow:none;border-radius:0;
+    padding:8px 16px;margin-bottom:-2px;
+    border-bottom:3px solid transparent;
+    color:var(--text-muted);font-weight:400;
+    transition:color .1s, border-color .1s;
+  }
+  .tab-strip button:hover:not(:disabled):not(.active){color:var(--text-primary);background:none;padding-left:16px;}
+  .tab-strip button.active{color:var(--gold);border-bottom-color:var(--gold);font-weight:600;}
+  .tab-strip button:disabled{opacity:.4;cursor:not-allowed;}
+  .tab-strip.sub{border-bottom:1px solid var(--win-border-inner);margin-top:12px;}
+  .tab-strip.sub button{padding:6px 12px;font-size:12px;}
+  .save-flash{color:var(--buff);font-size:12px;font-weight:600;}
   button{
     font-family:var(--font-body);font-size:14px;
     background:linear-gradient(180deg,var(--win-bg-1),var(--win-bg-2));
@@ -3135,7 +3153,7 @@
       ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
         marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
-        rosterDetailId: null, rosterDetailFrom: 'roster', liverDetailTab: 'detail',
+        rosterDetailId: null, rosterDetailFrom: 'roster', liverDetailTab: 'detail', dialogueSubTab: 'common',
         profileViewId: null, profileFrom: 'town', profileLiverId: null,
         profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null,
         staminaPopupOpen: false },
@@ -3978,7 +3996,7 @@
         ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
         marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
-        rosterDetailId: null, rosterDetailFrom: 'roster', liverDetailTab: 'detail',
+        rosterDetailId: null, rosterDetailFrom: 'roster', liverDetailTab: 'detail', dialogueSubTab: 'common',
         profileViewId: null, profileFrom: 'town', profileLiverId: null,
         profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null,
         staminaPopupOpen: false },
@@ -4122,29 +4140,45 @@
     firedMap[fireKey] = true;
     pushLog(`${liverDef(id).name}「${slot.text}」`, 'dialogue');
   }
-  /* 台詞タブの保存ボタン。画面上の全行(data-dialogue-row)をまとめて
-   * 読み取り、ls.dialoguesを丸ごと置き換える(空文字の行は保存しない=
-   * 未設定扱いに戻せるようにするため)。 */
+  /* 台詞タブは「共通」「ジョブ別スキル」をサブタブで切り替える構成の
+   * ため、DOM上には常に1サブタブ分の入力欄しか存在しない。サブタブを
+   * 切り替える直前と保存ボタン押下時にこの関数を呼び、画面上の行
+   * (data-dialogue-row)だけをls.dialoguesへ書き戻す(他のサブタブ分の
+   * データは触らないので消えない)。空文字にした行はその項目を削除し、
+   * 未設定表示に戻せるようにする。 */
+  function commitVisibleDialogueRowsToMemory(){
+    const id = state.ui.rosterDetailId;
+    const ls = id && liverState(id);
+    if(!ls) return;
+    if(!ls.dialogues || typeof ls.dialogues !== 'object') ls.dialogues = {};
+    if(!ls.dialogues.skills || typeof ls.dialogues.skills !== 'object') ls.dialogues.skills = {};
+    document.querySelectorAll('[data-dialogue-row]').forEach(rowEl=>{
+      const triggerKey = rowEl.getAttribute('data-dialogue-row');
+      const select = rowEl.querySelector('.dialogue-freq-select');
+      const freq = (select && select.value === 'always') ? 'always' : 'once';
+      const input = rowEl.querySelector('.dialogue-text-input');
+      const text = (input ? input.value : '').trim().slice(0, 30);
+      const isSkill = triggerKey.startsWith('skill:');
+      const bucket = isSkill ? ls.dialogues.skills : ls.dialogues;
+      const key = isSkill ? triggerKey.slice(6) : triggerKey;
+      if(text){
+        bucket[key] = { text, freq };
+      } else {
+        delete bucket[key];
+      }
+    });
+  }
+  /* 台詞タブの保存ボタン。保存後は一時的にstate.ui.dialogueSaveFlashを
+   * 立てて「保存しました」を表示し、少し経ったら消す。 */
   function saveLiverDialogues(){
     const id = state.ui.rosterDetailId;
     const ls = id && liverState(id);
     if(!ls) return;
-    const newDialogues = { skills: {} };
-    document.querySelectorAll('[data-dialogue-row]').forEach(rowEl=>{
-      const triggerKey = rowEl.getAttribute('data-dialogue-row');
-      const freq = rowEl.getAttribute('data-freq') === 'always' ? 'always' : 'once';
-      const input = rowEl.querySelector('.dialogue-text-input');
-      const text = (input ? input.value : '').trim().slice(0, 30);
-      if(!text) return;
-      if(triggerKey.startsWith('skill:')){
-        newDialogues.skills[triggerKey.slice(6)] = { text, freq };
-      } else {
-        newDialogues[triggerKey] = { text, freq };
-      }
-    });
-    ls.dialogues = newDialogues;
+    commitVisibleDialogueRowsToMemory();
     pushLog('台詞設定を保存した。', 'system');
+    state.ui.dialogueSaveFlash = true;
     saveGame(); render();
+    setTimeout(()=>{ state.ui.dialogueSaveFlash = false; render(); }, 1800);
   }
 
   /* ---------------- Core actions ---------------- */
@@ -7052,6 +7086,7 @@
     state.ui.rosterDetailId = id;
     state.ui.rosterDetailFrom = from === 'party' ? 'party' : 'roster';
     state.ui.liverDetailTab = 'detail';
+    state.ui.dialogueSubTab = 'common';
     state.screen = 'liverDetail';
     saveGame(); render();
   }
@@ -7311,9 +7346,9 @@
 
     const detailTab = state.ui.liverDetailTab === 'dialogue' ? 'dialogue' : 'detail';
     const tabSwitcherHtml = `
-      <div class="actions" style="margin-top:0;">
-        <button data-liver-detail-tab="detail" class="${detailTab==='detail'?'primary':''}">詳細</button>
-        <button data-liver-detail-tab="dialogue" class="${detailTab==='dialogue'?'primary':''}">台詞</button>
+      <div class="tab-strip">
+        <button data-liver-detail-tab="detail" class="${detailTab==='detail'?'active':''}">詳細</button>
+        <button data-liver-detail-tab="dialogue" class="${detailTab==='dialogue'?'active':''}">台詞</button>
       </div>`;
 
     if(detailTab === 'dialogue'){
@@ -7371,14 +7406,23 @@
   }
 
   /* 台詞タブ: 各トリガーごとに設定できる台詞と頻度(1戦闘/1回の探索に
-   * つき1回 or 毎回)を編集する画面。テキスト入力は保存ボタン押下時に
-   * まとめて読み取る方式とする(1文字入力ごとに再描画すると他の未保存
-   * の入力内容が消えてしまうため)。頻度切り替えボタンだけは再描画せず、
-   * DOM上のdata-freq属性とボタン文言を直接書き換える(saveLiverDialogues
-   * 参照)。 */
+   * つき1回 or 毎回)を編集する画面。
+   *
+   * 「共通」(勝利時などの固定5種)と「ジョブごと」(スキル使用時)を
+   * サブタブで切り替える構成のため、DOM上には常に1つのサブタブ分の
+   * 入力欄しか存在しない。そのため以下の方針を取る:
+   *   ・テキスト入力・頻度セレクトは、サブタブ切り替え時と保存時に
+   *     commitVisibleDialogueRowsToMemory()でls.dialoguesへ書き戻す
+   *     (画面に無い他のサブタブ分のデータを消さないため)。
+   *   ・保存ボタンはこの書き戻し関数を呼んだ上でsaveGame()する。
+   * 頻度はボタンではなくselectで選ばせ、保存後は一時的な
+   * state.ui.dialogueSaveFlash フラグで「保存しました」表示を出す。 */
   function renderLiverDialogueInner(id, unlocked){
     const dlgs = liverDialogues(id);
     const rowDomId = triggerKey => `dlgText_${triggerKey.replace(/[^a-zA-Z0-9]/g,'_')}`;
+    const jobIds = Object.keys(JOB_DEFS);
+    const subTab = (state.ui.dialogueSubTab === 'common' || jobIds.includes(state.ui.dialogueSubTab))
+      ? state.ui.dialogueSubTab : 'common';
 
     const row = (triggerKey, label, freqUnit) => {
       const slot = (triggerKey.startsWith('skill:')
@@ -7387,43 +7431,59 @@
       const freq = slot.freq === 'always' ? 'always' : 'once';
       const text = slot.text || '';
       return `
-        <div class="inv-item" data-dialogue-row="${triggerKey}" data-freq="${freq}" data-freq-unit="${esc(freqUnit)}">
+        <div class="inv-item" data-dialogue-row="${triggerKey}">
           <span class="inv-item-name">
             ${esc(label)}<br>
             <input class="name-input dialogue-text-input" id="${rowDomId(triggerKey)}" type="text" maxlength="30" placeholder="未設定(表示しない)" value="${esc(text)}" ${unlocked?'':'disabled'} style="margin-top:4px;">
           </span>
           <span class="inv-item-actions">
-            <button data-dialogue-freq-toggle="${triggerKey}" ${unlocked?'':'disabled'}>${freq==='always'?'毎回':`${esc(freqUnit)}に1回`}</button>
+            <select class="dialogue-freq-select" ${unlocked?'':'disabled'} style="background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);font-size:11px;padding:4px;">
+              <option value="once" ${freq!=='always'?'selected':''}>${esc(freqUnit)}に1回</option>
+              <option value="always" ${freq==='always'?'selected':''}>毎回</option>
+            </select>
           </span>
         </div>`;
     };
 
-    const fixedRowsHtml = [
-      row('victory', '勝利時(最後にダメージを与えたライバーの台詞が表示される)', '1戦闘'),
-      row('itemGet', 'アイテム発見時(戦闘中のドロップは対象外。編成中からランダムで1名)', '1回の探索'),
-      row('death', '戦闘不能になった時', '1戦闘'),
-      row('critDeal', 'クリティカルを与えた時', '1戦闘'),
-      row('critTaken', 'クリティカルを受けた時', '1戦闘'),
-    ].join('');
+    const subTabDefs = [{ key: 'common', label: '共通' }, ...jobIds.map(jobId=>({ key: jobId, label: JOB_DEFS[jobId].name }))];
+    const subTabBarHtml = `
+      <div class="tab-strip sub">
+        ${subTabDefs.map(t=>`<button data-dialogue-subtab="${t.key}" class="${subTab===t.key?'active':''}">${esc(t.label)}</button>`).join('')}
+      </div>`;
 
-    const skillRowsHtml = Object.keys(JOB_DEFS).map(jobId=>{
-      const jobDef = JOB_DEFS[jobId];
-      const rows = jobDef.skills.map(s=>row('skill:'+s.key, `${jobDef.name}「${s.name}」使用時`, '1戦闘')).join('');
-      return `
-        <div style="margin-bottom:10px;">
-          <p style="color:var(--text-muted);font-size:11px;margin:0 0 4px;">${esc(jobDef.name)}のスキル</p>
-          ${rows}
-        </div>`;
-    }).join('');
+    let contentHtml, noteHtml;
+    if(subTab === 'common'){
+      contentHtml = [
+        row('victory', '勝利時(最後にダメージを与えたライバーの台詞が表示される)', '1戦闘'),
+        row('itemGet', 'アイテム発見時(戦闘中のドロップは対象外。編成中からランダムで1名)', '1回の探索'),
+        row('death', '戦闘不能になった時', '1戦闘'),
+        row('critDeal', 'クリティカルを与えた時', '1戦闘'),
+        row('critTaken', 'クリティカルを受けた時', '1戦闘'),
+      ].join('');
+      noteHtml = '';
+    } else {
+      const jobDef = JOB_DEFS[subTab];
+      contentHtml = jobDef.skills.map(s=>row('skill:'+s.key, `「${s.name}」使用時`, '1戦闘')).join('');
+      noteHtml = `<p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">現在有効化しているスキルのみ実際にログへ表示される(無効なスキル分もあらかじめ設定しておくことは可能)。</p>`;
+    }
+
+    const saveBarHtml = unlocked ? `
+      <div class="actions" style="margin-top:10px;align-items:center;gap:10px;">
+        <button class="primary" data-save-dialogues>保存する</button>
+        <span class="save-flash" style="${state.ui.dialogueSaveFlash ? '' : 'visibility:hidden;'}">✓ 保存しました</span>
+      </div>` : '';
 
     return `
       <div class="section-block">
         <p class="section-label">台詞設定</p>
         <p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">条件を満たした時、ここで設定した台詞がログに「${esc(liverDef(id).name)}「台詞」」の形式で流れる。未設定の項目は何も表示されない。コロシアムタワーの防衛時は台詞は表示されない。全角30文字まで。</p>
-        ${fixedRowsHtml}
-        <p style="color:var(--text-muted);font-size:11px;margin:10px 0 4px;">スキル使用時の台詞は、現在有効化しているスキルのみ実際にログへ表示される(無効なスキル分もあらかじめ設定しておくことは可能)。</p>
-        ${skillRowsHtml}
-        ${unlocked ? `<div class="actions" style="margin-top:10px;"><button id="saveDialoguesBtn" class="primary">保存する</button></div>` : ''}
+        ${saveBarHtml}
+        ${subTabBarHtml}
+        <div style="margin-top:10px;">
+          ${noteHtml}
+          ${contentHtml}
+        </div>
+        ${saveBarHtml}
       </div>
     `;
   }
@@ -8702,25 +8762,28 @@
     });
     document.querySelectorAll('[data-liver-detail-tab]').forEach(b=>{
       b.addEventListener('click', ()=>{
+        /* 台詞タブから離れる時は、画面上の入力内容をls.dialoguesへ
+         * 書き戻しておく(保存ボタンを押さずに詳細タブへ戻っても、
+         * 再度台詞タブを開いた時に入力内容が残るようにするため。
+         * ただしサーバーへの保存は保存ボタンを押した時だけ)。 */
+        if(state.ui.liverDetailTab === 'dialogue') commitVisibleDialogueRowsToMemory();
         state.ui.liverDetailTab = b.getAttribute('data-liver-detail-tab');
         render();
       });
     });
-    /* 頻度切り替えは再描画せず、DOM上のdata-freq属性とボタン文言だけを
-     * 直接書き換える(再描画すると他の未保存のテキスト入力が消えるため。
-     * saveLiverDialoguesを参照)。 */
-    document.querySelectorAll('[data-dialogue-freq-toggle]').forEach(b=>{
+    /* 台詞タブ内のサブタブ(共通/ジョブ別)切り替え。切り替え前に画面上の
+     * 入力内容をls.dialoguesへ書き戻してから切り替える(でないと今見えて
+     * いないサブタブの内容がls.dialoguesに反映されないまま消える)。 */
+    document.querySelectorAll('[data-dialogue-subtab]').forEach(b=>{
       b.addEventListener('click', ()=>{
-        const triggerKey = b.getAttribute('data-dialogue-freq-toggle');
-        const rowEl = b.closest('[data-dialogue-row]');
-        if(!rowEl) return;
-        const newFreq = rowEl.getAttribute('data-freq') === 'always' ? 'once' : 'always';
-        rowEl.setAttribute('data-freq', newFreq);
-        const unit = rowEl.getAttribute('data-freq-unit') || '1戦闘';
-        b.textContent = newFreq === 'always' ? '毎回' : `${unit}に1回`;
+        commitVisibleDialogueRowsToMemory();
+        state.ui.dialogueSubTab = b.getAttribute('data-dialogue-subtab');
+        render();
       });
     });
-    on('saveDialoguesBtn', saveLiverDialogues);
+    document.querySelectorAll('[data-save-dialogues]').forEach(b=>{
+      b.addEventListener('click', saveLiverDialogues);
+    });
 
     on('gotoMarketBtn', gotoMarket);
     document.querySelectorAll('[data-market-tab]').forEach(b=>{
