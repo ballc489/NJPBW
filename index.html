@@ -81,6 +81,21 @@
   .badge-resources{display:flex;align-items:center;gap:12px;}
   .badge-resource{color:var(--gold);font-size:14px;font-weight:700;white-space:nowrap;}
 
+  /* 合成画面のオーブ所持数チップ。装備一覧のレアリティ色(border-left)と
+   * 揃え、名前と数字の役割を色で分離する。 */
+  .orb-chip-row{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0;}
+  .orb-chip{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:5px 10px;font-size:12px;white-space:nowrap;
+    background:var(--win-bg-2);border:1px solid var(--win-border-inner);
+    border-left:3px solid var(--text-muted);
+  }
+  .orb-chip.uncommon{border-left-color:var(--rare-uncommon);}
+  .orb-chip.rare{border-left-color:var(--rare-rare);}
+  .orb-chip.epic{border-left-color:var(--rare-epic);}
+  .orb-chip-label{color:var(--text-muted);}
+  .orb-chip-count{color:var(--gold);font-family:var(--font-mono);font-weight:700;}
+
   .layout{display:grid;grid-template-columns:minmax(0,1fr) 300px 300px;gap:22px;align-items:start;}
   @media (max-width:1180px){.layout{grid-template-columns:minmax(0,1fr) 250px 250px;gap:16px;}}
   @media (max-width:900px){.layout{grid-template-columns:1fr;}}
@@ -171,8 +186,27 @@
   .scene-text .log-entry.reward{color:var(--gold);}
   .scene-text .log-entry.danger{color:var(--danger);}
   .scene-text .log-entry.system{color:var(--text-muted);}
+  .scene-text .log-entry.dialogue{color:#c9b8ff;font-style:italic;}
 
   .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;}
+
+  /* タブ切り替え用のUI。ボタン群(.actions)とは見た目を分け、下線で
+   * 現在位置を示す形にする(詳細/台詞の切り替え、台詞タブ内の
+   * 共通/ジョブ別の切り替えで使用)。 */
+  .tab-strip{display:flex;gap:2px;margin-top:16px;border-bottom:2px solid var(--win-border-inner);flex-wrap:wrap;}
+  .tab-strip button{
+    background:none;border:none;box-shadow:none;border-radius:0;
+    padding:8px 16px;margin-bottom:-2px;
+    border-bottom:3px solid transparent;
+    color:var(--text-muted);font-weight:400;
+    transition:color .1s, border-color .1s;
+  }
+  .tab-strip button:hover:not(:disabled):not(.active){color:var(--text-primary);background:none;padding-left:16px;}
+  .tab-strip button.active{color:var(--gold);border-bottom-color:var(--gold);font-weight:600;}
+  .tab-strip button:disabled{opacity:.4;cursor:not-allowed;}
+  .tab-strip.sub{border-bottom:1px solid var(--win-border-inner);margin-top:12px;}
+  .tab-strip.sub button{padding:6px 12px;font-size:12px;}
+  .save-flash{color:var(--buff);font-size:12px;font-weight:600;}
   button{
     font-family:var(--font-body);font-size:14px;
     background:linear-gradient(180deg,var(--win-bg-1),var(--win-bg-2));
@@ -240,6 +274,7 @@
   .history-log .reward{color:var(--gold);}
   .history-log .danger{color:var(--danger);}
   .history-log .system{color:var(--text-muted);}
+  .history-log .dialogue{color:#c9b8ff;font-style:italic;}
 
   .inventory-scroll{max-height:280px;}
   .equip-picker-scroll{max-height:min(50vh, 420px);}
@@ -2539,6 +2574,7 @@
           ? Math.max(1, Math.round(atk * effect.amount * (isCrit?CRIT_MULT:1)) + rnd(-1,2))
           : Math.max(1, Math.round(atk * effect.amount) - liverDefStat(target) + rnd(-1,1));
         const dmg = applyDamageToLiver(target, raw, effect.element);
+        if(isCrit) playLiverDialogue(target, 'critTaken', combatDialogueFired);
         pushLog(`${isCrit?'痛恨の一撃！ ':''}${combatEnemy.name}の攻撃！ ${targetName}が ${dmg} のダメージを受けた。`, 'danger', true);
         if(effect.drainRatio){
           const healed = Math.max(0, Math.round(dmg * effect.drainRatio));
@@ -2567,6 +2603,8 @@
           raw = Math.max(1, Math.round((atk - def) * mult * affixMult) + rnd(-1,2));
         }
         combatEnemyHp -= raw;
+        lastDamagerId = casterId;
+        if(isCrit) playLiverDialogue(casterId, 'critDeal', combatDialogueFired);
         const drained = applyOnHitMpDrain(casterId, raw);
         const drainSuffix = drained > 0 ? ` (MP+${drained})` : '';
         const critPrefix = isCrit ? '会心の一撃！ ' : '';
@@ -3103,7 +3141,8 @@
       unlocked: !!liverDefObj.startUnlocked,
       unlockedAt: liverDefObj.startUnlocked ? Date.now() : null,
       costume: defaultCostume,
-      unlockedCostumes: defaultCostume ? [defaultCostume] : []
+      unlockedCostumes: defaultCostume ? [defaultCostume] : [],
+      dialogues: {} // 台詞設定。{victory,itemGet,death,critDeal,critTaken,skills:{skillKey:{text,freq}}}
     };
   }
 
@@ -3129,7 +3168,7 @@
       ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
         marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
-        rosterDetailId: null, rosterDetailFrom: 'roster',
+        rosterDetailId: null, rosterDetailFrom: 'roster', liverDetailTab: 'detail', dialogueSubTab: 'common',
         profileViewId: null, profileFrom: 'town', profileLiverId: null,
         profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null,
         staminaPopupOpen: false },
@@ -3762,7 +3801,8 @@
           loadout: jp.loadout.enabled, unlocked: !!r.unlocked,
           job_progress: r.jobProgress,
           costume: r.costume || defaultCostumeKeyFor(def.id),
-          unlocked_costumes: r.unlockedCostumes || [defaultCostumeKeyFor(def.id)]
+          unlocked_costumes: r.unlockedCostumes || [defaultCostumeKeyFor(def.id)],
+          dialogues: r.dialogues || {}
         };
       });
 
@@ -3929,7 +3969,8 @@
           costume: r.costume || defaultCostumeKeyFor(r.liver_id),
           unlockedCostumes: (Array.isArray(r.unlocked_costumes) && r.unlocked_costumes.length)
             ? r.unlocked_costumes
-            : [defaultCostumeKeyFor(r.liver_id)]
+            : [defaultCostumeKeyFor(r.liver_id)],
+          dialogues: (r.dialogues && typeof r.dialogues === 'object') ? r.dialogues : {}
         };
       });
       // 装備中のアイテムは所持品リストからは除外する(以前のwindow.storage版と同じ表現)
@@ -3970,7 +4011,7 @@
         ui: { expandedGroups: [], bottomTab: 'log', equipPickerSlot: null, inventoryTab: 'equip', helpTopicKey: null,
         marketTab: 'buy', marketBuySubTab: 'stack', marketSellSubTab: 'stack', marketStackBookOpen: false,
         marketSelectedStackKey: null, marketEquipSort: 'rarity_desc', marketPopup: null,
-        rosterDetailId: null, rosterDetailFrom: 'roster',
+        rosterDetailId: null, rosterDetailFrom: 'roster', liverDetailTab: 'detail', dialogueSubTab: 'common',
         profileViewId: null, profileFrom: 'town', profileLiverId: null,
         profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null,
         staminaPopupOpen: false },
@@ -4082,6 +4123,104 @@
     if(state.history.length > 100) state.history = state.history.slice(-100);
   }
 
+  /* ---------------- 台詞システム ----------------
+   * ライバーごとに設定された任意の台詞を、条件を満たした時にpushLogで
+   * 先に流してから、本来のアクションのログを続ける演出。設定していない
+   * 項目は何も表示しない(デフォルト未設定)。
+   * 発動頻度は台詞ごとにfreq('once'=1戦闘につき1回 / 'always'=毎回)を
+   * 持ち、'once'の場合のみfiredMapで戦闘(またはダンジョン探索)単位の
+   * 重複発火を防ぐ。敵側(通常の敵・コロシアムタワーの相手など)の行動には
+   * 一切紐付けない(常に自分が操作するパーティの行動時にのみ発生する)。 */
+  let combatDialogueFired = {}; // startCombat()で戦闘ごとにリセット
+  let dungeonItemDialogueFired = {}; // enterDungeon()でダンジョン再突入ごとにリセット
+  let lastDamagerId = null; // 直近で敵にダメージを与えた自パーティのliverId(勝利台詞の話者決定に使う)
+
+  function liverDialogues(id){
+    const ls = liverState(id);
+    return (ls && ls.dialogues) || {};
+  }
+  function liverDialogueSlot(id, triggerKey){
+    const dlgs = liverDialogues(id);
+    const slot = triggerKey.startsWith('skill:')
+      ? (dlgs.skills && dlgs.skills[triggerKey.slice(6)])
+      : dlgs[triggerKey];
+    return (slot && slot.text) ? slot : null;
+  }
+  function playLiverDialogue(id, triggerKey, firedMap){
+    if(!id) return;
+    const slot = liverDialogueSlot(id, triggerKey);
+    if(!slot) return;
+    const fireKey = `${id}:${triggerKey}`;
+    if(slot.freq !== 'always' && firedMap[fireKey]) return;
+    firedMap[fireKey] = true;
+    pushLog(`${liverDef(id).name}「${slot.text}」`, 'dialogue');
+  }
+  /* 台詞タブは「共通」「ジョブ別スキル」をサブタブで切り替える構成の
+   * ため、DOM上には常に1サブタブ分の入力欄しか存在しない。サブタブを
+   * 切り替える直前と保存ボタン押下時にこの関数を呼び、画面上の行
+   * (data-dialogue-row)だけをls.dialoguesへ書き戻す(他のサブタブ分の
+   * データは触らないので消えない)。空文字にした行はその項目を削除し、
+   * 未設定表示に戻せるようにする。 */
+  function commitVisibleDialogueRowsToMemory(){
+    const id = state.ui.rosterDetailId;
+    const ls = id && liverState(id);
+    if(!ls) return;
+    if(!ls.dialogues || typeof ls.dialogues !== 'object') ls.dialogues = {};
+    if(!ls.dialogues.skills || typeof ls.dialogues.skills !== 'object') ls.dialogues.skills = {};
+    document.querySelectorAll('[data-dialogue-row]').forEach(rowEl=>{
+      const triggerKey = rowEl.getAttribute('data-dialogue-row');
+      const select = rowEl.querySelector('.dialogue-freq-select');
+      const freq = (select && select.value === 'always') ? 'always' : 'once';
+      const input = rowEl.querySelector('.dialogue-text-input');
+      const text = (input ? input.value : '').trim().slice(0, 30);
+      const isSkill = triggerKey.startsWith('skill:');
+      const bucket = isSkill ? ls.dialogues.skills : ls.dialogues;
+      const key = isSkill ? triggerKey.slice(6) : triggerKey;
+      if(text){
+        bucket[key] = { text, freq };
+      } else {
+        delete bucket[key];
+      }
+    });
+  }
+  /* 台詞タブの保存ボタン。保存後は一時的にstate.ui.dialogueSaveFlashを
+   * 立てて「保存しました」を表示し、少し経ったら消す。 */
+  function saveLiverDialogues(){
+    const id = state.ui.rosterDetailId;
+    const ls = id && liverState(id);
+    if(!ls) return;
+    commitVisibleDialogueRowsToMemory();
+    pushLog('台詞設定を保存した。', 'system');
+    state.ui.dialogueSaveFlash = true;
+    saveGame(); render();
+    setTimeout(()=>{ state.ui.dialogueSaveFlash = false; render(); }, 1800);
+  }
+  /* 台詞タブの「表示頻度を一括変更」。サブタブをまたいだ全トリガー
+   * (共通5種+全ジョブの全スキル)のうち、台詞テキストが設定済みの
+   * ものだけ頻度を一括で書き換える(未設定の項目には頻度の概念自体が
+   * 無いので触らない)。まず画面に見えている行を書き戻してから処理
+   * することで、他のサブタブへの切り替えなしに一括変更できる。 */
+  function bulkSetDialogueFreq(target){
+    const id = state.ui.rosterDetailId;
+    const ls = id && liverState(id);
+    if(!ls) return;
+    commitVisibleDialogueRowsToMemory();
+    const freq = target === 'always' ? 'always' : 'once';
+    const dlgs = ls.dialogues || {};
+    ['victory','itemGet','death','critDeal','critTaken'].forEach(key=>{
+      if(dlgs[key] && dlgs[key].text) dlgs[key].freq = freq;
+    });
+    if(dlgs.skills){
+      Object.keys(dlgs.skills).forEach(key=>{
+        if(dlgs.skills[key] && dlgs.skills[key].text) dlgs.skills[key].freq = freq;
+      });
+    }
+    pushLog(`台詞の表示頻度を全て「${freq==='always'?'毎回':'1回のみ'}」に変更した。`, 'system');
+    state.ui.dialogueSaveFlash = true;
+    saveGame(); render();
+    setTimeout(()=>{ state.ui.dialogueSaveFlash = false; render(); }, 1800);
+  }
+
   /* ---------------- Core actions ---------------- */
   /* 経験値は「現在就いているジョブ」のレベルにのみ加算される
    * (ジョブごとに個別成長するため)。 */
@@ -4114,14 +4253,20 @@
     return true;
   }
 
+  /* 戻り値: 実際にアイテム(武器/防具)を入手できた場合はそのitem、
+   * それ以外(未ドロップ、ゴールドのみ)はnull。呼び出し側で「アイテムを
+   * 手に入れた」ログと台詞(アイテム獲得時)の順序をコントロールするため、
+   * アイテム発見時のpushLog自体は呼び出し側の責務とする(ゴールドは
+   * 台詞の対象外なのでここで即pushLogして問題ない)。 */
   function maybeDropItem(depth){
     const { dropMult, goldMult } = partyLootMult();
     const dungeonLevel = currentDungeonDef().level;
+    let droppedItem = null;
     if(Math.random() < 0.42 * dropMult){
       const type = Math.random() < 0.5 ? 'weapon' : 'armor';
       const item = makeItem(type, dungeonLevel, depth);
       if(addItemToInventory(item)){
-        pushLog(`「${item.name}」を手に入れた。`, 'reward');
+        droppedItem = item;
       }
     }
     if(Math.random() < 0.3){
@@ -4129,6 +4274,7 @@
       state.gold += g;
       pushLog(`${g}ゴールド手に入れた。`, 'reward');
     }
+    return droppedItem;
   }
 
   function startCombat(enemy){
@@ -4145,6 +4291,8 @@
     pendingDefBuffs = {};
     playerStatusEffects = {};
     combatPassiveFlags = {};
+    combatDialogueFired = {};
+    lastDamagerId = null;
     pushLog(`Lv.${enemy.level} ${enemy.name}${enemy.boss?'が行く手を阻んだ！':'が現れた。'}`, 'danger');
     state.party.forEach(id=>{
       const p = equippedPassive(id);
@@ -4205,11 +4353,14 @@
       if(rollCrit(liverId)){
         const dmg = Math.max(1, Math.round(combatAtk(liverId) * CRIT_MULT * affixMult) + rnd(-1,3));
         combatEnemyHp -= dmg;
+        lastDamagerId = liverId;
+        playLiverDialogue(liverId, 'critDeal', combatDialogueFired);
         pushLog(`${name}の攻撃が会心の一撃となった！ ${combatEnemy.name}に防御を貫く ${dmg} の大ダメージ！${drainSuffix(dmg)}`, 'reward', true);
         return;
       }
       const dmg = Math.max(1, Math.round((combatAtk(liverId) - effectiveEnemyDef()) * affixMult) + rnd(-1,2));
       combatEnemyHp -= dmg;
+      lastDamagerId = liverId;
       pushLog(`${name}の攻撃！ ${combatEnemy.name}に ${dmg} のダメージ。${drainSuffix(dmg)}`, 'combat', true);
       return;
     }
@@ -4219,6 +4370,7 @@
 
     if(chosen.effects){
       // 新方式: 複合効果スキル。効果を順に解決する(旧kind形式との判定は排他)。
+      playLiverDialogue(liverId, 'skill:'+chosen.key, combatDialogueFired);
       pushLog(`${name}の「${chosen.name}」！(MP-${mpCost})`, 'combat', true);
       chosen.effects.forEach(effect => resolveEffect(effect, false, liverId));
       return;
@@ -4369,6 +4521,7 @@
     if(rollCrit(null)){
       const raw = Math.max(1, Math.round(effectiveEnemyAtk() * CRIT_MULT) + rnd(-1,2));
       const dmg = applyDamageToLiver(target, raw);
+      playLiverDialogue(target, 'critTaken', combatDialogueFired);
       pushLog(`${combatEnemy.name}の痛恨の一撃！ ${targetName}が防御を貫く ${dmg} の大ダメージを受けた！`, 'danger', true);
       checkLiverKO(target);
       return;
@@ -4399,6 +4552,7 @@
 
   function checkLiverKO(liverId){
     if(liverState(liverId).hp <= 0){
+      playLiverDialogue(liverId, 'death', combatDialogueFired);
       pushLog(`${liverDef(liverId).name}が倒れた……！`, 'danger');
       state.party.forEach(otherId=>{
         if(otherId === liverId) return;
@@ -4446,6 +4600,7 @@
       }
 
       if(combatEnemyHp <= 0){
+        playLiverDialogue(lastDamagerId, 'victory', combatDialogueFired);
         if(combatEnemy.isColosseum){
           await resolveColosseumVictory();
           return;
@@ -4484,7 +4639,8 @@
           return;
         }
 
-        maybeDropItem(ds.depth);
+        const wonItem = maybeDropItem(ds.depth);
+        if(wonItem) pushLog(`「${wonItem.name}」を手に入れた。`, 'reward');
 
         if(combatEnemy.isDungeonBoss){
           const dungeonDef = currentDungeonDef();
@@ -4776,7 +4932,12 @@
       addDungeonProgress(PROGRESS_PER_STEP);
       saveGame(); render();
     } else if(roll < 0.95){
-      maybeDropItem(ds.depth);
+      const foundItem = maybeDropItem(ds.depth);
+      if(foundItem && state.party.length){
+        const speaker = state.party[Math.floor(Math.random()*state.party.length)];
+        playLiverDialogue(speaker, 'itemGet', dungeonItemDialogueFired);
+      }
+      if(foundItem) pushLog(`「${foundItem.name}」を手に入れた。`, 'reward');
       if(state.log.length===0 || state.log[state.log.length-1].text.indexOf('見つけ')<0){
         pushLog('崩れた棚の奥に何かが残っていた。', 'system');
       }
@@ -5125,6 +5286,7 @@
     state.activeDungeonId = id;
     state.screen = 'dungeon';
     state.log = [];
+    dungeonItemDialogueFired = {};
     saveGame(); render();
   }
 
@@ -6367,8 +6529,7 @@
   function renderMarketBuyEquipList(){
     const sortMode = (state.ui && state.ui.marketEquipSort) || 'rarity_desc';
     const sorted = sortMarketEquipListings(marketData.equipListings, sortMode);
-    const selectHtml = renderMarketEquipSortSelect(sortMode);
-    const rowsHtml = sorted.length ? sorted.map(row=>{
+    return sorted.length ? sorted.map(row=>{
       const snap = row.item_snapshot;
       const item = marketItemFromSnapshot(snap);
       return `
@@ -6377,10 +6538,6 @@
         <span class="inv-item-actions" style="color:var(--gold);font-family:var(--font-mono);font-weight:700;">${row.price_per_unit}G</span>
       </div>`;
     }).join('') : `<p class="inv-empty">現在出品されている装備は無い。</p>`;
-    return `
-      <div class="actions" style="margin-top:0;margin-bottom:14px;">${selectHtml}</div>
-      ${rowsHtml}
-    `;
   }
   function renderMarketBuyPanel(){
     if(!marketData || marketData.loading){
@@ -6391,11 +6548,15 @@
     }
     const subTab = (state.ui && state.ui.marketBuySubTab) || 'stack';
     const bookOpen = !!(state.ui && state.ui.marketStackBookOpen);
+    const equipSortHtml = (subTab === 'equip' && !bookOpen)
+      ? renderMarketEquipSortSelect((state.ui && state.ui.marketEquipSort) || 'rarity_desc') : '';
     const subTabHtml = (subTab === 'stack' && bookOpen) ? '' : `
-      <div class="actions" style="margin-top:0;margin-bottom:14px;">
-        <button data-market-buy-sub="stack" class="${subTab==='stack'?'primary':''}">素材・アイテム</button>
-        <button data-market-buy-sub="equip" class="${subTab==='equip'?'primary':''}">装備</button>
-        <button data-market-refresh style="margin-left:auto;">更新</button>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+        <div class="tab-strip sub" style="margin-top:0;">
+          <button data-market-buy-sub="stack" class="${subTab==='stack'?'active':''}">素材・アイテム</button>
+          <button data-market-buy-sub="equip" class="${subTab==='equip'?'active':''}">装備</button>
+        </div>
+        ${equipSortHtml}
       </div>`;
     let contentHtml;
     if(subTab === 'equip') contentHtml = renderMarketBuyEquipList();
@@ -6428,9 +6589,9 @@
   function renderMarketSellPanel(){
     const subTab = (state.ui && state.ui.marketSellSubTab) || 'stack';
     const subTabHtml = `
-      <div class="actions" style="margin-top:0;margin-bottom:14px;">
-        <button data-market-sell-sub="stack" class="${subTab==='stack'?'primary':''}">素材・アイテム</button>
-        <button data-market-sell-sub="equip" class="${subTab==='equip'?'primary':''}">装備</button>
+      <div class="tab-strip sub" style="margin-top:0;margin-bottom:14px;">
+        <button data-market-sell-sub="stack" class="${subTab==='stack'?'active':''}">素材・アイテム</button>
+        <button data-market-sell-sub="equip" class="${subTab==='equip'?'active':''}">装備</button>
       </div>`;
     const contentHtml = subTab === 'equip' ? renderMarketSellEquipList() : renderMarketSellStackList();
     return `<div class="section-block">${subTabHtml}${contentHtml}</div>`;
@@ -6560,7 +6721,7 @@
 
   function renderMarketInner(){
     const tab = (state.ui && state.ui.marketTab) || 'buy';
-    const tabBtn = (key, label) => `<button data-market-tab="${key}" class="${tab===key?'primary':''}">${label}</button>`;
+    const tabBtn = (key, label) => `<button data-market-tab="${key}" class="${tab===key?'active':''}">${label}</button>`;
     let bodyHtml;
     if(tab === 'sell') bodyHtml = renderMarketSellPanel();
     else if(tab === 'list') bodyHtml = renderMarketListPanel();
@@ -6571,6 +6732,9 @@
       </div>
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
+        <button data-market-refresh style="margin-left:auto;">更新</button>
+      </div>
+      <div class="tab-strip">
         ${tabBtn('buy','購入する')}
         ${tabBtn('sell','出品する')}
         ${tabBtn('list','出品中リスト')}
@@ -6681,8 +6845,10 @@
       </div>
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
-        <button data-announcement-tab="global" class="${announcementTab==='global'?'primary':''}">全体${globalUnread>0?`<span class="notify-badge">${globalUnread}</span>`:''}</button>
-        <button data-announcement-tab="personal" class="${announcementTab==='personal'?'primary':''}">個人宛て${personalUnread>0?`<span class="notify-badge">${personalUnread}</span>`:''}</button>
+      </div>
+      <div class="tab-strip">
+        <button data-announcement-tab="global" class="${announcementTab==='global'?'active':''}">全体${globalUnread>0?`<span class="notify-badge">${globalUnread}</span>`:''}</button>
+        <button data-announcement-tab="personal" class="${announcementTab==='personal'?'active':''}">個人宛て${personalUnread>0?`<span class="notify-badge">${personalUnread}</span>`:''}</button>
       </div>
       <div class="section-block">
         ${itemsHtml}
@@ -6847,11 +7013,22 @@
   }
 
   /* ---------------- 合成: 装備強化画面 ---------------- */
+  /* オーブの所持数表示。以前は「コモンオーブ 0 アンコモンオーブ 0 ...」と
+   * 同じ太さのテキストを横に並べていたため、どこが名前でどこが数字か
+   * 読み取りづらかった。装備のレアリティ表示(.inv-item.rarity系クラス)
+   * と同じ配色のチップに分け、名前(控えめな色)と数字(ゴールド)を
+   * 分離することで、幅を抑えつつ一目で数量を追えるようにする。 */
   function renderOrbSummary(){
-    return Object.keys(RARITY).map(key=>{
+    const chips = Object.keys(RARITY).map(key=>{
       const count = (state.orbs && state.orbs[key]) || 0;
-      return `<span class="badge-resource" title="${esc(RARITY[key].label)}のオーブ">${esc(RARITY[key].label)}オーブ ${count}</span>`;
-    }).join(' ');
+      const r = RARITY[key];
+      return `
+        <span class="orb-chip ${r.cls}" title="${esc(r.label)}のオーブ">
+          <span class="orb-chip-label">${esc(r.label)}</span>
+          <span class="orb-chip-count">${count}</span>
+        </span>`;
+    }).join('');
+    return `<div class="orb-chip-row">${chips}</div>`;
   }
 
   function renderEnhanceItemRow({item, equippedBy}){
@@ -6871,28 +7048,42 @@
       </div>`;
   }
 
+  function switchEnhanceTab(tab){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.enhanceTab = tab;
+    render();
+  }
+  function setEnhanceSort(mode){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.enhanceSort = mode;
+    render();
+  }
   function renderEnhanceInner(){
     const owned = allOwnedItemsWithEquipInfo();
     const weapons = owned.filter(x=>x.item.type==='weapon');
     const armors = owned.filter(x=>x.item.type==='armor');
-    const weaponRows = weapons.length ? weapons.map(renderEnhanceItemRow).join('') : '<p class="inv-empty">強化できる武器がない。</p>';
-    const armorRows = armors.length ? armors.map(renderEnhanceItemRow).join('') : '<p class="inv-empty">強化できる防具がない。</p>';
+    const tab = (state.ui && state.ui.enhanceTab) === 'armor' ? 'armor' : 'weapon';
+    const sortMode = (state.ui && state.ui.enhanceSort) || INVENTORY_SORT_DEFAULT;
+    const sorted = applyInventorySort(tab === 'armor' ? armors : weapons, sortMode, x => RARITY_SORT_ORDER[x.item.rarity] || 0);
+    const rows = sorted.length ? sorted.map(renderEnhanceItemRow).join('') : `<p class="inv-empty">強化できる${tab==='armor'?'防具':'武器'}がない。</p>`;
 
     return `
       <div class="scene-text">
         ${sceneHeadingHtml('合成', helpButtonHtml('enhance'))}
-        <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--gold);">${renderOrbSummary()}</p>
       </div>
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
       </div>
-      <div class="section-block">
-        <p class="section-label">武器</p>
-        ${weaponRows}
+      ${renderOrbSummary()}
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div class="tab-strip" style="margin-top:0;">
+          <button data-enhance-tab="weapon" class="${tab==='weapon'?'active':''}">武器</button>
+          <button data-enhance-tab="armor" class="${tab==='armor'?'active':''}">防具</button>
+        </div>
+        ${renderSortSelect('enhanceSortSelect', sortMode)}
       </div>
       <div class="section-block">
-        <p class="section-label">防具</p>
-        ${armorRows}
+        ${rows}
       </div>
     `;
   }
@@ -6914,17 +7105,47 @@
       </div>`;
   }
 
+  function switchAlchemyTab(cat){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.alchemyTab = cat;
+    render();
+  }
+  /* 錬金には「新着順」のような概念が無い(取得順を記録していない)ため、
+   * ソートは独自に「錬成できる順」(材料が揃っているものを先に)と
+   * 「一覧順」(定義順のまま)の2択とする。 */
+  const ALCHEMY_SORT_DEFAULT = 'craftable_first';
+  const ALCHEMY_SORT_OPTIONS = [
+    { value:'craftable_first', label:'錬成できる順' },
+    { value:'default',         label:'一覧順' },
+  ];
+  function renderAlchemySortSelect(current){
+    const options = ALCHEMY_SORT_OPTIONS.map(o=>
+      `<option value="${o.value}" ${current===o.value?'selected':''}>${esc(o.label)}</option>`
+    ).join('');
+    return `<select id="alchemySortSelect" style="margin-left:auto;min-width:0;flex:0 1 auto;font-size:11px;padding:4px 4px;background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);">${options}</select>`;
+  }
+  function setAlchemySort(mode){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.alchemySort = mode;
+    render();
+  }
   function renderAlchemyInner(){
     const categories = [];
     ALCHEMY_RECIPES.forEach(r=>{ if(!categories.includes(r.category)) categories.push(r.category); });
-    const categoryBlocksHtml = categories.map(cat=>{
-      const rows = ALCHEMY_RECIPES.filter(r=>r.category===cat).map(renderRecipeRow).join('');
-      return `
-        <div class="section-block">
-          <p class="section-label">${esc(cat)}</p>
-          ${rows}
-        </div>`;
-    }).join('');
+    const activeCat = categories.includes(state.ui && state.ui.alchemyTab) ? state.ui.alchemyTab : categories[0];
+    const sortMode = (state.ui && state.ui.alchemySort) || ALCHEMY_SORT_DEFAULT;
+    const tabStripHtml = `
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div class="tab-strip" style="margin-top:0;">
+          ${categories.map(cat=>`<button data-alchemy-tab="${esc(cat)}" class="${activeCat===cat?'active':''}">${esc(cat)}</button>`).join('')}
+        </div>
+        ${renderAlchemySortSelect(sortMode)}
+      </div>`;
+    let recipes = ALCHEMY_RECIPES.filter(r=>r.category===activeCat);
+    if(sortMode === 'craftable_first'){
+      recipes = [...recipes].sort((a,b)=> (canAffordRecipe(b)?1:0) - (canAffordRecipe(a)?1:0));
+    }
+    const rows = recipes.map(renderRecipeRow).join('');
 
     return `
       <div class="scene-text">
@@ -6933,7 +7154,10 @@
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
       </div>
-      ${categoryBlocksHtml}
+      ${tabStripHtml}
+      <div class="section-block">
+        ${rows}
+      </div>
     `;
   }
 
@@ -6963,6 +7187,8 @@
     if(!state.ui) state.ui = {};
     state.ui.rosterDetailId = id;
     state.ui.rosterDetailFrom = from === 'party' ? 'party' : 'roster';
+    state.ui.liverDetailTab = 'detail';
+    state.ui.dialogueSubTab = 'common';
     state.screen = 'liverDetail';
     saveGame(); render();
   }
@@ -7220,6 +7446,27 @@
 
     const headingHtml = `<p class="scene-heading"><span>${esc(def.name)}${inParty ? ' <span style="color:var(--gold);font-weight:400;">(編成中)</span>' : ''}</span>${helpButtonHtml('roster')}</p>`;
 
+    const detailTab = state.ui.liverDetailTab === 'dialogue' ? 'dialogue' : 'detail';
+    const tabSwitcherHtml = `
+      <div class="tab-strip">
+        <button data-liver-detail-tab="detail" class="${detailTab==='detail'?'active':''}">詳細</button>
+        <button data-liver-detail-tab="dialogue" class="${detailTab==='dialogue'?'active':''}">台詞</button>
+      </div>`;
+
+    if(detailTab === 'dialogue'){
+      return `
+        <div class="scene-text">
+          ${headingHtml}
+          ${lockedBanner}
+        </div>
+        <div class="actions">
+          <button id="backFromLiverDetailBtn">${state.ui.rosterDetailFrom === 'party' ? '編成画面に戻る' : 'ライバー一覧に戻る'}</button>
+        </div>
+        ${tabSwitcherHtml}
+        ${renderLiverDialogueInner(id, unlocked)}
+      `;
+    }
+
     return `
       <div class="scene-text">
         ${headingHtml}
@@ -7228,6 +7475,7 @@
       <div class="actions">
         <button id="backFromLiverDetailBtn">${state.ui.rosterDetailFrom === 'party' ? '編成画面に戻る' : 'ライバー一覧に戻る'}</button>
       </div>
+      ${tabSwitcherHtml}
       <div class="section-block">
         <p class="section-label">ステータス</p>
         ${statTilesHtml}
@@ -7255,6 +7503,99 @@
         ${atkRow}
         ${skillRows}
         <p style="color:var(--text-muted);font-size:11px;margin:4px 0 0;">有効スキルは最大${SKILL_LOADOUT_MAX}つまで。希望発動率の合計が50%を超える分は自動的に按分されます。</p>
+      </div>
+    `;
+  }
+
+  /* 台詞タブ: 各トリガーごとに設定できる台詞と頻度(1戦闘/1回の探索に
+   * つき1回 or 毎回)を編集する画面。
+   *
+   * 「共通」(勝利時などの固定5種)と「ジョブごと」(スキル使用時)を
+   * サブタブで切り替える構成のため、DOM上には常に1つのサブタブ分の
+   * 入力欄しか存在しない。そのため以下の方針を取る:
+   *   ・テキスト入力・頻度セレクトは、サブタブ切り替え時と保存時に
+   *     commitVisibleDialogueRowsToMemory()でls.dialoguesへ書き戻す
+   *     (画面に無い他のサブタブ分のデータを消さないため)。
+   *   ・保存ボタンはこの書き戻し関数を呼んだ上でsaveGame()する。
+   * 頻度はボタンではなくselectで選ばせ、保存後は一時的な
+   * state.ui.dialogueSaveFlash フラグで「保存しました」表示を出す。 */
+  function renderLiverDialogueInner(id, unlocked){
+    const dlgs = liverDialogues(id);
+    const rowDomId = triggerKey => `dlgText_${triggerKey.replace(/[^a-zA-Z0-9]/g,'_')}`;
+    const jobIds = Object.keys(JOB_DEFS);
+    const subTab = (state.ui.dialogueSubTab === 'common' || jobIds.includes(state.ui.dialogueSubTab))
+      ? state.ui.dialogueSubTab : 'common';
+
+    const row = (triggerKey, label, freqUnit) => {
+      const slot = (triggerKey.startsWith('skill:')
+        ? (dlgs.skills && dlgs.skills[triggerKey.slice(6)])
+        : dlgs[triggerKey]) || {};
+      const freq = slot.freq === 'always' ? 'always' : 'once';
+      const text = slot.text || '';
+      return `
+        <div class="inv-item" data-dialogue-row="${triggerKey}">
+          <span class="inv-item-name">
+            ${esc(label)}<br>
+            <input class="name-input dialogue-text-input" id="${rowDomId(triggerKey)}" type="text" maxlength="30" placeholder="未設定(表示しない)" value="${esc(text)}" ${unlocked?'':'disabled'} style="margin-top:4px;">
+          </span>
+          <span class="inv-item-actions">
+            <select class="dialogue-freq-select" ${unlocked?'':'disabled'} style="background:var(--win-bg-1);color:var(--text-primary);border:1px solid var(--win-border);font-size:11px;padding:4px;">
+              <option value="once" ${freq!=='always'?'selected':''}>${esc(freqUnit)}に1回</option>
+              <option value="always" ${freq==='always'?'selected':''}>毎回</option>
+            </select>
+          </span>
+        </div>`;
+    };
+
+    const subTabDefs = [{ key: 'common', label: '共通' }, ...jobIds.map(jobId=>({ key: jobId, label: JOB_DEFS[jobId].name }))];
+    const subTabBarHtml = `
+      <div class="tab-strip sub">
+        ${subTabDefs.map(t=>`<button data-dialogue-subtab="${t.key}" class="${subTab===t.key?'active':''}">${esc(t.label)}</button>`).join('')}
+      </div>`;
+
+    let contentHtml, noteHtml;
+    if(subTab === 'common'){
+      contentHtml = [
+        row('victory', '勝利時(最後にダメージを与えたライバーの台詞が表示される)', '1戦闘'),
+        row('itemGet', 'アイテム発見時(戦闘中のドロップは対象外。編成中からランダムで1名)', '1回の探索'),
+        row('death', '戦闘不能になった時', '1戦闘'),
+        row('critDeal', 'クリティカルを与えた時', '1戦闘'),
+        row('critTaken', 'クリティカルを受けた時', '1戦闘'),
+      ].join('');
+      noteHtml = '';
+    } else {
+      const jobDef = JOB_DEFS[subTab];
+      contentHtml = jobDef.skills.map(s=>row('skill:'+s.key, `「${s.name}」使用時`, '1戦闘')).join('');
+      noteHtml = `<p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">現在有効化しているスキルのみ実際にログへ表示される(無効なスキル分もあらかじめ設定しておくことは可能)。</p>`;
+    }
+
+    const saveBarHtml = unlocked ? `
+      <div class="actions" style="margin-top:10px;align-items:center;gap:10px;">
+        <button class="primary" data-save-dialogues>保存する</button>
+        <span class="save-flash" style="${state.ui.dialogueSaveFlash ? '' : 'visibility:hidden;'}">✓ 保存しました</span>
+      </div>` : '';
+
+    const bulkFreqHtml = unlocked ? `
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;margin:0 0 14px;background:var(--win-bg-2);border:1px solid var(--win-border-inner);">
+        <span style="color:var(--text-muted);font-size:11px;">表示頻度を一括変更(設定済みの台詞すべてに適用)</span>
+        <span style="display:flex;gap:8px;margin-left:auto;">
+          <button data-dialogue-bulk-freq="always" style="padding:5px 12px;font-size:11px;">すべて「毎回」にする</button>
+          <button data-dialogue-bulk-freq="once" style="padding:5px 12px;font-size:11px;">すべて「1回」にする</button>
+        </span>
+      </div>` : '';
+
+    return `
+      <div class="section-block">
+        <p class="section-label">台詞設定</p>
+        <p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">条件を満たした時、ここで設定した台詞がログに「${esc(liverDef(id).name)}「台詞」」の形式で流れる。未設定の項目は何も表示されない。コロシアムタワーの防衛時は台詞は表示されない。全角30文字まで。</p>
+        ${bulkFreqHtml}
+        ${saveBarHtml}
+        ${subTabBarHtml}
+        <div style="margin-top:10px;">
+          ${noteHtml}
+          ${contentHtml}
+        </div>
+        ${saveBarHtml}
       </div>
     `;
   }
@@ -7484,14 +7825,16 @@
         ${sceneHeadingHtml('商店')}
       </div>
       <div class="actions"><button id="backTownBtn">町に戻る</button></div>
-      <div style="display:flex;gap:8px;margin:14px 0 10px;">
-        <button data-shop-tab="buy" class="${buyActive?'primary':''}" style="padding:6px 14px;font-size:12px;">買う</button>
-        <button data-shop-tab="sell" class="${!buyActive?'primary':''}" style="padding:6px 14px;font-size:12px;">売る</button>
+      <div class="tab-strip">
+        <button data-shop-tab="buy" class="${buyActive?'active':''}">買う</button>
+        <button data-shop-tab="sell" class="${!buyActive?'active':''}">売る</button>
       </div>
       ${buyActive ? '' : `
-      <div style="display:flex;gap:8px;align-items:center;margin:10px 0;">
-        <button data-shop-item-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
-        <button data-shop-item-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px;">
+        <div class="tab-strip sub" style="margin-top:0;">
+          <button data-shop-item-tab="equip" class="${equipActive?'active':''}">装備</button>
+          <button data-shop-item-tab="item" class="${!equipActive?'active':''}">アイテム</button>
+        </div>
         ${renderSortSelect('shopSortSelect', (state.ui && (equipActive ? state.ui.equipSort : state.ui.itemSort)) || INVENTORY_SORT_DEFAULT)}
       </div>`}
       <div class="section-block">
@@ -8290,9 +8633,11 @@
     return `
       <div class="panel">
         <h2>所持品</h2>
-        <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;margin-bottom:10px;">
-          <button data-inventory-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 10px;font-size:12px;flex:0 0 auto;">装備</button>
-          <button data-inventory-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 10px;font-size:12px;flex:0 0 auto;">アイテム</button>
+        <div style="display:flex;flex-wrap:nowrap;gap:8px;align-items:center;margin-bottom:10px;">
+          <div class="tab-strip sub" style="margin-top:0;flex:0 0 auto;">
+            <button data-inventory-tab="equip" class="${equipActive?'active':''}">装備</button>
+            <button data-inventory-tab="item" class="${!equipActive?'active':''}">アイテム</button>
+          </div>
           ${renderSortSelect('inventorySortSelect', equipActive ? equipSort : itemSort)}
         </div>
         <div class="scrollbox inventory-scroll">${equipActive ? equipHtml : itemHtml}</div>
@@ -8415,6 +8760,12 @@
     document.querySelectorAll('[data-inventory-tab]').forEach(b=>{
       b.addEventListener('click', ()=>toggleInventoryTab(b.getAttribute('data-inventory-tab')));
     });
+    document.querySelectorAll('[data-enhance-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>switchEnhanceTab(b.getAttribute('data-enhance-tab')));
+    });
+    document.querySelectorAll('[data-alchemy-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>switchAlchemyTab(b.getAttribute('data-alchemy-tab')));
+    });
     document.querySelectorAll('[data-use-tool]').forEach(b=>{
       b.addEventListener('click', ()=>useToolItem(b.getAttribute('data-use-tool')));
     });
@@ -8434,6 +8785,10 @@
       state.ui.rosterSort = e.target.value;
       render();
     });
+    const enhanceSortSelect = document.getElementById('enhanceSortSelect');
+    if(enhanceSortSelect) enhanceSortSelect.addEventListener('change', (e)=>setEnhanceSort(e.target.value));
+    const alchemySortSelect = document.getElementById('alchemySortSelect');
+    if(alchemySortSelect) alchemySortSelect.addEventListener('change', (e)=>setAlchemySort(e.target.value));
     document.querySelectorAll('[data-chat-channel]').forEach(b=>{
       b.addEventListener('click', ()=>switchChatChannel(b.getAttribute('data-chat-channel')));
     });
@@ -8530,6 +8885,33 @@
     });
     document.querySelectorAll('[data-toggle-party]').forEach(b=>{
       b.addEventListener('click', ()=>togglePartyMember(b.getAttribute('data-toggle-party')));
+    });
+    document.querySelectorAll('[data-liver-detail-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        /* 台詞タブから離れる時は、画面上の入力内容をls.dialoguesへ
+         * 書き戻しておく(保存ボタンを押さずに詳細タブへ戻っても、
+         * 再度台詞タブを開いた時に入力内容が残るようにするため。
+         * ただしサーバーへの保存は保存ボタンを押した時だけ)。 */
+        if(state.ui.liverDetailTab === 'dialogue') commitVisibleDialogueRowsToMemory();
+        state.ui.liverDetailTab = b.getAttribute('data-liver-detail-tab');
+        render();
+      });
+    });
+    /* 台詞タブ内のサブタブ(共通/ジョブ別)切り替え。切り替え前に画面上の
+     * 入力内容をls.dialoguesへ書き戻してから切り替える(でないと今見えて
+     * いないサブタブの内容がls.dialoguesに反映されないまま消える)。 */
+    document.querySelectorAll('[data-dialogue-subtab]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        commitVisibleDialogueRowsToMemory();
+        state.ui.dialogueSubTab = b.getAttribute('data-dialogue-subtab');
+        render();
+      });
+    });
+    document.querySelectorAll('[data-save-dialogues]').forEach(b=>{
+      b.addEventListener('click', saveLiverDialogues);
+    });
+    document.querySelectorAll('[data-dialogue-bulk-freq]').forEach(b=>{
+      b.addEventListener('click', ()=>bulkSetDialogueFreq(b.getAttribute('data-dialogue-bulk-freq')));
     });
 
     on('gotoMarketBtn', gotoMarket);
