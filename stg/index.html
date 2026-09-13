@@ -6514,9 +6514,11 @@
     const subTab = (state.ui && state.ui.marketBuySubTab) || 'stack';
     const bookOpen = !!(state.ui && state.ui.marketStackBookOpen);
     const subTabHtml = (subTab === 'stack' && bookOpen) ? '' : `
-      <div class="actions" style="margin-top:0;margin-bottom:14px;">
-        <button data-market-buy-sub="stack" class="${subTab==='stack'?'primary':''}">素材・アイテム</button>
-        <button data-market-buy-sub="equip" class="${subTab==='equip'?'primary':''}">装備</button>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+        <div class="tab-strip sub" style="margin-top:0;">
+          <button data-market-buy-sub="stack" class="${subTab==='stack'?'active':''}">素材・アイテム</button>
+          <button data-market-buy-sub="equip" class="${subTab==='equip'?'active':''}">装備</button>
+        </div>
         <button data-market-refresh style="margin-left:auto;">更新</button>
       </div>`;
     let contentHtml;
@@ -6550,9 +6552,9 @@
   function renderMarketSellPanel(){
     const subTab = (state.ui && state.ui.marketSellSubTab) || 'stack';
     const subTabHtml = `
-      <div class="actions" style="margin-top:0;margin-bottom:14px;">
-        <button data-market-sell-sub="stack" class="${subTab==='stack'?'primary':''}">素材・アイテム</button>
-        <button data-market-sell-sub="equip" class="${subTab==='equip'?'primary':''}">装備</button>
+      <div class="tab-strip sub" style="margin-top:0;margin-bottom:14px;">
+        <button data-market-sell-sub="stack" class="${subTab==='stack'?'active':''}">素材・アイテム</button>
+        <button data-market-sell-sub="equip" class="${subTab==='equip'?'active':''}">装備</button>
       </div>`;
     const contentHtml = subTab === 'equip' ? renderMarketSellEquipList() : renderMarketSellStackList();
     return `<div class="section-block">${subTabHtml}${contentHtml}</div>`;
@@ -6682,7 +6684,7 @@
 
   function renderMarketInner(){
     const tab = (state.ui && state.ui.marketTab) || 'buy';
-    const tabBtn = (key, label) => `<button data-market-tab="${key}" class="${tab===key?'primary':''}">${label}</button>`;
+    const tabBtn = (key, label) => `<button data-market-tab="${key}" class="${tab===key?'active':''}">${label}</button>`;
     let bodyHtml;
     if(tab === 'sell') bodyHtml = renderMarketSellPanel();
     else if(tab === 'list') bodyHtml = renderMarketListPanel();
@@ -6693,6 +6695,8 @@
       </div>
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
+      </div>
+      <div class="tab-strip">
         ${tabBtn('buy','購入する')}
         ${tabBtn('sell','出品する')}
         ${tabBtn('list','出品中リスト')}
@@ -6803,8 +6807,10 @@
       </div>
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
-        <button data-announcement-tab="global" class="${announcementTab==='global'?'primary':''}">全体${globalUnread>0?`<span class="notify-badge">${globalUnread}</span>`:''}</button>
-        <button data-announcement-tab="personal" class="${announcementTab==='personal'?'primary':''}">個人宛て${personalUnread>0?`<span class="notify-badge">${personalUnread}</span>`:''}</button>
+      </div>
+      <div class="tab-strip">
+        <button data-announcement-tab="global" class="${announcementTab==='global'?'active':''}">全体${globalUnread>0?`<span class="notify-badge">${globalUnread}</span>`:''}</button>
+        <button data-announcement-tab="personal" class="${announcementTab==='personal'?'active':''}">個人宛て${personalUnread>0?`<span class="notify-badge">${personalUnread}</span>`:''}</button>
       </div>
       <div class="section-block">
         ${itemsHtml}
@@ -6993,12 +6999,19 @@
       </div>`;
   }
 
+  function switchEnhanceTab(tab){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.enhanceTab = tab;
+    render();
+  }
   function renderEnhanceInner(){
     const owned = allOwnedItemsWithEquipInfo();
     const weapons = owned.filter(x=>x.item.type==='weapon');
     const armors = owned.filter(x=>x.item.type==='armor');
-    const weaponRows = weapons.length ? weapons.map(renderEnhanceItemRow).join('') : '<p class="inv-empty">強化できる武器がない。</p>';
-    const armorRows = armors.length ? armors.map(renderEnhanceItemRow).join('') : '<p class="inv-empty">強化できる防具がない。</p>';
+    const tab = (state.ui && state.ui.enhanceTab) === 'armor' ? 'armor' : 'weapon';
+    const rows = tab === 'armor'
+      ? (armors.length ? armors.map(renderEnhanceItemRow).join('') : '<p class="inv-empty">強化できる防具がない。</p>')
+      : (weapons.length ? weapons.map(renderEnhanceItemRow).join('') : '<p class="inv-empty">強化できる武器がない。</p>');
 
     return `
       <div class="scene-text">
@@ -7008,13 +7021,12 @@
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
       </div>
-      <div class="section-block">
-        <p class="section-label">武器</p>
-        ${weaponRows}
+      <div class="tab-strip">
+        <button data-enhance-tab="weapon" class="${tab==='weapon'?'active':''}">武器</button>
+        <button data-enhance-tab="armor" class="${tab==='armor'?'active':''}">防具</button>
       </div>
       <div class="section-block">
-        <p class="section-label">防具</p>
-        ${armorRows}
+        ${rows}
       </div>
     `;
   }
@@ -7036,17 +7048,20 @@
       </div>`;
   }
 
+  function switchAlchemyTab(cat){
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.alchemyTab = cat;
+    render();
+  }
   function renderAlchemyInner(){
     const categories = [];
     ALCHEMY_RECIPES.forEach(r=>{ if(!categories.includes(r.category)) categories.push(r.category); });
-    const categoryBlocksHtml = categories.map(cat=>{
-      const rows = ALCHEMY_RECIPES.filter(r=>r.category===cat).map(renderRecipeRow).join('');
-      return `
-        <div class="section-block">
-          <p class="section-label">${esc(cat)}</p>
-          ${rows}
-        </div>`;
-    }).join('');
+    const activeCat = categories.includes(state.ui && state.ui.alchemyTab) ? state.ui.alchemyTab : categories[0];
+    const tabStripHtml = `
+      <div class="tab-strip">
+        ${categories.map(cat=>`<button data-alchemy-tab="${esc(cat)}" class="${activeCat===cat?'active':''}">${esc(cat)}</button>`).join('')}
+      </div>`;
+    const rows = ALCHEMY_RECIPES.filter(r=>r.category===activeCat).map(renderRecipeRow).join('');
 
     return `
       <div class="scene-text">
@@ -7055,7 +7070,10 @@
       <div class="actions">
         <button id="backTownBtn">町に戻る</button>
       </div>
-      ${categoryBlocksHtml}
+      ${tabStripHtml}
+      <div class="section-block">
+        ${rows}
+      </div>
     `;
   }
 
@@ -7713,14 +7731,16 @@
         ${sceneHeadingHtml('商店')}
       </div>
       <div class="actions"><button id="backTownBtn">町に戻る</button></div>
-      <div style="display:flex;gap:8px;margin:14px 0 10px;">
-        <button data-shop-tab="buy" class="${buyActive?'primary':''}" style="padding:6px 14px;font-size:12px;">買う</button>
-        <button data-shop-tab="sell" class="${!buyActive?'primary':''}" style="padding:6px 14px;font-size:12px;">売る</button>
+      <div class="tab-strip">
+        <button data-shop-tab="buy" class="${buyActive?'active':''}">買う</button>
+        <button data-shop-tab="sell" class="${!buyActive?'active':''}">売る</button>
       </div>
       ${buyActive ? '' : `
-      <div style="display:flex;gap:8px;align-items:center;margin:10px 0;">
-        <button data-shop-item-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">装備</button>
-        <button data-shop-item-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 14px;font-size:12px;">アイテム</button>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px;">
+        <div class="tab-strip sub" style="margin-top:0;">
+          <button data-shop-item-tab="equip" class="${equipActive?'active':''}">装備</button>
+          <button data-shop-item-tab="item" class="${!equipActive?'active':''}">アイテム</button>
+        </div>
         ${renderSortSelect('shopSortSelect', (state.ui && (equipActive ? state.ui.equipSort : state.ui.itemSort)) || INVENTORY_SORT_DEFAULT)}
       </div>`}
       <div class="section-block">
@@ -8519,9 +8539,11 @@
     return `
       <div class="panel">
         <h2>所持品</h2>
-        <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;margin-bottom:10px;">
-          <button data-inventory-tab="equip" class="${equipActive?'primary':''}" style="padding:6px 10px;font-size:12px;flex:0 0 auto;">装備</button>
-          <button data-inventory-tab="item" class="${!equipActive?'primary':''}" style="padding:6px 10px;font-size:12px;flex:0 0 auto;">アイテム</button>
+        <div style="display:flex;flex-wrap:nowrap;gap:8px;align-items:center;margin-bottom:10px;">
+          <div class="tab-strip sub" style="margin-top:0;flex:0 0 auto;">
+            <button data-inventory-tab="equip" class="${equipActive?'active':''}">装備</button>
+            <button data-inventory-tab="item" class="${!equipActive?'active':''}">アイテム</button>
+          </div>
           ${renderSortSelect('inventorySortSelect', equipActive ? equipSort : itemSort)}
         </div>
         <div class="scrollbox inventory-scroll">${equipActive ? equipHtml : itemHtml}</div>
@@ -8643,6 +8665,12 @@
     });
     document.querySelectorAll('[data-inventory-tab]').forEach(b=>{
       b.addEventListener('click', ()=>toggleInventoryTab(b.getAttribute('data-inventory-tab')));
+    });
+    document.querySelectorAll('[data-enhance-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>switchEnhanceTab(b.getAttribute('data-enhance-tab')));
+    });
+    document.querySelectorAll('[data-alchemy-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>switchAlchemyTab(b.getAttribute('data-alchemy-tab')));
     });
     document.querySelectorAll('[data-use-tool]').forEach(b=>{
       b.addEventListener('click', ()=>useToolItem(b.getAttribute('data-use-tool')));
