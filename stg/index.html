@@ -4195,6 +4195,31 @@
     saveGame(); render();
     setTimeout(()=>{ state.ui.dialogueSaveFlash = false; render(); }, 1800);
   }
+  /* 台詞タブの「表示頻度を一括変更」。サブタブをまたいだ全トリガー
+   * (共通5種+全ジョブの全スキル)のうち、台詞テキストが設定済みの
+   * ものだけ頻度を一括で書き換える(未設定の項目には頻度の概念自体が
+   * 無いので触らない)。まず画面に見えている行を書き戻してから処理
+   * することで、他のサブタブへの切り替えなしに一括変更できる。 */
+  function bulkSetDialogueFreq(target){
+    const id = state.ui.rosterDetailId;
+    const ls = id && liverState(id);
+    if(!ls) return;
+    commitVisibleDialogueRowsToMemory();
+    const freq = target === 'always' ? 'always' : 'once';
+    const dlgs = ls.dialogues || {};
+    ['victory','itemGet','death','critDeal','critTaken'].forEach(key=>{
+      if(dlgs[key] && dlgs[key].text) dlgs[key].freq = freq;
+    });
+    if(dlgs.skills){
+      Object.keys(dlgs.skills).forEach(key=>{
+        if(dlgs.skills[key] && dlgs.skills[key].text) dlgs.skills[key].freq = freq;
+      });
+    }
+    pushLog(`台詞の表示頻度を全て「${freq==='always'?'毎回':'1回のみ'}」に変更した。`, 'system');
+    state.ui.dialogueSaveFlash = true;
+    saveGame(); render();
+    setTimeout(()=>{ state.ui.dialogueSaveFlash = false; render(); }, 1800);
+  }
 
   /* ---------------- Core actions ---------------- */
   /* 経験値は「現在就いているジョブ」のレベルにのみ加算される
@@ -7550,10 +7575,20 @@
         <span class="save-flash" style="${state.ui.dialogueSaveFlash ? '' : 'visibility:hidden;'}">✓ 保存しました</span>
       </div>` : '';
 
+    const bulkFreqHtml = unlocked ? `
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;margin:0 0 14px;background:var(--win-bg-2);border:1px solid var(--win-border-inner);">
+        <span style="color:var(--text-muted);font-size:11px;">表示頻度を一括変更(設定済みの台詞すべてに適用)</span>
+        <span style="display:flex;gap:8px;margin-left:auto;">
+          <button data-dialogue-bulk-freq="always" style="padding:5px 12px;font-size:11px;">すべて「毎回」にする</button>
+          <button data-dialogue-bulk-freq="once" style="padding:5px 12px;font-size:11px;">すべて「1回」にする</button>
+        </span>
+      </div>` : '';
+
     return `
       <div class="section-block">
         <p class="section-label">台詞設定</p>
         <p style="color:var(--text-muted);font-size:11px;margin:0 0 8px;">条件を満たした時、ここで設定した台詞がログに「${esc(liverDef(id).name)}「台詞」」の形式で流れる。未設定の項目は何も表示されない。コロシアムタワーの防衛時は台詞は表示されない。全角30文字まで。</p>
+        ${bulkFreqHtml}
         ${saveBarHtml}
         ${subTabBarHtml}
         <div style="margin-top:10px;">
@@ -8874,6 +8909,9 @@
     });
     document.querySelectorAll('[data-save-dialogues]').forEach(b=>{
       b.addEventListener('click', saveLiverDialogues);
+    });
+    document.querySelectorAll('[data-dialogue-bulk-freq]').forEach(b=>{
+      b.addEventListener('click', ()=>bulkSetDialogueFreq(b.getAttribute('data-dialogue-bulk-freq')));
     });
 
     on('gotoMarketBtn', gotoMarket);
