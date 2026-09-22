@@ -1133,6 +1133,27 @@
     rize_weapon_shard:       { name:'皇女剣の欠片', desc:'リゼ・ヘルエスタの武器ダンジョン奥地で見つかる欠片。「リゼの皇女剣」の強化に使うという。' },
     rize_armor_shard:        { name:'制服の欠片(リゼ)', desc:'リゼ・ヘルエスタの防具ダンジョン奥地で見つかる欠片。「リゼの制服」の強化に使うという。' },
     rize_accessory_shard:    { name:'王家の紋章の欠片', desc:'リゼ・ヘルエスタのアクセサリーダンジョン奥地で見つかる欠片。「リゼの王家の紋章」の強化に使うという。' },
+    aizono_weapon_shard:     { name:'秘密の短剣の欠片', desc:'愛園愛美の武器ダンジョン奥地で見つかる欠片。「愛美の秘密の短剣」の強化に使うという。' },
+    aizono_armor_shard:      { name:'メイド服の欠片', desc:'愛園愛美の防具ダンジョン奥地で見つかる欠片。「愛美のメイド服」の強化に使うという。' },
+    aizono_accessory_shard:  { name:'リボン飾りの欠片', desc:'愛園愛美のアクセサリーダンジョン奥地で見つかる欠片。「愛美のリボン飾り」の強化に使うという。' },
+    suzuhara_weapon_shard:   { name:'鋼メンタル斧の欠片', desc:'鈴原るるの武器ダンジョン奥地で見つかる欠片。「るるの鋼メンタル斧」の強化に使うという。' },
+    suzuhara_armor_shard:    { name:'制服の欠片(るる)', desc:'鈴原るるの防具ダンジョン奥地で見つかる欠片。「るるの制服」の強化に使うという。' },
+    suzuhara_accessory_shard:{ name:'おくち飾りの欠片', desc:'鈴原るるのアクセサリーダンジョン奥地で見つかる欠片。「るるのおくち飾り」の強化に使うという。' },
+    yukishiro_weapon_shard:  { name:'水泳部の弓の欠片', desc:'雪城眞尋の武器ダンジョン奥地で見つかる欠片。「眞尋の水泳部の弓」の強化に使うという。' },
+    yukishiro_armor_shard:   { name:'制服の欠片(眞尋)', desc:'雪城眞尋の防具ダンジョン奥地で見つかる欠片。「眞尋の制服」の強化に使うという。' },
+    yukishiro_accessory_shard:{ name:'スパチャ飾りの欠片', desc:'雪城眞尋のアクセサリーダンジョン奥地で見つかる欠片。「眞尋のスパチャ飾り」の強化に使うという。' },
+    albio_weapon_shard:      { name:'英雄大剣の欠片', desc:'エクス・アルビオの武器ダンジョン奥地で見つかる欠片。「アルビオの英雄大剣」の強化に使うという。' },
+    albio_armor_shard:       { name:'鎧の欠片', desc:'エクス・アルビオの防具ダンジョン奥地で見つかる欠片。「アルビオの鎧」の強化に使うという。' },
+    albio_accessory_shard:   { name:'エビ飾りの欠片', desc:'エクス・アルビオのアクセサリーダンジョン奥地で見つかる欠片。「アルビオのエビ飾り」の強化に使うという。' },
+    levi_weapon_shard:       { name:'角槍の欠片', desc:'レヴィ・エリファの武器ダンジョン奥地で見つかる欠片。「レヴィの角槍」の強化に使うという。' },
+    levi_armor_shard:        { name:'毛皮の欠片', desc:'レヴィ・エリファの防具ダンジョン奥地で見つかる欠片。「レヴィの毛皮」の強化に使うという。' },
+    levi_accessory_shard:    { name:'角飾りの欠片', desc:'レヴィ・エリファのアクセサリーダンジョン奥地で見つかる欠片。「レヴィの角飾り」の強化に使うという。' },
+    hayama_weapon_shard:     { name:'狭間の剣の欠片', desc:'葉山舞鈴の武器ダンジョン奥地で見つかる欠片。「舞鈴の狭間の剣」の強化に使うという。' },
+    hayama_armor_shard:      { name:'私服の欠片(舞鈴)', desc:'葉山舞鈴の防具ダンジョン奥地で見つかる欠片。「舞鈴の私服」の強化に使うという。' },
+    hayama_accessory_shard:  { name:'葉っぱ飾りの欠片', desc:'葉山舞鈴のアクセサリーダンジョン奥地で見つかる欠片。「舞鈴の葉っぱ飾り」の強化に使うという。' },
+    nui_weapon_shard:        { name:'メラの杖の欠片', desc:'ニュイ・ソシエールの武器ダンジョン奥地で見つかる欠片。「ニュイのメラの杖」の強化に使うという。' },
+    nui_armor_shard:         { name:'魔女服の欠片', desc:'ニュイ・ソシエールの防具ダンジョン奥地で見つかる欠片。「ニュイの魔女服」の強化に使うという。' },
+    nui_accessory_shard:     { name:'かぼちゃ飾りの欠片', desc:'ニュイ・ソシエールのアクセサリーダンジョン奥地で見つかる欠片。「ニュイのかぼちゃ飾り」の強化に使うという。' },
   };
 
   /* 錬金の大成功: 出来上がったアイテムが装備(武器・防具)の時だけ判定する。
@@ -3006,6 +3027,139 @@
       materialKey:'rize_accessory_shard',
       equipReward:{ name:'リゼの王家の紋章', mainEffect:{type:'defPct', value:8}, slotCount:2 }
     },
+    // --- 愛園愛美(liver_58・ソルジャー) ---
+    {
+      liverId:'liver_58', slot:'weapon', lineName:'愛園愛美の武器ダンジョン',
+      bossName:'メイド喫茶の影', weakness:'ice',
+      materialKey:'aizono_weapon_shard',
+      equipReward:{ name:'愛美の秘密の短剣', weaponType:'dagger', value:190, affix:{kind:'element', element:'fire', mult:1.3} }
+    },
+    {
+      liverId:'liver_58', slot:'armor', lineName:'愛園愛美の防具ダンジョン',
+      bossName:'センシティブの試練官', weakness:'ice',
+      materialKey:'aizono_armor_shard',
+      equipReward:{ name:'愛美のメイド服', value:180, resist:{element:'fire', value:3} }
+    },
+    {
+      liverId:'liver_58', slot:'accessory', lineName:'愛園愛美のアクセサリーダンジョン',
+      bossName:'永遠の21歳の壁', weakness:'ice',
+      materialKey:'aizono_accessory_shard',
+      equipReward:{ name:'愛美のリボン飾り', mainEffect:{type:'critChance', value:5}, slotCount:2 }
+    },
+    // --- 鈴原るる(liver_59・ガーディアン) ---
+    {
+      liverId:'liver_59', slot:'weapon', lineName:'鈴原るるの武器ダンジョン',
+      bossName:'顔芸の影', weakness:'fire',
+      materialKey:'suzuhara_weapon_shard',
+      equipReward:{ name:'るるの鋼メンタル斧', weaponType:'axe', value:190, affix:{kind:'element', element:'ice', mult:1.3} }
+    },
+    {
+      liverId:'liver_59', slot:'armor', lineName:'鈴原るるの防具ダンジョン',
+      bossName:'美大生の試練官', weakness:'fire',
+      materialKey:'suzuhara_armor_shard',
+      equipReward:{ name:'るるの制服', value:180, resist:{element:'ice', value:3} }
+    },
+    {
+      liverId:'liver_59', slot:'accessory', lineName:'鈴原るるのアクセサリーダンジョン',
+      bossName:'不屈の壁', weakness:'fire',
+      materialKey:'suzuhara_accessory_shard',
+      equipReward:{ name:'るるのおくち飾り', mainEffect:{type:'defPct', value:8}, slotCount:2 }
+    },
+    // --- 雪城眞尋(liver_60・ソルジャー) ---
+    {
+      liverId:'liver_60', slot:'weapon', lineName:'雪城眞尋の武器ダンジョン',
+      bossName:'演劇部の影', weakness:'thunder',
+      materialKey:'yukishiro_weapon_shard',
+      equipReward:{ name:'眞尋の水泳部の弓', weaponType:'bow', value:190, affix:{kind:'element', element:'ice', mult:1.3} }
+    },
+    {
+      liverId:'liver_60', slot:'armor', lineName:'雪城眞尋の防具ダンジョン',
+      bossName:'よいしょよいしょの試練官', weakness:'thunder',
+      materialKey:'yukishiro_armor_shard',
+      equipReward:{ name:'眞尋の制服', value:180, resist:{element:'ice', value:3} }
+    },
+    {
+      liverId:'liver_60', slot:'accessory', lineName:'雪城眞尋のアクセサリーダンジョン',
+      bossName:'おまえらの壁', weakness:'thunder',
+      materialKey:'yukishiro_accessory_shard',
+      equipReward:{ name:'眞尋のスパチャ飾り', mainEffect:{type:'dropRate', value:5}, slotCount:2 }
+    },
+    // --- エクス・アルビオ(liver_61・ガーディアン) ---
+    {
+      liverId:'liver_61', slot:'weapon', lineName:'エクス・アルビオの武器ダンジョン',
+      bossName:'異世界の影', weakness:'ice',
+      materialKey:'albio_weapon_shard',
+      equipReward:{ name:'アルビオの英雄大剣', weaponType:'greatsword', value:190, affix:{kind:'element', element:'thunder', mult:1.3} }
+    },
+    {
+      liverId:'liver_61', slot:'armor', lineName:'エクス・アルビオの防具ダンジョン',
+      bossName:'パズドラの試練官', weakness:'ice',
+      materialKey:'albio_armor_shard',
+      equipReward:{ name:'アルビオの鎧', value:180, resist:{element:'thunder', value:3} }
+    },
+    {
+      liverId:'liver_61', slot:'accessory', lineName:'エクス・アルビオのアクセサリーダンジョン',
+      bossName:'恋愛相談の壁', weakness:'ice',
+      materialKey:'albio_accessory_shard',
+      equipReward:{ name:'アルビオのエビ飾り', mainEffect:{type:'atkPct', value:8}, slotCount:2 }
+    },
+    // --- レヴィ・エリファ(liver_62・ソルジャー) ---
+    {
+      liverId:'liver_62', slot:'weapon', lineName:'レヴィ・エリファの武器ダンジョン',
+      bossName:'亜人の影', weakness:'thunder',
+      materialKey:'levi_weapon_shard',
+      equipReward:{ name:'レヴィの角槍', weaponType:'spear', value:190, affix:{kind:'element', element:'fire', mult:1.3} }
+    },
+    {
+      liverId:'liver_62', slot:'armor', lineName:'レヴィ・エリファの防具ダンジョン',
+      bossName:'マンドラゴラの試練官', weakness:'thunder',
+      materialKey:'levi_armor_shard',
+      equipReward:{ name:'レヴィの毛皮', value:180, resist:{element:'fire', value:3} }
+    },
+    {
+      liverId:'liver_62', slot:'accessory', lineName:'レヴィ・エリファのアクセサリーダンジョン',
+      bossName:'ベーチャルの壁', weakness:'thunder',
+      materialKey:'levi_accessory_shard',
+      equipReward:{ name:'レヴィの角飾り', mainEffect:{type:'critChance', value:5}, slotCount:2 }
+    },
+    // --- 葉山舞鈴(liver_63・ソルジャー) ---
+    {
+      liverId:'liver_63', slot:'weapon', lineName:'葉山舞鈴の武器ダンジョン',
+      bossName:'猪突猛進の影', weakness:'fire',
+      materialKey:'hayama_weapon_shard',
+      equipReward:{ name:'舞鈴の狭間の剣', weaponType:'sword', value:190, affix:{kind:'element', element:'thunder', mult:1.3} }
+    },
+    {
+      liverId:'liver_63', slot:'armor', lineName:'葉山舞鈴の防具ダンジョン',
+      bossName:'無限民の試練官', weakness:'fire',
+      materialKey:'hayama_armor_shard',
+      equipReward:{ name:'舞鈴の私服', value:180, resist:{element:'thunder', value:3} }
+    },
+    {
+      liverId:'liver_63', slot:'accessory', lineName:'葉山舞鈴のアクセサリーダンジョン',
+      bossName:'超町民の壁', weakness:'fire',
+      materialKey:'hayama_accessory_shard',
+      equipReward:{ name:'舞鈴の葉っぱ飾り', mainEffect:{type:'atkPct', value:8}, slotCount:2 }
+    },
+    // --- ニュイ・ソシエール(liver_64・ウィザード) ---
+    {
+      liverId:'liver_64', slot:'weapon', lineName:'ニュイ・ソシエールの武器ダンジョン',
+      bossName:'迷子の影', weakness:'ice',
+      materialKey:'nui_weapon_shard',
+      equipReward:{ name:'ニュイのメラの杖', weaponType:'staff', value:190, affix:{kind:'element', element:'fire', mult:1.3} }
+    },
+    {
+      liverId:'liver_64', slot:'armor', lineName:'ニュイ・ソシエールの防具ダンジョン',
+      bossName:'清楚エロ枠の試練官', weakness:'ice',
+      materialKey:'nui_armor_shard',
+      equipReward:{ name:'ニュイの魔女服', value:180, resist:{element:'fire', value:3} }
+    },
+    {
+      liverId:'liver_64', slot:'accessory', lineName:'ニュイ・ソシエールのアクセサリーダンジョン',
+      bossName:'大釜の壁', weakness:'ice',
+      materialKey:'nui_accessory_shard',
+      equipReward:{ name:'ニュイのかぼちゃ飾り', mainEffect:{type:'mpPct', value:8}, slotCount:2 }
+    },
   ];
   const LIVER_DUNGEON_STAGE_COUNT = 5;
   function liverDungeonStageId(liverId, slot, depth){ return `liverdg_${liverId}_${slot}_${depth}`; }
@@ -4316,6 +4470,14 @@
     {id:'liver_55', name:'戌亥とこ', color:'#92F3A4', job:'dps', startUnlocked:false, debutDate:'2019-03-22'},
     {id:'liver_56', name:'アンジュ・カトリーナ', color:'#C83C35', job:'mage', startUnlocked:false, debutDate:'2019-03-22'},
     {id:'liver_57', name:'リゼ・ヘルエスタ', color:'#42FFFF', job:'tank', startUnlocked:false, debutDate:'2019-03-22'},
+    // --- 2019年4〜6月デビュー(卒業者を除く7名) ---
+    {id:'liver_58', name:'愛園愛美', color:'#F98FB7', job:'dps', startUnlocked:false, debutDate:'2019-04-07'},
+    {id:'liver_59', name:'鈴原るる', color:'#FFADBB', job:'tank', startUnlocked:false, debutDate:'2019-04-29'},
+    {id:'liver_60', name:'雪城眞尋', color:'#B4E9FF', job:'dps', startUnlocked:false, debutDate:'2019-04-29'},
+    {id:'liver_61', name:'エクス・アルビオ', color:'#5C9BBC', job:'tank', startUnlocked:false, debutDate:'2019-05-17'},
+    {id:'liver_62', name:'レヴィ・エリファ', color:'#FF5A00', job:'dps', startUnlocked:false, debutDate:'2019-05-17'},
+    {id:'liver_63', name:'葉山舞鈴', color:'#72D5CE', job:'dps', startUnlocked:false, debutDate:'2019-06-19'},
+    {id:'liver_64', name:'ニュイ・ソシエール', color:'#D24E5F', job:'mage', startUnlocked:false, debutDate:'2019-06-19'},
   ];
   /* ライバー一覧系画面の標準表示順(デビュー日昇順)。同日デビューは
    * LIVER_DEFSの記述順で安定ソートされる(Array.sortは安定ソート)。 */
@@ -4799,6 +4961,62 @@
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'coverAlly', threshold:0.3, always:false,
           desc:'(仮設定・後日差し替え予定) 味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}}
+    ],
+    liver_58: [
+      {key:'default', name:'通常衣装(愛園愛美専用)',
+        passive:{name:'立てばアクティブ座ればポジティブ　歩く姿はセンシティブ', kind:'statMult', stat:'atk', mult:1.2, always:true,
+          desc:'常時、攻撃力が20%上昇する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}}
+    ],
+    liver_59: [
+      {key:'default', name:'通常衣装(鈴原るる専用)',
+        passive:{name:'100万回死んでからが本当の勝負', kind:'lowHpMitigate', threshold:0.3, mult:0.75, always:false,
+          desc:'自身のHPが30%以下のとき、被ダメージが25%軽減される。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'coverAlly', threshold:0.3, always:false,
+          desc:'(仮設定・後日差し替え予定) 味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}}
+    ],
+    liver_60: [
+      {key:'default', name:'通常衣装(雪城眞尋専用)',
+        passive:{name:'スパチャは幸せの先払いだよ！', kind:'lootBonus', dropRateMult:1.25, goldMult:1.25, always:true,
+          desc:'常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が25%上昇する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'lowHpAtkBoost', threshold:0.3, mult:1.25, always:false,
+          desc:'(仮設定・後日差し替え予定) 自身のHPが30%以下のとき、攻撃力が25%上昇する。'}}
+    ],
+    liver_61: [
+      {key:'default', name:'通常衣装(エクス・アルビオ専用)',
+        passive:{name:'勝てない英雄なんて必要ない', kind:'statMult', stat:'atk', mult:1.2, always:true,
+          desc:'常時、攻撃力が20%上昇する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
+          desc:'(仮設定・後日差し替え予定) 戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}}
+    ],
+    liver_62: [
+      {key:'default', name:'通常衣装(レヴィ・エリファ専用)',
+        passive:{name:'ベーチャルライバー', kind:'onHitMpDrain', ratio:0.2, always:true,
+          desc:'常時、攻撃を命中させるたびに与えたダメージの20%をMPとして吸収する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'lowEnemyHpBoost', threshold:0.3, mult:1.2, always:false,
+          desc:'(仮設定・後日差し替え予定) 敵の残りHPが30%以下の間、自分の与ダメージが20%上昇する。'}}
+    ],
+    liver_63: [
+      {key:'default', name:'通常衣装(葉山舞鈴専用)',
+        passive:{name:'痛ぁい♡', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
+          desc:'常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'lootBonus', dropRateMult:1.25, goldMult:1.25, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が25%上昇する。'}}
+    ],
+    liver_64: [
+      {key:'default', name:'通常衣装(ニュイ・ソシエール専用)',
+        passive:{name:'メラ', kind:'statMult', stat:'mpCost', mult:0.85, always:true,
+          desc:'常時、スキルのMP消費が15%軽減される。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'randomAllyBoon', chance:0.18, healRatio:0.15, always:false,
+          desc:'(仮設定・後日差し替え予定) 戦闘中、毎ラウンド18%の確率で味方の誰かのHPが15%回復する。'}}
     ],
   };
   function costumeDefsFor(liverId){ return COSTUME_DEFS[liverId] || []; }
