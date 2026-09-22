@@ -1,0 +1,31 @@
+name: Keep Supabase awake
+
+# Supabaseの無料プランは、7日間APIアクセスが無いとプロジェクトを自動的に
+# 一時停止する。停止すると手動でResumeするまで復旧しないため、
+# 定期的に軽いAPIリクエストを送って「7日間無アクセス」状態を作らせない
+# ようにする(本番・STG両方)。ここで使っているキーはどちらもクライアント
+# 側index.htmlに直書きされている公開用のpublishable keyなので、
+# ワークフロー内に直接書いても問題ない。
+
+on:
+  schedule:
+    - cron: '0 3 * * 1,4' # 毎週月・木曜 3:00 UTC(最大でも中4日空かない間隔)
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping production Supabase
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://rdvdfnbtehdqsvqunpxa.supabase.co/rest/v1/" \
+            -H "apikey: sb_publishable_2xCoQ-5GyH-9yNWRFrwGOA_-siKxE0Q")
+          echo "production: HTTP $code"
+
+      - name: Ping staging Supabase
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://ijmjnpxhyipinurgberu.supabase.co/rest/v1/" \
+            -H "apikey: sb_publishable_YTtamjdgpadvgGmTAa4yEg_N7GYNUIP")
+          echo "staging: HTTP $code"
