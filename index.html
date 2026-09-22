@@ -992,6 +992,21 @@
     ruri_weapon_shard:      { name:'緋剣の欠片',   desc:'栞葉るりの武器ダンジョン奥地で見つかる欠片。「るりの緋剣」の強化に使うという。' },
     ruri_armor_shard:       { name:'緋鎧の欠片',   desc:'栞葉るりの防具ダンジョン奥地で見つかる欠片。「るりの緋鎧」の強化に使うという。' },
     ruri_accessory_shard:   { name:'栞の欠片',     desc:'栞葉るりのアクセサリーダンジョン奥地で見つかる欠片。「るりの栞」の強化に使うという。' },
+    mito_weapon_shard:      { name:'雷典の欠片',   desc:'月ノ美兎の武器ダンジョン奥地で見つかる欠片。「美兎の雷典」の強化に使うという。' },
+    mito_armor_shard:       { name:'制服の欠片',   desc:'月ノ美兎の防具ダンジョン奥地で見つかる欠片。「美兎の制服」の強化に使うという。' },
+    mito_accessory_shard:   { name:'委員長章の欠片', desc:'月ノ美兎のアクセサリーダンジョン奥地で見つかる欠片。「美兎の委員長章」の強化に使うという。' },
+    eru_weapon_shard:       { name:'紅剣の欠片',   desc:'えるの武器ダンジョン奥地で見つかる欠片。「えるの紅剣」の強化に使うという。' },
+    eru_armor_shard:        { name:'森外套の欠片', desc:'えるの防具ダンジョン奥地で見つかる欠片。「えるの森外套」の強化に使うという。' },
+    eru_accessory_shard:    { name:'木の実飾りの欠片', desc:'えるのアクセサリーダンジョン奥地で見つかる欠片。「えるの木の実飾り」の強化に使うという。' },
+    shizuka_weapon_shard:    { name:'氷刃の欠片', desc:'静凛の武器ダンジョン奥地で見つかる欠片。「凛の氷刃」の強化に使うという。' },
+    shizuka_armor_shard:     { name:'羽織の欠片', desc:'静凛の防具ダンジョン奥地で見つかる欠片。「凛の羽織」の強化に使うという。' },
+    shizuka_accessory_shard: { name:'家紋の欠片', desc:'静凛のアクセサリーダンジョン奥地で見つかる欠片。「凛の家紋」の強化に使うという。' },
+    hajime_weapon_shard:     { name:'獄炎剣の欠片', desc:'渋谷ハジメの武器ダンジョン奥地で見つかる欠片。「ハジメの獄炎剣」の強化に使うという。' },
+    hajime_armor_shard:      { name:'パーカーの欠片', desc:'渋谷ハジメの防具ダンジョン奥地で見つかる欠片。「ハジメのパーカー」の強化に使うという。' },
+    hajime_accessory_shard:  { name:'うさぱんだ守りの欠片', desc:'渋谷ハジメのアクセサリーダンジョン奥地で見つかる欠片。「ハジメのうさぱんだ守り」の強化に使うという。' },
+    moira_weapon_shard:      { name:'運命の杖の欠片', desc:'モイラの武器ダンジョン奥地で見つかる欠片。「モイラの運命の杖」の強化に使うという。' },
+    moira_armor_shard:       { name:'女神装束の欠片', desc:'モイラの防具ダンジョン奥地で見つかる欠片。「モイラの女神装束」の強化に使うという。' },
+    moira_accessory_shard:   { name:'赤い糸の欠片', desc:'モイラのアクセサリーダンジョン奥地で見つかる欠片。「モイラの赤い糸」の強化に使うという。' },
   };
 
   /* 錬金の大成功: 出来上がったアイテムが装備(武器・防具)の時だけ判定する。
@@ -1971,6 +1986,101 @@
       bossName:'栞葉の壁', weakness:'ice',
       materialKey:'ruri_accessory_shard',
       equipReward:{ name:'るりの栞', mainEffect:{type:'defPct', value:8}, slotCount:2 }
+    },
+    // --- 月ノ美兎(liver_11・ウィザード) ---
+    {
+      liverId:'liver_11', slot:'weapon', lineName:'月ノ美兎の武器ダンジョン',
+      bossName:'雷鳴の影', weakness:'ice',
+      materialKey:'mito_weapon_shard',
+      equipReward:{ name:'美兎の雷典', weaponType:'grimoire', value:190, affix:{kind:'element', element:'thunder', mult:1.3} }
+    },
+    {
+      liverId:'liver_11', slot:'armor', lineName:'月ノ美兎の防具ダンジョン',
+      bossName:'規律の試練官', weakness:'ice',
+      materialKey:'mito_armor_shard',
+      equipReward:{ name:'美兎の制服', value:180, resist:{element:'thunder', value:3} }
+    },
+    {
+      liverId:'liver_11', slot:'accessory', lineName:'月ノ美兎のアクセサリーダンジョン',
+      bossName:'委員長の壁', weakness:'ice',
+      materialKey:'mito_accessory_shard',
+      equipReward:{ name:'美兎の委員長章', mainEffect:{type:'hpPct', value:8}, slotCount:2 }
+    },
+    // --- える(liver_12・ソルジャー) ---
+    {
+      liverId:'liver_12', slot:'weapon', lineName:'えるの武器ダンジョン',
+      bossName:'紅葉の影', weakness:'ice',
+      materialKey:'eru_weapon_shard',
+      equipReward:{ name:'えるの紅剣', weaponType:'sword', value:190, affix:{kind:'element', element:'fire', mult:1.3} }
+    },
+    {
+      liverId:'liver_12', slot:'armor', lineName:'えるの防具ダンジョン',
+      bossName:'快活なる試練官', weakness:'ice',
+      materialKey:'eru_armor_shard',
+      equipReward:{ name:'えるの森外套', value:180, resist:{element:'fire', value:3} }
+    },
+    {
+      liverId:'liver_12', slot:'accessory', lineName:'えるのアクセサリーダンジョン',
+      bossName:'森の壁', weakness:'ice',
+      materialKey:'eru_accessory_shard',
+      equipReward:{ name:'えるの木の実飾り', mainEffect:{type:'dropRate', value:5}, slotCount:2 }
+    },
+    // --- 静凛(liver_13・ガーディアン) ---
+    {
+      liverId:'liver_13', slot:'weapon', lineName:'静凛の武器ダンジョン',
+      bossName:'氷刃の影', weakness:'fire',
+      materialKey:'shizuka_weapon_shard',
+      equipReward:{ name:'凛の氷刃', weaponType:'sword', value:190, affix:{kind:'element', element:'ice', mult:1.3} }
+    },
+    {
+      liverId:'liver_13', slot:'armor', lineName:'静凛の防具ダンジョン',
+      bossName:'凛然たる試練官', weakness:'fire',
+      materialKey:'shizuka_armor_shard',
+      equipReward:{ name:'凛の羽織', value:180, resist:{element:'ice', value:3} }
+    },
+    {
+      liverId:'liver_13', slot:'accessory', lineName:'静凛のアクセサリーダンジョン',
+      bossName:'武家の壁', weakness:'fire',
+      materialKey:'shizuka_accessory_shard',
+      equipReward:{ name:'凛の家紋', mainEffect:{type:'defPct', value:8}, slotCount:2 }
+    },
+    // --- 渋谷ハジメ(liver_14・ガーディアン) ---
+    {
+      liverId:'liver_14', slot:'weapon', lineName:'渋谷ハジメの武器ダンジョン',
+      bossName:'紅蓮の影', weakness:'ice',
+      materialKey:'hajime_weapon_shard',
+      equipReward:{ name:'ハジメの獄炎剣', weaponType:'greatsword', value:190, affix:{kind:'element', element:'fire', mult:1.3} }
+    },
+    {
+      liverId:'liver_14', slot:'armor', lineName:'渋谷ハジメの防具ダンジョン',
+      bossName:'不屈の試練官', weakness:'ice',
+      materialKey:'hajime_armor_shard',
+      equipReward:{ name:'ハジメのパーカー', value:180, resist:{element:'fire', value:3} }
+    },
+    {
+      liverId:'liver_14', slot:'accessory', lineName:'渋谷ハジメのアクセサリーダンジョン',
+      bossName:'真実の壁', weakness:'ice',
+      materialKey:'hajime_accessory_shard',
+      equipReward:{ name:'ハジメのうさぱんだ守り', mainEffect:{type:'mpPct', value:8}, slotCount:2 }
+    },
+    // --- モイラ(liver_15・ウィザード) ---
+    {
+      liverId:'liver_15', slot:'weapon', lineName:'モイラの武器ダンジョン',
+      bossName:'運命の影', weakness:null,
+      materialKey:'moira_weapon_shard',
+      equipReward:{ name:'モイラの運命の杖', weaponType:'staff', value:190, affix:null }
+    },
+    {
+      liverId:'liver_15', slot:'armor', lineName:'モイラの防具ダンジョン',
+      bossName:'気まぐれなる試練官', weakness:null,
+      materialKey:'moira_armor_shard',
+      equipReward:{ name:'モイラの女神装束', value:180, resist:null }
+    },
+    {
+      liverId:'liver_15', slot:'accessory', lineName:'モイラのアクセサリーダンジョン',
+      bossName:'女神の壁', weakness:null,
+      materialKey:'moira_accessory_shard',
+      equipReward:{ name:'モイラの赤い糸', mainEffect:{type:'critChance', value:5}, slotCount:2 }
     },
   ];
   const LIVER_DUNGEON_STAGE_COUNT = 5;
@@ -3208,23 +3318,38 @@
    *   に関わらず、そのライバー個人が扱える追加の武器種の配列。未設定の
    *   ライバーは今のところ全員おらず、今後キャラの個性に合わせて設定する
    *   予定(例: ['axe']を持たせると、ジョブがウィザードでも斧を装備できる)。
+   * debutDate: 実際のデビュー日(初配信日)。'YYYY-MM-DD'。ライバー一覧系
+   *   画面(キャラ作成・ライバー一覧の「標準」ソート・編成・召喚の指名
+   *   リスト・ランキング・ライバーダンジョン選択など)の標準表示順は、
+   *   このLIVER_DEFS自体の記述順(=実装した順番)ではなく、常にこの
+   *   debutDateの昇順で並べる(LIVER_DEFS_BY_DEBUTを参照)。同日デビュー
+   *   同士(1期生など)は、このLIVER_DEFS内の記述順で安定ソートされる。
    * 未解放のライバーは「運命のチケット」ガチャ、または「確約されし運命の
    * チケット」での指名によって仲間になる(召喚で入手・使用する)。
    * ライバー固有の常時パッシブはCOSTUME_DEFS(このすぐ下)側に移した。
    * 「衣装」を切り替えることでパッシブも切り替わる仕組みのため。
    * --------------------------------------------------------------- */
   const LIVER_DEFS = [
-    {id:'liver_1', name:'樋口楓', color:'#FBAF71', job:'dps', startUnlocked:false},
-    {id:'liver_2', name:'ジョー・力一', color:'#D598DD', job:'mage', startUnlocked:false},
-    {id:'liver_3', name:'魔界ノりりむ', color:'#EF6F94', job:'mage', startUnlocked:false},
-    {id:'liver_4', name:'加賀美ハヤト', color:'#B9ADB9', job:'tank', startUnlocked:false},
-    {id:'liver_5', name:'三枝明那', color:'#F03C32', job:'dps', startUnlocked:false},
-    {id:'liver_6', name:'弦月藤士郎', color:'#B43246', job:'tank', startUnlocked:false},
-    {id:'liver_7', name:'先斗寧', color:'#5A7DFF', job:'mage', startUnlocked:false},
-    {id:'liver_8', name:'石神のぞみ', color:'#E6325F', job:'mage', startUnlocked:false},
-    {id:'liver_9', name:'風楽奏斗', color:'#FAD246', job:'dps', startUnlocked:false},
-    {id:'liver_10', name:'栞葉るり', color:'#2887FF', job:'tank', startUnlocked:false},
+    {id:'liver_1', name:'樋口楓', color:'#FBAF71', job:'dps', startUnlocked:false, debutDate:'2018-02-08'},
+    {id:'liver_2', name:'ジョー・力一', color:'#D598DD', job:'mage', startUnlocked:false, debutDate:'2018-09-09'},
+    {id:'liver_3', name:'魔界ノりりむ', color:'#EF6F94', job:'mage', startUnlocked:false, debutDate:'2018-08-04'},
+    {id:'liver_4', name:'加賀美ハヤト', color:'#B9ADB9', job:'tank', startUnlocked:false, debutDate:'2019-07-06'},
+    {id:'liver_5', name:'三枝明那', color:'#F03C32', job:'dps', startUnlocked:false, debutDate:'2019-04-07'},
+    {id:'liver_6', name:'弦月藤士郎', color:'#B43246', job:'tank', startUnlocked:false, debutDate:'2020-04-04'},
+    {id:'liver_7', name:'先斗寧', color:'#5A7DFF', job:'mage', startUnlocked:false, debutDate:'2022-03-20'},
+    {id:'liver_8', name:'石神のぞみ', color:'#E6325F', job:'mage', startUnlocked:false, debutDate:'2023-01-19'},
+    {id:'liver_9', name:'風楽奏斗', color:'#FAD246', job:'dps', startUnlocked:false, debutDate:'2022-07-16'},
+    {id:'liver_10', name:'栞葉るり', color:'#2887FF', job:'tank', startUnlocked:false, debutDate:'2023-11-24'},
+    // --- 1期生出身(月ノ美兎・える・静凛・渋谷ハジメ・モイラ) ---
+    {id:'liver_11', name:'月ノ美兎', color:'#E43F3B', job:'mage', startUnlocked:false, debutDate:'2018-02-08'},
+    {id:'liver_12', name:'える', color:'#E2364F', job:'dps', startUnlocked:false, debutDate:'2018-02-08'},
+    {id:'liver_13', name:'静凛', color:'#745399', job:'tank', startUnlocked:false, debutDate:'2018-02-08'},
+    {id:'liver_14', name:'渋谷ハジメ', color:'#D7FAD7', job:'tank', startUnlocked:false, debutDate:'2018-02-08'},
+    {id:'liver_15', name:'モイラ', color:'#91ABD0', job:'mage', startUnlocked:false, debutDate:'2018-02-08'},
   ];
+  /* ライバー一覧系画面の標準表示順(デビュー日昇順)。同日デビューは
+   * LIVER_DEFSの記述順で安定ソートされる(Array.sortは安定ソート)。 */
+  const LIVER_DEFS_BY_DEBUT = [...LIVER_DEFS].sort((a,b)=> (a.debutDate||'9999-99-99').localeCompare(b.debutDate||'9999-99-99'));
 
   /* ---------------------------------------------------------------
    * 衣装定義(ライバーIDごとの配列)
@@ -3328,6 +3453,46 @@
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lowEnemyHpBoost', threshold:0.3, mult:1.2, always:false,
           desc:'(仮設定・後日差し替え予定) 敵の残りHPが30%以下の間、自分の与ダメージが20%上昇する。'}}
+    ],
+    liver_11: [
+      {key:'default', name:'通常衣装(月ノ美兎専用)',
+        passive:{name:'誰が何を言おうと清楚である', kind:'lowHpMitigate', threshold:0.3, mult:0.75, always:false,
+          desc:'自身のHPが30%以下のとき、被ダメージが25%軽減される。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'statMult', stat:'def', mult:1.2, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、防御力が20%上昇する。'}}
+    ],
+    liver_12: [
+      {key:'default', name:'通常衣装(える専用)',
+        passive:{name:'どんぐりマシンガントーク', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
+          desc:'常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'onHitMpDrain', ratio:0.15, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、攻撃を命中させるたびに与えたダメージの15%をMPとして吸収する。'}}
+    ],
+    liver_13: [
+      {key:'default', name:'通常衣装(静凛専用)',
+        passive:{name:'押してダメでも押してみろ', kind:'lowHpAtkBoost', threshold:0.3, mult:1.3, always:false,
+          desc:'自身のHPが30%以下のとき、攻撃力が30%上昇する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'partyMpCostReduce', mult:0.9, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、パーティ全員のスキルMP消費が10%軽減される。'}}
+    ],
+    liver_14: [
+      {key:'default', name:'通常衣装(渋谷ハジメ専用)',
+        passive:{name:'何があっても配信をやめる気はない', kind:'coverAlly', threshold:0.3, always:false,
+          desc:'味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'lootBonus', dropRateMult:1.25, goldMult:1.25, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が25%上昇する。'}}
+    ],
+    liver_15: [
+      {key:'default', name:'通常衣装(モイラ専用)',
+        passive:{name:'もいもいももいもいももいもい', kind:'randomAllyBoon', chance:0.18, healRatio:0.15, always:false,
+          desc:'戦闘中、毎ラウンド18%の確率で運命の女神が味方の誰かを見守り、HPが15%回復する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
+          desc:'(仮設定・後日差し替え予定) 戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}}
     ],
   };
   function costumeDefsFor(liverId){ return COSTUME_DEFS[liverId] || []; }
@@ -3957,7 +4122,7 @@
   let pendingGacha = null; // { candidateId, rerollsUsed, rolling }
   let staminaAdWatching = false; // スタミナ回復ポップアップの「広告視聴」演出中フラグ
 
-  function unclaimedLiverDefs(){ return LIVER_DEFS.filter(d=>!liverState(d.id).unlocked); }
+  function unclaimedLiverDefs(){ return LIVER_DEFS_BY_DEBUT.filter(d=>!liverState(d.id).unlocked); }
 
   function drawDestinyCandidate(){
     const pool = unclaimedLiverDefs();
@@ -5890,7 +6055,7 @@
   }
 
   function renderCreate(){
-    const liverCardsHtml = LIVER_DEFS.map(def=>{
+    const liverCardsHtml = LIVER_DEFS_BY_DEBUT.map(def=>{
       const selected = createSelectedLiver === def.id;
       const passive = equippedPassive(def.id);
       return `
@@ -6479,7 +6644,7 @@
    * 一覧表示し、現在の戦闘力とそのライバーの通算クリア数(◯/◯)を
    * 添えて、ボタンで個別のダンジョン画面に入る。 */
   function renderLiverQuestSelectInner(){
-    const rows = LIVER_DEFS.filter(def=>liverHasDungeonLines(def.id)).map(def=>{
+    const rows = LIVER_DEFS_BY_DEBUT.filter(def=>liverHasDungeonLines(def.id)).map(def=>{
       const ls = liverState(def.id);
       const unlocked = ls && ls.unlocked;
       const statusHtml = unlocked
@@ -7315,7 +7480,7 @@
 
   function renderRankingsInner(){
     const boardButtonsHtml = [{key:'overall', name:'総合ランキング'}]
-      .concat(LIVER_DEFS.map(d=>({key:d.id, name:d.name})))
+      .concat(LIVER_DEFS_BY_DEBUT.map(d=>({key:d.id, name:d.name})))
       .map(b=>`<button data-open-ranking="${b.key}" style="padding:5px 12px;font-size:12px;">${esc(b.name)}</button>`)
       .join('');
 
@@ -7778,7 +7943,7 @@
 
   /* 並び順のルール: 解放済みを常に未解放より上、その中でも編成中を
    * 最上部に固定する。そのうえで、各グループ内をソートモードに応じて
-   * 並べ替える(標準時はLIVER_DEFSの定義順のまま)。未解放グループは
+   * 並べ替える(標準時はLIVER_DEFS_BY_DEBUT=デビュー日昇順のまま)。未解放グループは
    * ソート対象にしない(定義順で固定)。 */
   function sortRosterDefs(defs, mode){
     if(mode === 'cp_asc') return [...defs].sort((a,b)=> combatPower(a.id) - combatPower(b.id));
@@ -7793,7 +7958,7 @@
     const unlockedInParty = [];
     const unlockedOthers = [];
     const lockedDefs = [];
-    LIVER_DEFS.forEach(def=>{
+    LIVER_DEFS_BY_DEBUT.forEach(def=>{
       if(!liverState(def.id).unlocked){ lockedDefs.push(def); return; }
       (state.party.includes(def.id) ? unlockedInParty : unlockedOthers).push(def);
     });
@@ -8275,10 +8440,10 @@
   }
 
   function renderPartyInner(){
-    const unlockedDefs = LIVER_DEFS.filter(d=>liverState(d.id).unlocked);
+    const unlockedDefs = LIVER_DEFS_BY_DEBUT.filter(d=>liverState(d.id).unlocked);
     const inPartyDefs = unlockedDefs.filter(d=>state.party.includes(d.id));
     const benchedDefs = unlockedDefs.filter(d=>!state.party.includes(d.id));
-    const lockedDefs = LIVER_DEFS.filter(d=>!liverState(d.id).unlocked);
+    const lockedDefs = LIVER_DEFS_BY_DEBUT.filter(d=>!liverState(d.id).unlocked);
 
     const partyRows = inPartyDefs.length
       ? inPartyDefs.map(renderPartyMemberRow).join('')
