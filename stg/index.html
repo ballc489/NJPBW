@@ -3318,29 +3318,38 @@
    *   に関わらず、そのライバー個人が扱える追加の武器種の配列。未設定の
    *   ライバーは今のところ全員おらず、今後キャラの個性に合わせて設定する
    *   予定(例: ['axe']を持たせると、ジョブがウィザードでも斧を装備できる)。
+   * debutDate: 実際のデビュー日(初配信日)。'YYYY-MM-DD'。ライバー一覧系
+   *   画面(キャラ作成・ライバー一覧の「標準」ソート・編成・召喚の指名
+   *   リスト・ランキング・ライバーダンジョン選択など)の標準表示順は、
+   *   このLIVER_DEFS自体の記述順(=実装した順番)ではなく、常にこの
+   *   debutDateの昇順で並べる(LIVER_DEFS_BY_DEBUTを参照)。同日デビュー
+   *   同士(1期生など)は、このLIVER_DEFS内の記述順で安定ソートされる。
    * 未解放のライバーは「運命のチケット」ガチャ、または「確約されし運命の
    * チケット」での指名によって仲間になる(召喚で入手・使用する)。
    * ライバー固有の常時パッシブはCOSTUME_DEFS(このすぐ下)側に移した。
    * 「衣装」を切り替えることでパッシブも切り替わる仕組みのため。
    * --------------------------------------------------------------- */
   const LIVER_DEFS = [
-    {id:'liver_1', name:'樋口楓', color:'#FBAF71', job:'dps', startUnlocked:false},
-    {id:'liver_2', name:'ジョー・力一', color:'#D598DD', job:'mage', startUnlocked:false},
-    {id:'liver_3', name:'魔界ノりりむ', color:'#EF6F94', job:'mage', startUnlocked:false},
-    {id:'liver_4', name:'加賀美ハヤト', color:'#B9ADB9', job:'tank', startUnlocked:false},
-    {id:'liver_5', name:'三枝明那', color:'#F03C32', job:'dps', startUnlocked:false},
-    {id:'liver_6', name:'弦月藤士郎', color:'#B43246', job:'tank', startUnlocked:false},
-    {id:'liver_7', name:'先斗寧', color:'#5A7DFF', job:'mage', startUnlocked:false},
-    {id:'liver_8', name:'石神のぞみ', color:'#E6325F', job:'mage', startUnlocked:false},
-    {id:'liver_9', name:'風楽奏斗', color:'#FAD246', job:'dps', startUnlocked:false},
-    {id:'liver_10', name:'栞葉るり', color:'#2887FF', job:'tank', startUnlocked:false},
+    {id:'liver_1', name:'樋口楓', color:'#FBAF71', job:'dps', startUnlocked:false, debutDate:'2018-02-08'},
+    {id:'liver_2', name:'ジョー・力一', color:'#D598DD', job:'mage', startUnlocked:false, debutDate:'2018-09-09'},
+    {id:'liver_3', name:'魔界ノりりむ', color:'#EF6F94', job:'mage', startUnlocked:false, debutDate:'2018-08-04'},
+    {id:'liver_4', name:'加賀美ハヤト', color:'#B9ADB9', job:'tank', startUnlocked:false, debutDate:'2019-07-06'},
+    {id:'liver_5', name:'三枝明那', color:'#F03C32', job:'dps', startUnlocked:false, debutDate:'2019-04-07'},
+    {id:'liver_6', name:'弦月藤士郎', color:'#B43246', job:'tank', startUnlocked:false, debutDate:'2020-04-04'},
+    {id:'liver_7', name:'先斗寧', color:'#5A7DFF', job:'mage', startUnlocked:false, debutDate:'2022-03-20'},
+    {id:'liver_8', name:'石神のぞみ', color:'#E6325F', job:'mage', startUnlocked:false, debutDate:'2023-01-19'},
+    {id:'liver_9', name:'風楽奏斗', color:'#FAD246', job:'dps', startUnlocked:false, debutDate:'2022-07-16'},
+    {id:'liver_10', name:'栞葉るり', color:'#2887FF', job:'tank', startUnlocked:false, debutDate:'2023-11-24'},
     // --- 1期生出身(月ノ美兎・える・静凛・渋谷ハジメ・モイラ) ---
-    {id:'liver_11', name:'月ノ美兎', color:'#E43F3B', job:'mage', startUnlocked:false},
-    {id:'liver_12', name:'える', color:'#E2364F', job:'dps', startUnlocked:false},
-    {id:'liver_13', name:'静凛', color:'#745399', job:'tank', startUnlocked:false},
-    {id:'liver_14', name:'渋谷ハジメ', color:'#D7FAD7', job:'tank', startUnlocked:false},
-    {id:'liver_15', name:'モイラ', color:'#91ABD0', job:'mage', startUnlocked:false},
+    {id:'liver_11', name:'月ノ美兎', color:'#E43F3B', job:'mage', startUnlocked:false, debutDate:'2018-02-08'},
+    {id:'liver_12', name:'える', color:'#E2364F', job:'dps', startUnlocked:false, debutDate:'2018-02-08'},
+    {id:'liver_13', name:'静凛', color:'#745399', job:'tank', startUnlocked:false, debutDate:'2018-02-08'},
+    {id:'liver_14', name:'渋谷ハジメ', color:'#D7FAD7', job:'tank', startUnlocked:false, debutDate:'2018-02-08'},
+    {id:'liver_15', name:'モイラ', color:'#91ABD0', job:'mage', startUnlocked:false, debutDate:'2018-02-08'},
   ];
+  /* ライバー一覧系画面の標準表示順(デビュー日昇順)。同日デビューは
+   * LIVER_DEFSの記述順で安定ソートされる(Array.sortは安定ソート)。 */
+  const LIVER_DEFS_BY_DEBUT = [...LIVER_DEFS].sort((a,b)=> (a.debutDate||'9999-99-99').localeCompare(b.debutDate||'9999-99-99'));
 
   /* ---------------------------------------------------------------
    * 衣装定義(ライバーIDごとの配列)
@@ -4113,7 +4122,7 @@
   let pendingGacha = null; // { candidateId, rerollsUsed, rolling }
   let staminaAdWatching = false; // スタミナ回復ポップアップの「広告視聴」演出中フラグ
 
-  function unclaimedLiverDefs(){ return LIVER_DEFS.filter(d=>!liverState(d.id).unlocked); }
+  function unclaimedLiverDefs(){ return LIVER_DEFS_BY_DEBUT.filter(d=>!liverState(d.id).unlocked); }
 
   function drawDestinyCandidate(){
     const pool = unclaimedLiverDefs();
@@ -6046,7 +6055,7 @@
   }
 
   function renderCreate(){
-    const liverCardsHtml = LIVER_DEFS.map(def=>{
+    const liverCardsHtml = LIVER_DEFS_BY_DEBUT.map(def=>{
       const selected = createSelectedLiver === def.id;
       const passive = equippedPassive(def.id);
       return `
@@ -6635,7 +6644,7 @@
    * 一覧表示し、現在の戦闘力とそのライバーの通算クリア数(◯/◯)を
    * 添えて、ボタンで個別のダンジョン画面に入る。 */
   function renderLiverQuestSelectInner(){
-    const rows = LIVER_DEFS.filter(def=>liverHasDungeonLines(def.id)).map(def=>{
+    const rows = LIVER_DEFS_BY_DEBUT.filter(def=>liverHasDungeonLines(def.id)).map(def=>{
       const ls = liverState(def.id);
       const unlocked = ls && ls.unlocked;
       const statusHtml = unlocked
@@ -7471,7 +7480,7 @@
 
   function renderRankingsInner(){
     const boardButtonsHtml = [{key:'overall', name:'総合ランキング'}]
-      .concat(LIVER_DEFS.map(d=>({key:d.id, name:d.name})))
+      .concat(LIVER_DEFS_BY_DEBUT.map(d=>({key:d.id, name:d.name})))
       .map(b=>`<button data-open-ranking="${b.key}" style="padding:5px 12px;font-size:12px;">${esc(b.name)}</button>`)
       .join('');
 
@@ -7934,7 +7943,7 @@
 
   /* 並び順のルール: 解放済みを常に未解放より上、その中でも編成中を
    * 最上部に固定する。そのうえで、各グループ内をソートモードに応じて
-   * 並べ替える(標準時はLIVER_DEFSの定義順のまま)。未解放グループは
+   * 並べ替える(標準時はLIVER_DEFS_BY_DEBUT=デビュー日昇順のまま)。未解放グループは
    * ソート対象にしない(定義順で固定)。 */
   function sortRosterDefs(defs, mode){
     if(mode === 'cp_asc') return [...defs].sort((a,b)=> combatPower(a.id) - combatPower(b.id));
@@ -7949,7 +7958,7 @@
     const unlockedInParty = [];
     const unlockedOthers = [];
     const lockedDefs = [];
-    LIVER_DEFS.forEach(def=>{
+    LIVER_DEFS_BY_DEBUT.forEach(def=>{
       if(!liverState(def.id).unlocked){ lockedDefs.push(def); return; }
       (state.party.includes(def.id) ? unlockedInParty : unlockedOthers).push(def);
     });
@@ -8431,10 +8440,10 @@
   }
 
   function renderPartyInner(){
-    const unlockedDefs = LIVER_DEFS.filter(d=>liverState(d.id).unlocked);
+    const unlockedDefs = LIVER_DEFS_BY_DEBUT.filter(d=>liverState(d.id).unlocked);
     const inPartyDefs = unlockedDefs.filter(d=>state.party.includes(d.id));
     const benchedDefs = unlockedDefs.filter(d=>!state.party.includes(d.id));
-    const lockedDefs = LIVER_DEFS.filter(d=>!liverState(d.id).unlocked);
+    const lockedDefs = LIVER_DEFS_BY_DEBUT.filter(d=>!liverState(d.id).unlocked);
 
     const partyRows = inPartyDefs.length
       ? inPartyDefs.map(renderPartyMemberRow).join('')
