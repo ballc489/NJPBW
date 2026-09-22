@@ -1118,6 +1118,21 @@
     shiina_weapon_shard:     { name:'霊視の書の欠片', desc:'椎名唯華の武器ダンジョン奥地で見つかる欠片。「唯華の霊視の書」の強化に使うという。' },
     shiina_armor_shard:      { name:'制服の欠片(唯華)', desc:'椎名唯華の防具ダンジョン奥地で見つかる欠片。「唯華の制服」の強化に使うという。' },
     shiina_accessory_shard:  { name:'大福飾りの欠片', desc:'椎名唯華のアクセサリーダンジョン奥地で見つかる欠片。「唯華の大福飾り」の強化に使うという。' },
+    roa_weapon_shard:        { name:'小悪魔の杖の欠片', desc:'夢月ロアの武器ダンジョン奥地で見つかる欠片。「ロアの小悪魔の杖」の強化に使うという。' },
+    roa_armor_shard:         { name:'フリル服の欠片', desc:'夢月ロアの防具ダンジョン奥地で見つかる欠片。「ロアのフリル服」の強化に使うという。' },
+    roa_accessory_shard:     { name:'契約の瞳飾りの欠片', desc:'夢月ロアのアクセサリーダンジョン奥地で見つかる欠片。「ロアの契約の瞳飾り」の強化に使うという。' },
+    tsumugi_weapon_shard:    { name:'禁書の欠片', desc:'語部紡の武器ダンジョン奥地で見つかる欠片。「紡の禁書」の強化に使うという。' },
+    tsumugi_armor_shard:     { name:'セーラー服の欠片(紡)', desc:'語部紡の防具ダンジョン奥地で見つかる欠片。「紡のセーラー服」の強化に使うという。' },
+    tsumugi_accessory_shard: { name:'栞飾りの欠片', desc:'語部紡のアクセサリーダンジョン奥地で見つかる欠片。「紡の栞飾り」の強化に使うという。' },
+    toko_weapon_shard:       { name:'爪牙短剣の欠片', desc:'戌亥とこの武器ダンジョン奥地で見つかる欠片。「とこの爪牙短剣」の強化に使うという。' },
+    toko_armor_shard:        { name:'制服エプロンの欠片', desc:'戌亥とこの防具ダンジョン奥地で見つかる欠片。「とこの制服エプロン」の強化に使うという。' },
+    toko_accessory_shard:    { name:'尻尾飾りの欠片', desc:'戌亥とこのアクセサリーダンジョン奥地で見つかる欠片。「とこの尻尾飾り」の強化に使うという。' },
+    ange_weapon_shard:       { name:'錬成の書の欠片', desc:'アンジュ・カトリーナの武器ダンジョン奥地で見つかる欠片。「アンジュの錬成の書」の強化に使うという。' },
+    ange_armor_shard:        { name:'ローブの欠片', desc:'アンジュ・カトリーナの防具ダンジョン奥地で見つかる欠片。「アンジュのローブ」の強化に使うという。' },
+    ange_accessory_shard:    { name:'試験管飾りの欠片', desc:'アンジュ・カトリーナのアクセサリーダンジョン奥地で見つかる欠片。「アンジュの試験管飾り」の強化に使うという。' },
+    rize_weapon_shard:       { name:'皇女剣の欠片', desc:'リゼ・ヘルエスタの武器ダンジョン奥地で見つかる欠片。「リゼの皇女剣」の強化に使うという。' },
+    rize_armor_shard:        { name:'制服の欠片(リゼ)', desc:'リゼ・ヘルエスタの防具ダンジョン奥地で見つかる欠片。「リゼの制服」の強化に使うという。' },
+    rize_accessory_shard:    { name:'王家の紋章の欠片', desc:'リゼ・ヘルエスタのアクセサリーダンジョン奥地で見つかる欠片。「リゼの王家の紋章」の強化に使うという。' },
   };
 
   /* 錬金の大成功: 出来上がったアイテムが装備(武器・防具)の時だけ判定する。
@@ -2896,6 +2911,101 @@
       materialKey:'shiina_accessory_shard',
       equipReward:{ name:'唯華の大福飾り', mainEffect:{type:'dropRate', value:5}, slotCount:2 }
     },
+    // --- 夢月ロア(liver_53・ウィザード) ---
+    {
+      liverId:'liver_53', slot:'weapon', lineName:'夢月ロアの武器ダンジョン',
+      bossName:'いたずらの影', weakness:'ice',
+      materialKey:'roa_weapon_shard',
+      equipReward:{ name:'ロアの小悪魔の杖', weaponType:'staff', value:190, affix:{kind:'element', element:'thunder', mult:1.3} }
+    },
+    {
+      liverId:'liver_53', slot:'armor', lineName:'夢月ロアの防具ダンジョン',
+      bossName:'魔界の試練官', weakness:'ice',
+      materialKey:'roa_armor_shard',
+      equipReward:{ name:'ロアのフリル服', value:180, resist:{element:'thunder', value:3} }
+    },
+    {
+      liverId:'liver_53', slot:'accessory', lineName:'夢月ロアのアクセサリーダンジョン',
+      bossName:'オッドアイの壁', weakness:'ice',
+      materialKey:'roa_accessory_shard',
+      equipReward:{ name:'ロアの契約の瞳飾り', mainEffect:{type:'critChance', value:5}, slotCount:2 }
+    },
+    // --- 語部紡(liver_54・ウィザード) ---
+    {
+      liverId:'liver_54', slot:'weapon', lineName:'語部紡の武器ダンジョン',
+      bossName:'図書室の影', weakness:'fire',
+      materialKey:'tsumugi_weapon_shard',
+      equipReward:{ name:'紡の禁書', weaponType:'grimoire', value:190, affix:{kind:'element', element:'ice', mult:1.3} }
+    },
+    {
+      liverId:'liver_54', slot:'armor', lineName:'語部紡の防具ダンジョン',
+      bossName:'地縛霊の試練官', weakness:'fire',
+      materialKey:'tsumugi_armor_shard',
+      equipReward:{ name:'紡のセーラー服', value:180, resist:{element:'ice', value:3} }
+    },
+    {
+      liverId:'liver_54', slot:'accessory', lineName:'語部紡のアクセサリーダンジョン',
+      bossName:'塩の壁', weakness:'fire',
+      materialKey:'tsumugi_accessory_shard',
+      equipReward:{ name:'紡の栞飾り', mainEffect:{type:'mpPct', value:8}, slotCount:2 }
+    },
+    // --- 戌亥とこ(liver_55・ソルジャー) ---
+    {
+      liverId:'liver_55', slot:'weapon', lineName:'戌亥とこの武器ダンジョン',
+      bossName:'和風喫茶の影', weakness:'ice',
+      materialKey:'toko_weapon_shard',
+      equipReward:{ name:'とこの爪牙短剣', weaponType:'dagger', value:190, affix:{kind:'element', element:'fire', mult:1.3} }
+    },
+    {
+      liverId:'liver_55', slot:'armor', lineName:'戌亥とこの防具ダンジョン',
+      bossName:'ケルベロスの試練官', weakness:'ice',
+      materialKey:'toko_armor_shard',
+      equipReward:{ name:'とこの制服エプロン', value:180, resist:{element:'fire', value:3} }
+    },
+    {
+      liverId:'liver_55', slot:'accessory', lineName:'戌亥とこのアクセサリーダンジョン',
+      bossName:'バンとケンの壁', weakness:'ice',
+      materialKey:'toko_accessory_shard',
+      equipReward:{ name:'とこの尻尾飾り', mainEffect:{type:'atkPct', value:8}, slotCount:2 }
+    },
+    // --- アンジュ・カトリーナ(liver_56・ウィザード) ---
+    {
+      liverId:'liver_56', slot:'weapon', lineName:'アンジュ・カトリーナの武器ダンジョン',
+      bossName:'錬金術の影', weakness:'thunder',
+      materialKey:'ange_weapon_shard',
+      equipReward:{ name:'アンジュの錬成の書', weaponType:'grimoire', value:190, affix:{kind:'element', element:'fire', mult:1.3} }
+    },
+    {
+      liverId:'liver_56', slot:'armor', lineName:'アンジュ・カトリーナの防具ダンジョン',
+      bossName:'性癖の試練官', weakness:'thunder',
+      materialKey:'ange_armor_shard',
+      equipReward:{ name:'アンジュのローブ', value:180, resist:{element:'fire', value:3} }
+    },
+    {
+      liverId:'liver_56', slot:'accessory', lineName:'アンジュ・カトリーナのアクセサリーダンジョン',
+      bossName:'天才の壁', weakness:'thunder',
+      materialKey:'ange_accessory_shard',
+      equipReward:{ name:'アンジュの試験管飾り', mainEffect:{type:'dropRate', value:5}, slotCount:2 }
+    },
+    // --- リゼ・ヘルエスタ(liver_57・ガーディアン) ---
+    {
+      liverId:'liver_57', slot:'weapon', lineName:'リゼ・ヘルエスタの武器ダンジョン',
+      bossName:'王位継承の影', weakness:'fire',
+      materialKey:'rize_weapon_shard',
+      equipReward:{ name:'リゼの皇女剣', weaponType:'sword', value:190, affix:{kind:'element', element:'ice', mult:1.3} }
+    },
+    {
+      liverId:'liver_57', slot:'armor', lineName:'リゼ・ヘルエスタの防具ダンジョン',
+      bossName:'文武両道の試練官', weakness:'fire',
+      materialKey:'rize_armor_shard',
+      equipReward:{ name:'リゼの制服', value:180, resist:{element:'ice', value:3} }
+    },
+    {
+      liverId:'liver_57', slot:'accessory', lineName:'リゼ・ヘルエスタのアクセサリーダンジョン',
+      bossName:'人望の壁', weakness:'fire',
+      materialKey:'rize_accessory_shard',
+      equipReward:{ name:'リゼの王家の紋章', mainEffect:{type:'defPct', value:8}, slotCount:2 }
+    },
   ];
   const LIVER_DUNGEON_STAGE_COUNT = 5;
   function liverDungeonStageId(liverId, slot, depth){ return `liverdg_${liverId}_${slot}_${depth}`; }
@@ -4200,6 +4310,12 @@
     {id:'liver_50', name:'本間ひまわり', color:'#FBE340', job:'dps', startUnlocked:false, debutDate:'2018-07-06'},
     {id:'liver_51', name:'葛葉', color:'#ACA7BB', job:'tank', startUnlocked:false, debutDate:'2018-07-30'},
     {id:'liver_52', name:'椎名唯華', color:'#F1C8DE', job:'mage', startUnlocked:false, debutDate:'2018-07-30'},
+    // --- 統合後・2019年1〜3月デビュー(卒業者を除く5名) ---
+    {id:'liver_53', name:'夢月ロア', color:'#D8368D', job:'mage', startUnlocked:false, debutDate:'2019-01-17'},
+    {id:'liver_54', name:'語部紡', color:'#07A4E3', job:'mage', startUnlocked:false, debutDate:'2019-01-30'},
+    {id:'liver_55', name:'戌亥とこ', color:'#92F3A4', job:'dps', startUnlocked:false, debutDate:'2019-03-22'},
+    {id:'liver_56', name:'アンジュ・カトリーナ', color:'#C83C35', job:'mage', startUnlocked:false, debutDate:'2019-03-22'},
+    {id:'liver_57', name:'リゼ・ヘルエスタ', color:'#42FFFF', job:'tank', startUnlocked:false, debutDate:'2019-03-22'},
   ];
   /* ライバー一覧系画面の標準表示順(デビュー日昇順)。同日デビューは
    * LIVER_DEFSの記述順で安定ソートされる(Array.sortは安定ソート)。 */
@@ -4643,6 +4759,46 @@
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'randomAllyBoon', chance:0.18, healRatio:0.15, always:false,
           desc:'(仮設定・後日差し替え予定) 戦闘中、毎ラウンド18%の確率で味方の誰かのHPが15%回復する。'}}
+    ],
+    liver_53: [
+      {key:'default', name:'通常衣装(夢月ロア専用)',
+        passive:{name:'ハンムラビ法典', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
+          desc:'戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'onHitMpDrain', ratio:0.15, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、攻撃を命中させるたびに与えたダメージの15%をMPとして吸収する。'}}
+    ],
+    liver_54: [
+      {key:'default', name:'通常衣装(語部紡専用)',
+        passive:{name:'塩はマジでだめ', kind:'lowHpMitigate', threshold:0.3, mult:0.75, always:false,
+          desc:'自身のHPが30%以下のとき、被ダメージが25%軽減される。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'statMult', stat:'def', mult:1.2, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、防御力が20%上昇する。'}}
+    ],
+    liver_55: [
+      {key:'default', name:'通常衣装(戌亥とこ専用)',
+        passive:{name:'まいど！', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
+          desc:'常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'lootBonus', dropRateMult:1.25, goldMult:1.25, always:true,
+          desc:'(仮設定・後日差し替え予定) 常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が25%上昇する。'}}
+    ],
+    liver_56: [
+      {key:'default', name:'通常衣装(アンジュ・カトリーナ専用)',
+        passive:{name:'愛はノイズ', kind:'onHitMpDrain', ratio:0.2, always:true,
+          desc:'常時、攻撃を命中させるたびに与えたダメージの20%をMPとして吸収する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'lowHpAtkBoost', threshold:0.3, mult:1.25, always:false,
+          desc:'(仮設定・後日差し替え予定) 自身のHPが30%以下のとき、攻撃力が25%上昇する。'}}
+    ],
+    liver_57: [
+      {key:'default', name:'通常衣装(リゼ・ヘルエスタ専用)',
+        passive:{name:'ヘルエスタート', kind:'statMult', stat:'def', mult:1.2, always:true,
+          desc:'常時、防御力が20%上昇する。'}},
+      {key:'common', name:'共通衣装',
+        passive:{name:'共通衣装スキル(仮)', kind:'coverAlly', threshold:0.3, always:false,
+          desc:'(仮設定・後日差し替え予定) 味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}}
     ],
   };
   function costumeDefsFor(liverId){ return COSTUME_DEFS[liverId] || []; }
