@@ -28,6 +28,7 @@
     --rare-uncommon:#8fe08f;
     --rare-rare:#ffd863;
     --rare-epic:#ff9f5a;
+    --rare-unique:#ff6fd8;
     --buff:#5eea87;
     --debuff:#ffb347;
     --ailment:#e08bff;
@@ -317,6 +318,7 @@
   .inv-item.uncommon{border-left-color:var(--rare-uncommon);}
   .inv-item.rare{border-left-color:var(--rare-rare);}
   .inv-item.epic{border-left-color:var(--rare-epic);}
+  .inv-item.unique{border-left-color:var(--rare-unique);box-shadow:inset 0 0 10px rgba(255,111,216,0.18);}
   .inv-item button{padding:4px 10px;font-size:11px;}
   .inv-item-name{flex:1 1 auto;min-width:0;margin-right:8px;overflow-wrap:break-word;}
   .inv-item-actions{flex:0 0 auto;display:flex;align-items:center;gap:6px;white-space:nowrap;}
@@ -729,11 +731,17 @@
   };
   const ARMOR_BASES = ['鉄の鎧','革の外套','木の盾','鎖帷子','古代の護符'];
 
+  /* unique(固有装備専用のレアリティ)はweight:0とし、rollRarity()の
+   * 通常抽選には一切乗らない(常に専用の生成関数から直接作られる)。
+   * 抽選プール以外でObject.keys(RARITY)を使っている箇所(素材ダンジョンの
+   * 宝箱抽選プール・所持品/合成画面のオーブ内訳など)は、'unique'を
+   * 明示的に除外して扱うこと。 */
   const RARITY = {
     common:   {label:'コモン',   cls:'common',   mult:1.0, weight:60},
     uncommon: {label:'アンコモン',cls:'uncommon', mult:1.5, weight:25},
     rare:     {label:'レア',     cls:'rare',     mult:2.2, weight:12},
     epic:     {label:'エピック', cls:'epic',     mult:3.2, weight:3},
+    unique:   {label:'ユニーク', cls:'unique',   mult:4.0, weight:0},
   };
 
   /* ---------------------------------------------------------------
@@ -954,6 +962,36 @@
     azure_frost:    { name:'紺碧の氷晶',  desc:'紺碧の塔でのみ見つかる、極寒の力を宿した鉱石。' },
     azure_crystal:  { name:'紺碧の結晶',  desc:'紺碧の塔の奥で採れる結晶。塔の装備や強力な品の錬金に大量に使う。' },
     prism_shard:    { name:'虹晶の欠片',  desc:'プリズムタワーでのみ見つかる、七色に輝く欠片。上質なアクセサリー錬成に使う。' },
+    nozomi_weapon_shard:    { name:'紅杖の欠片',   desc:'石神のぞみの武器ダンジョン奥地で見つかる欠片。「のぞみの紅杖」の強化に使うという。' },
+    nozomi_armor_shard:     { name:'緋装の欠片',   desc:'石神のぞみの防具ダンジョン奥地で見つかる欠片。「のぞみの緋装」の強化に使うという。' },
+    nozomi_accessory_shard: { name:'誓約の欠片',   desc:'石神のぞみのアクセサリーダンジョン奥地で見つかる欠片。「のぞみの誓約」の強化に使うという。' },
+    kaede_weapon_shard:     { name:'一矢の欠片',   desc:'樋口楓の武器ダンジョン奥地で見つかる欠片。「楓の一矢」の強化に使うという。' },
+    kaede_armor_shard:      { name:'道着の欠片',   desc:'樋口楓の防具ダンジョン奥地で見つかる欠片。「楓の道着」の強化に使うという。' },
+    kaede_accessory_shard:  { name:'勝負服の欠片', desc:'樋口楓のアクセサリーダンジョン奥地で見つかる欠片。「楓の勝負服」の強化に使うという。' },
+    riki_weapon_shard:      { name:'紫電書の欠片', desc:'ジョー・力一の武器ダンジョン奥地で見つかる欠片。「力一の紫電書」の強化に使うという。' },
+    riki_armor_shard:       { name:'漆黒衣の欠片', desc:'ジョー・力一の防具ダンジョン奥地で見つかる欠片。「力一の漆黒衣」の強化に使うという。' },
+    riki_accessory_shard:   { name:'証の欠片',     desc:'ジョー・力一のアクセサリーダンジョン奥地で見つかる欠片。「力一の証」の強化に使うという。' },
+    ririmu_weapon_shard:    { name:'霜杖の欠片',   desc:'魔界ノりりむの武器ダンジョン奥地で見つかる欠片。「りりむの霜杖」の強化に使うという。' },
+    ririmu_armor_shard:     { name:'氷衣の欠片',   desc:'魔界ノりりむの防具ダンジョン奥地で見つかる欠片。「りりむの氷衣」の強化に使うという。' },
+    ririmu_accessory_shard: { name:'魔契の欠片',   desc:'魔界ノりりむのアクセサリーダンジョン奥地で見つかる欠片。「りりむの魔契」の強化に使うという。' },
+    hayato_weapon_shard:    { name:'紅刃の欠片',   desc:'加賀美ハヤトの武器ダンジョン奥地で見つかる欠片。「ハヤトの紅刃」の強化に使うという。' },
+    hayato_armor_shard:     { name:'重鎧の欠片',   desc:'加賀美ハヤトの防具ダンジョン奥地で見つかる欠片。「ハヤトの重鎧」の強化に使うという。' },
+    hayato_accessory_shard: { name:'誓いの欠片',   desc:'加賀美ハヤトのアクセサリーダンジョン奥地で見つかる欠片。「ハヤトの誓い」の強化に使うという。' },
+    akina_weapon_shard:     { name:'雷牙の欠片',   desc:'三枝明那の武器ダンジョン奥地で見つかる欠片。「明那の雷牙」の強化に使うという。' },
+    akina_armor_shard:      { name:'軽衣の欠片',   desc:'三枝明那の防具ダンジョン奥地で見つかる欠片。「明那の軽衣」の強化に使うという。' },
+    akina_accessory_shard:  { name:'勲章の欠片',   desc:'三枝明那のアクセサリーダンジョン奥地で見つかる欠片。「明那の勲章」の強化に使うという。' },
+    toujirou_weapon_shard:    { name:'月斧の欠片', desc:'弦月藤士郎の武器ダンジョン奥地で見つかる欠片。「藤士郎の月斧」の強化に使うという。' },
+    toujirou_armor_shard:     { name:'月鎧の欠片', desc:'弦月藤士郎の防具ダンジョン奥地で見つかる欠片。「藤士郎の月鎧」の強化に使うという。' },
+    toujirou_accessory_shard: { name:'家紋の欠片', desc:'弦月藤士郎のアクセサリーダンジョン奥地で見つかる欠片。「藤士郎の家紋」の強化に使うという。' },
+    nei_weapon_shard:       { name:'白杖の欠片',   desc:'先斗寧の武器ダンジョン奥地で見つかる欠片。「寧の白杖」の強化に使うという。' },
+    nei_armor_shard:        { name:'白装束の欠片', desc:'先斗寧の防具ダンジョン奥地で見つかる欠片。「寧の白装束」の強化に使うという。' },
+    nei_accessory_shard:    { name:'御守りの欠片', desc:'先斗寧のアクセサリーダンジョン奥地で見つかる欠片。「寧の御守り」の強化に使うという。' },
+    kanato_weapon_shard:    { name:'風槍の欠片',   desc:'風楽奏斗の武器ダンジョン奥地で見つかる欠片。「奏斗の風槍」の強化に使うという。' },
+    kanato_armor_shard:     { name:'旅装の欠片',   desc:'風楽奏斗の防具ダンジョン奥地で見つかる欠片。「奏斗の旅装」の強化に使うという。' },
+    kanato_accessory_shard: { name:'音色符の欠片', desc:'風楽奏斗のアクセサリーダンジョン奥地で見つかる欠片。「奏斗の音色符」の強化に使うという。' },
+    ruri_weapon_shard:      { name:'緋剣の欠片',   desc:'栞葉るりの武器ダンジョン奥地で見つかる欠片。「るりの緋剣」の強化に使うという。' },
+    ruri_armor_shard:       { name:'緋鎧の欠片',   desc:'栞葉るりの防具ダンジョン奥地で見つかる欠片。「るりの緋鎧」の強化に使うという。' },
+    ruri_accessory_shard:   { name:'栞の欠片',     desc:'栞葉るりのアクセサリーダンジョン奥地で見つかる欠片。「るりの栞」の強化に使うという。' },
   };
 
   /* 錬金の大成功: 出来上がったアイテムが装備(武器・防具)の時だけ判定する。
@@ -1174,6 +1212,9 @@
       if((item.crystals||[]).length){
         text += ` / 装着中: ${item.crystals.map(c=>`${c.name}(${accessoryEffectLabel(c.effect)})`).join('・')}`;
       }
+      if(item.uniqueFor){
+        text += ` / (${liverDef(item.uniqueFor).name}専用)`;
+      }
       return text;
     }
     if(item.type === 'crystal'){
@@ -1192,6 +1233,9 @@
     if(item.resist){
       const sign = item.resist.value > 0 ? '+' : '';
       text += ` / ${ELEMENT_LABELS[item.resist.element]}耐性${sign}${item.resist.value}`;
+    }
+    if(item.uniqueFor){
+      text += ` / (${liverDef(item.uniqueFor).name}専用)`;
     }
     return text;
   }
@@ -1706,6 +1750,363 @@
     }
   ];
   const PROGRESS_PER_STEP = 9; // 1回の成功した行動あたりの踏破率上昇(%)
+
+  /* ---------------------------------------------------------------
+   * 固有装備・ライバーダンジョン
+   * そのライバー専用の武器/防具/アクセサリー(レアリティ「ユニーク」)を、
+   * 専用の単発ボス戦の初回クリア報酬として入手できる仕組み。
+   *
+   * 武器・防具・アクセサリーの3系統(ライン)がそれぞれ独立に存在し、
+   * 各ラインは1〜5の5段階のダンジョンを持つ。1段階目クリアでその
+   * 固有装備そのものを、2〜5段階目クリアでは強化用の素材(今後実装する
+   * 上位コンテンツで使う想定)を入手する。段階間の解放順は問わず、
+   * 各段階は「対象ライバーが編成に入っている」かつ「対象ライバーの
+   * 戦闘力(combatPower)が段階ごとの閾値以上」で挑戦可能になる
+   * (閾値は共通で 1000×段階番号)。
+   *
+   * 進捗管理(cleared/bossKillCount)は既存のplayer_dungeon_progress
+   * テーブル・save_full_stateをそのまま流用する(dungeon_id列は
+   * ただのtextでDUNGEON_DEFS由来である制約は無いため、ここで生成する
+   * 段階ごとのidをdungeon_idとして使い回せる)。
+   *
+   * 全10ライバー分のラインをここで定義している。新規ライバーを追加する
+   * 場合も、同じ形のラインを追加すればそのまま拡張できる。
+   * --------------------------------------------------------------- */
+  const LIVER_DUNGEON_STAGE_CP = [0, 1000, 2000, 3000, 4000, 5000]; // index=段階番号(1〜5)
+  const LIVER_DUNGEON_STAGE_CURVE = [
+    null,
+    { bossLevel:30,  hpMult:1.6, atkMult:1.15, defMult:1.2, materialQty:0 },
+    { bossLevel:60,  hpMult:1.8, atkMult:1.3,  defMult:1.3, materialQty:1 },
+    { bossLevel:90,  hpMult:2.0, atkMult:1.4,  defMult:1.4, materialQty:2 },
+    { bossLevel:120, hpMult:2.2, atkMult:1.5,  defMult:1.5, materialQty:3 },
+    { bossLevel:150, hpMult:2.5, atkMult:1.6,  defMult:1.6, materialQty:4 },
+  ];
+  const LIVER_DUNGEON_LINES = [
+    // --- 石神のぞみ(liver_8・ウィザード) ---
+    {
+      liverId:'liver_8', slot:'weapon', lineName:'石神のぞみの武器ダンジョン',
+      bossName:'特訓の影', weakness:'ice',
+      materialKey:'nozomi_weapon_shard',
+      equipReward:{ name:'のぞみの紅杖', weaponType:'staff', value:190, affix:{kind:'element', element:'fire', mult:1.3} }
+    },
+    {
+      liverId:'liver_8', slot:'armor', lineName:'石神のぞみの防具ダンジョン',
+      bossName:'厳しき試練官', weakness:'ice',
+      materialKey:'nozomi_armor_shard',
+      equipReward:{ name:'のぞみの緋装', value:180, resist:{element:'fire', value:3} }
+    },
+    {
+      liverId:'liver_8', slot:'accessory', lineName:'石神のぞみのアクセサリーダンジョン',
+      bossName:'全力の壁', weakness:'ice',
+      materialKey:'nozomi_accessory_shard',
+      equipReward:{ name:'のぞみの誓約', mainEffect:{type:'atkPct', value:8}, slotCount:2 }
+    },
+    // --- 樋口楓(liver_1・ソルジャー) ---
+    {
+      liverId:'liver_1', slot:'weapon', lineName:'樋口楓の武器ダンジョン',
+      bossName:'疾風の的', weakness:null,
+      materialKey:'kaede_weapon_shard',
+      equipReward:{ name:'楓の一矢', weaponType:'bow', value:190, affix:null }
+    },
+    {
+      liverId:'liver_1', slot:'armor', lineName:'樋口楓の防具ダンジョン',
+      bossName:'鍛錬の巨兵', weakness:null,
+      materialKey:'kaede_armor_shard',
+      equipReward:{ name:'楓の道着', value:180, resist:null }
+    },
+    {
+      liverId:'liver_1', slot:'accessory', lineName:'樋口楓のアクセサリーダンジョン',
+      bossName:'百発の番人', weakness:null,
+      materialKey:'kaede_accessory_shard',
+      equipReward:{ name:'楓の勝負服', mainEffect:{type:'critChance', value:5}, slotCount:2 }
+    },
+    // --- ジョー・力一(liver_2・ウィザード) ---
+    {
+      liverId:'liver_2', slot:'weapon', lineName:'ジョー・力一の武器ダンジョン',
+      bossName:'紫電の影', weakness:'ice',
+      materialKey:'riki_weapon_shard',
+      equipReward:{ name:'力一の紫電書', weaponType:'grimoire', value:190, affix:{kind:'element', element:'thunder', mult:1.3} }
+    },
+    {
+      liverId:'liver_2', slot:'armor', lineName:'ジョー・力一の防具ダンジョン',
+      bossName:'深謀の番人', weakness:'ice',
+      materialKey:'riki_armor_shard',
+      equipReward:{ name:'力一の漆黒衣', value:180, resist:{element:'thunder', value:3} }
+    },
+    {
+      liverId:'liver_2', slot:'accessory', lineName:'ジョー・力一のアクセサリーダンジョン',
+      bossName:'策略の壁', weakness:'ice',
+      materialKey:'riki_accessory_shard',
+      equipReward:{ name:'力一の証', mainEffect:{type:'mpPct', value:8}, slotCount:2 }
+    },
+    // --- 魔界ノりりむ(liver_3・ウィザード) ---
+    {
+      liverId:'liver_3', slot:'weapon', lineName:'魔界ノりりむの武器ダンジョン',
+      bossName:'氷結の影', weakness:'fire',
+      materialKey:'ririmu_weapon_shard',
+      equipReward:{ name:'りりむの霜杖', weaponType:'staff', value:190, affix:{kind:'element', element:'ice', mult:1.3} }
+    },
+    {
+      liverId:'liver_3', slot:'armor', lineName:'魔界ノりりむの防具ダンジョン',
+      bossName:'冷徹なる番人', weakness:'fire',
+      materialKey:'ririmu_armor_shard',
+      equipReward:{ name:'りりむの氷衣', value:180, resist:{element:'ice', value:3} }
+    },
+    {
+      liverId:'liver_3', slot:'accessory', lineName:'魔界ノりりむのアクセサリーダンジョン',
+      bossName:'魔界の壁', weakness:'fire',
+      materialKey:'ririmu_accessory_shard',
+      equipReward:{ name:'りりむの魔契', mainEffect:{type:'atkPct', value:8}, slotCount:2 }
+    },
+    // --- 加賀美ハヤト(liver_4・ガーディアン) ---
+    {
+      liverId:'liver_4', slot:'weapon', lineName:'加賀美ハヤトの武器ダンジョン',
+      bossName:'業火の影', weakness:'ice',
+      materialKey:'hayato_weapon_shard',
+      equipReward:{ name:'ハヤトの紅刃', weaponType:'greatsword', value:190, affix:{kind:'element', element:'fire', mult:1.3} }
+    },
+    {
+      liverId:'liver_4', slot:'armor', lineName:'加賀美ハヤトの防具ダンジョン',
+      bossName:'鉄壁の試練官', weakness:'ice',
+      materialKey:'hayato_armor_shard',
+      equipReward:{ name:'ハヤトの重鎧', value:180, resist:{element:'fire', value:3} }
+    },
+    {
+      liverId:'liver_4', slot:'accessory', lineName:'加賀美ハヤトのアクセサリーダンジョン',
+      bossName:'不動の壁', weakness:'ice',
+      materialKey:'hayato_accessory_shard',
+      equipReward:{ name:'ハヤトの誓い', mainEffect:{type:'defPct', value:8}, slotCount:2 }
+    },
+    // --- 三枝明那(liver_5・ソルジャー) ---
+    {
+      liverId:'liver_5', slot:'weapon', lineName:'三枝明那の武器ダンジョン',
+      bossName:'疾雷の影', weakness:'ice',
+      materialKey:'akina_weapon_shard',
+      equipReward:{ name:'明那の雷牙', weaponType:'dagger', value:190, affix:{kind:'element', element:'thunder', mult:1.3} }
+    },
+    {
+      liverId:'liver_5', slot:'armor', lineName:'三枝明那の防具ダンジョン',
+      bossName:'俊敏なる試練官', weakness:'ice',
+      materialKey:'akina_armor_shard',
+      equipReward:{ name:'明那の軽衣', value:180, resist:{element:'thunder', value:3} }
+    },
+    {
+      liverId:'liver_5', slot:'accessory', lineName:'三枝明那のアクセサリーダンジョン',
+      bossName:'閃光の壁', weakness:'ice',
+      materialKey:'akina_accessory_shard',
+      equipReward:{ name:'明那の勲章', mainEffect:{type:'critChance', value:5}, slotCount:2 }
+    },
+    // --- 弦月藤士郎(liver_6・ガーディアン) ---
+    {
+      liverId:'liver_6', slot:'weapon', lineName:'弦月藤士郎の武器ダンジョン',
+      bossName:'凍月の影', weakness:'fire',
+      materialKey:'toujirou_weapon_shard',
+      equipReward:{ name:'藤士郎の月斧', weaponType:'axe', value:190, affix:{kind:'element', element:'ice', mult:1.3} }
+    },
+    {
+      liverId:'liver_6', slot:'armor', lineName:'弦月藤士郎の防具ダンジョン',
+      bossName:'静寂の試練官', weakness:'fire',
+      materialKey:'toujirou_armor_shard',
+      equipReward:{ name:'藤士郎の月鎧', value:180, resist:{element:'ice', value:3} }
+    },
+    {
+      liverId:'liver_6', slot:'accessory', lineName:'弦月藤士郎のアクセサリーダンジョン',
+      bossName:'弦月の壁', weakness:'fire',
+      materialKey:'toujirou_accessory_shard',
+      equipReward:{ name:'藤士郎の家紋', mainEffect:{type:'hpPct', value:8}, slotCount:2 }
+    },
+    // --- 先斗寧(liver_7・ウィザード) ---
+    {
+      liverId:'liver_7', slot:'weapon', lineName:'先斗寧の武器ダンジョン',
+      bossName:'静謐の影', weakness:null,
+      materialKey:'nei_weapon_shard',
+      equipReward:{ name:'寧の白杖', weaponType:'staff', value:190, affix:null }
+    },
+    {
+      liverId:'liver_7', slot:'armor', lineName:'先斗寧の防具ダンジョン',
+      bossName:'厳格なる試練官', weakness:null,
+      materialKey:'nei_armor_shard',
+      equipReward:{ name:'寧の白装束', value:180, resist:null }
+    },
+    {
+      liverId:'liver_7', slot:'accessory', lineName:'先斗寧のアクセサリーダンジョン',
+      bossName:'沈黙の壁', weakness:null,
+      materialKey:'nei_accessory_shard',
+      equipReward:{ name:'寧の御守り', mainEffect:{type:'dropRate', value:5}, slotCount:2 }
+    },
+    // --- 風楽奏斗(liver_9・ソルジャー) ---
+    {
+      liverId:'liver_9', slot:'weapon', lineName:'風楽奏斗の武器ダンジョン',
+      bossName:'疾風の影', weakness:null,
+      materialKey:'kanato_weapon_shard',
+      equipReward:{ name:'奏斗の風槍', weaponType:'spear', value:190, affix:null }
+    },
+    {
+      liverId:'liver_9', slot:'armor', lineName:'風楽奏斗の防具ダンジョン',
+      bossName:'軽快なる試練官', weakness:null,
+      materialKey:'kanato_armor_shard',
+      equipReward:{ name:'奏斗の旅装', value:180, resist:null }
+    },
+    {
+      liverId:'liver_9', slot:'accessory', lineName:'風楽奏斗のアクセサリーダンジョン',
+      bossName:'旋律の壁', weakness:null,
+      materialKey:'kanato_accessory_shard',
+      equipReward:{ name:'奏斗の音色符', mainEffect:{type:'dropRate', value:5}, slotCount:2 }
+    },
+    // --- 栞葉るり(liver_10・ガーディアン) ---
+    {
+      liverId:'liver_10', slot:'weapon', lineName:'栞葉るりの武器ダンジョン',
+      bossName:'紅蓮の影', weakness:'ice',
+      materialKey:'ruri_weapon_shard',
+      equipReward:{ name:'るりの緋剣', weaponType:'sword', value:190, affix:{kind:'element', element:'fire', mult:1.3} }
+    },
+    {
+      liverId:'liver_10', slot:'armor', lineName:'栞葉るりの防具ダンジョン',
+      bossName:'堅固なる試練官', weakness:'ice',
+      materialKey:'ruri_armor_shard',
+      equipReward:{ name:'るりの緋鎧', value:180, resist:{element:'fire', value:3} }
+    },
+    {
+      liverId:'liver_10', slot:'accessory', lineName:'栞葉るりのアクセサリーダンジョン',
+      bossName:'栞葉の壁', weakness:'ice',
+      materialKey:'ruri_accessory_shard',
+      equipReward:{ name:'るりの栞', mainEffect:{type:'defPct', value:8}, slotCount:2 }
+    },
+  ];
+  const LIVER_DUNGEON_STAGE_COUNT = 5;
+  function liverDungeonStageId(liverId, slot, depth){ return `liverdg_${liverId}_${slot}_${depth}`; }
+  /* 段階ごとのエントリをまとめて生成しておく(state.dungeonsの初期化・
+   * 保存・読み込みや、idからの逆引きに使う)。 */
+  const LIVER_DUNGEON_STAGES = LIVER_DUNGEON_LINES.flatMap(line=>{
+    const stages = [];
+    for(let depth=1; depth<=LIVER_DUNGEON_STAGE_COUNT; depth++){
+      const curve = LIVER_DUNGEON_STAGE_CURVE[depth];
+      stages.push({
+        id: liverDungeonStageId(line.liverId, line.slot, depth),
+        liverId: line.liverId, slot: line.slot, depth, line,
+        requiredCP: LIVER_DUNGEON_STAGE_CP[depth],
+        bossLevel: curve.bossLevel, hpMult: curve.hpMult, atkMult: curve.atkMult, defMult: curve.defMult,
+        materialQty: curve.materialQty
+      });
+    }
+    return stages;
+  });
+  function liverDungeonStageById(id){ return LIVER_DUNGEON_STAGES.find(s=>s.id===id); }
+  function liverDungeonLinesForLiver(liverId){ return LIVER_DUNGEON_LINES.filter(l=>l.liverId===liverId); }
+  function liverDungeonStagesFor(liverId, slot){ return LIVER_DUNGEON_STAGES.filter(s=>s.liverId===liverId && s.slot===slot); }
+  function liverHasDungeonLines(liverId){ return LIVER_DUNGEON_LINES.some(l=>l.liverId===liverId); }
+  function liverDungeonClearedCount(liverId){
+    return LIVER_DUNGEON_STAGES.filter(s=>s.liverId===liverId && state.dungeons[s.id] && state.dungeons[s.id].cleared).length;
+  }
+  function liverDungeonTotalCount(liverId){
+    return LIVER_DUNGEON_STAGES.filter(s=>s.liverId===liverId).length;
+  }
+  /* 段階の挑戦条件: 対象ライバーが編成に入っており、かつその戦闘力
+   * (combatPower)が段階ごとの閾値以上であること。 */
+  function isLiverDungeonStageChallengeable(stage){
+    if(!state.party.includes(stage.liverId)) return false;
+    return combatPower(stage.liverId) >= stage.requiredCP;
+  }
+  function spawnLiverDungeonBoss(stage){
+    const level = stage.bossLevel;
+    const base = statsForLevel(level);
+    const hp  = Math.max(5, Math.round(base.hp  * stage.hpMult * partySizeHpMult()));
+    const atk = Math.max(1, Math.round(base.atk * stage.atkMult));
+    const def = Math.max(0, Math.round(base.def * stage.defMult));
+    const exp = Math.round(base.exp * 1.6);
+    return {
+      name:stage.line.bossName, level, hp, maxHp:hp, atk, def, exp, boss:true,
+      skills:[], weakness:stage.line.weakness||null,
+      isLiverQuest:true, liverQuestId:stage.id
+    };
+  }
+  function challengeLiverDungeonStage(id){
+    if(inCombat) return;
+    const stage = liverDungeonStageById(id);
+    if(!stage || !isLiverDungeonStageChallengeable(stage)) return;
+    recomputeStamina();
+    if(state.stamina < 1){
+      pushLog('スタミナが足りない。少し休もう。', 'system');
+      render();
+      return;
+    }
+    state.stamina -= 1;
+    saveGame();
+    startCombat(spawnLiverDungeonBoss(stage));
+  }
+  /* ライバー選択画面・ライバー詳細画面のどちらからでも、指定ライバーの
+   * ダンジョン画面(武器タブ)へ直接遷移する。 */
+  function openLiverDungeon(liverId){
+    if(inCombat || !liverHasDungeonLines(liverId)) return;
+    const ls = liverState(liverId);
+    if(!ls || !ls.unlocked) return;
+    if(!state.ui) state.ui = {expandedGroups:[]};
+    state.ui.liverDungeonLiverId = liverId;
+    state.ui.liverDungeonSlotTab = 'weapon';
+    state.screen = 'liverQuests';
+    saveGame(); render();
+  }
+  function switchLiverDungeonSlotTab(slot){
+    if(!['weapon','armor','accessory'].includes(slot)) return;
+    state.ui.liverDungeonSlotTab = slot;
+    render();
+  }
+  /* 固有装備(レアリティ「ユニーク」)の生成。対象ライバー専用(uniqueFor)
+   * として作られ、他のライバーは装備できず、売却・マーケット出品・
+   * 破棄・合成強化のいずれもできない(専用の完成品として固定)。 */
+  function makeUniqueItem(line){
+    const r = line.equipReward;
+    const base = {
+      id: 'itm_'+Math.random().toString(36).slice(2,9),
+      type: line.slot, rarity:'unique', rarityLabel:'unique',
+      name: r.name, uniqueFor: line.liverId
+    };
+    if(line.slot === 'weapon'){
+      return { ...base, weaponType: r.weaponType, value: r.value, affix: r.affix||null, resist: null };
+    }
+    if(line.slot === 'armor'){
+      return { ...base, value: r.value, resist: r.resist||null, affix: null };
+    }
+    return { ...base, mainEffect: r.mainEffect, slotCount: r.slotCount||0, crystals:[] };
+  }
+  function grantMaterial(key, qty){
+    state.materials[key] = materialCount(key) + qty;
+  }
+  /* ボス撃破後: 素材ダンジョン(プリズムタワー)と同様、リザルト画面を
+   * 挟んでからその段階の一覧画面に戻す。1段階目は初回クリア時のみ固有
+   * 装備そのものを、2〜5段階目は毎回(周回可能)強化素材を渡す。 */
+  function resolveLiverDungeonVictory(stage){
+    const qs = state.dungeons[stage.id];
+    const firstClear = !qs.cleared;
+    qs.cleared = true;
+    qs.bossKillCount = (qs.bossKillCount||0) + 1;
+
+    let result;
+    if(stage.depth === 1){
+      let reward = null;
+      if(firstClear){
+        reward = makeUniqueItem(stage.line);
+        addItemToInventory(reward);
+      }
+      result = { lineName: stage.line.lineName, depth: stage.depth, firstClear, equipReward: reward, materialQty: 0 };
+    } else {
+      const qty = stage.materialQty;
+      if(qty > 0) grantMaterial(stage.line.materialKey, qty);
+      result = { lineName: stage.line.lineName, depth: stage.depth, firstClear, materialName: MATERIAL_DEFS[stage.line.materialKey].name, materialQty: qty };
+    }
+
+    state.lastLiverDungeonResult = result;
+    state.ui.liverDungeonLiverId = stage.liverId;
+    state.ui.liverDungeonSlotTab = stage.slot;
+    state.screen = 'liverQuestResult';
+    inCombat = false; combatPhase = null; combatEnemy = null;
+    saveGame(); render();
+  }
+  function closeLiverQuestResult(){
+    state.lastLiverDungeonResult = null;
+    state.screen = 'liverQuests';
+    saveGame(); render();
+  }
 
   /* ---------------------------------------------------------------
    * コロシアムタワー(PvP、Supabase共有テーブル方式)
@@ -3173,7 +3574,7 @@
         profileLiverFrom: 'profile', profileCommentEditing: false, crystalPickerSlot: null,
         staminaPopupOpen: false },
       pendingDefeatGoldLoss: 0,
-      dungeons: DUNGEON_DEFS.reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
+      dungeons: [...DUNGEON_DEFS, ...LIVER_DUNGEON_STAGES].reduce((acc,d)=>{ acc[d.id]=newDungeonProgress(); return acc; }, {}),
       colosseum: { floorRight: 1, medals: 0, lastChallengeAt: 0 },
       destinyTickets: 0, guaranteedTickets: 0,
       orbs: {}, // レアリティ(common/uncommon/rare/epic)ごとの所持数。合成で消費する
@@ -3185,7 +3586,8 @@
       towerBestFloor: {}, // 塔ごとの過去最高到達フロア(他の塔の解放条件に使う)
       lastTowerResult: null, // リザルト画面表示用。永続化はしない
       prismRun: null, // { floorId } / 非アクティブならnull(リロード時の再開判定に使う)
-      lastPrismResult: null // リザルト画面表示用。永続化はしない
+      lastPrismResult: null, // リザルト画面表示用。永続化はしない
+      lastLiverDungeonResult: null // リザルト画面表示用。永続化はしない
     };
   }
 
@@ -3825,7 +4227,8 @@
           effect_value: item.mainEffect ? item.mainEffect.value : (item.effect ? item.effect.value : null),
           slot_count: item.type === 'accessory' ? (item.slotCount||0) : null,
           slot_cost: item.type === 'crystal' ? (item.slotCost||1) : null,
-          socketed_into: socketedInto || null
+          socketed_into: socketedInto || null,
+          unique_for_liver_id: item.uniqueFor || null
         });
         if(item.type === 'accessory' && Array.isArray(item.crystals)){
           item.crystals.forEach(c => pushInventoryRow(c, item.id));
@@ -3839,7 +4242,7 @@
         pushInventoryRow(r.equipped.accessory, null);
       });
 
-      const dungeonRows = DUNGEON_DEFS.map(d=>{
+      const dungeonRows = [...DUNGEON_DEFS, ...LIVER_DUNGEON_STAGES].map(d=>{
         const ds = state.dungeons[d.id];
         return {
           dungeon_id: d.id, depth: ds.depth, progress: ds.progress,
@@ -3910,7 +4313,8 @@
           resist: i.resist_element ? { element: i.resist_element, value: i.resist_value } : null,
           weaponType: i.weapon_type || null,
           affix: i.affix || null,
-          enhanceLevel: i.enhance_level || 0
+          enhanceLevel: i.enhance_level || 0,
+          uniqueFor: i.unique_for_liver_id || null
         };
         if(i.item_type === 'accessory'){
           item.mainEffect = i.effect_type ? { type: i.effect_type, value: i.effect_value } : null;
@@ -3983,7 +4387,7 @@
       });
 
       const dungeons = {};
-      DUNGEON_DEFS.forEach(d=>{ dungeons[d.id] = newDungeonProgress(); });
+      [...DUNGEON_DEFS, ...LIVER_DUNGEON_STAGES].forEach(d=>{ dungeons[d.id] = newDungeonProgress(); });
       dungeonRows.forEach(d=>{
         dungeons[d.dungeon_id] = {
           depth: d.depth, progress: d.progress, cleared: d.cleared,
@@ -4036,7 +4440,8 @@
         towerBestFloor: (playerRow.tower_best_floor && typeof playerRow.tower_best_floor === 'object') ? playerRow.tower_best_floor : {},
         lastTowerResult: null,
         prismRun: prismRun ? { floorId: prismRun.floorId } : null,
-        lastPrismResult: null
+        lastPrismResult: null,
+        lastLiverDungeonResult: null
       };
     }catch(e){
       console.error('load failed', e);
@@ -4619,6 +5024,12 @@
         }
         pushLog(`${combatEnemy.name}を倒した。`, 'reward');
         grantExpToParty(combatEnemy.exp);
+
+        if(combatEnemy.isLiverQuest){
+          resolveLiverDungeonVictory(liverDungeonStageById(combatEnemy.liverQuestId));
+          return;
+        }
+
         const ds = currentDungeonState();
         const dungeonDefForVictory = currentDungeonDef();
 
@@ -5002,7 +5413,7 @@
     } else if(roll < 0.99){
       // この宝箱は「確定ドロップ」というだけで、レア目枠のような偏りの
       // 指定は無いため、通常の(4段階の重み付きに従う)抽選をそのまま使う。
-      const item = prismRollEquip(Object.keys(RARITY), dungeonDef.floorNum);
+      const item = prismRollEquip(Object.keys(RARITY).filter(k=>k!=='unique'), dungeonDef.floorNum);
       if(addItemToInventory(item)) pushLog(`宝箱から「${item.name}」を見つけた！`, 'reward');
       addDungeonProgress(PROGRESS_PER_STEP);
       saveGame(); render();
@@ -5111,6 +5522,7 @@
     return new Set([...jobTypes, ...liverTypes]);
   }
   function canEquipItem(liverId, item){
+    if(item.uniqueFor && item.uniqueFor !== liverId) return false;
     if(item.type !== 'weapon') return true;
     return allowedWeaponTypes(liverId).has(item.weaponType);
   }
@@ -5126,7 +5538,11 @@
     if(idx<0) return;
     const item = state.inventory[idx];
     if(!canEquipItem(liverId, item)){
-      pushLog(`${liverDef(liverId).name}は「${item.name}」(${WEAPON_TYPES[item.weaponType].name})を扱えない。`, 'system');
+      if(item.uniqueFor && item.uniqueFor !== liverId){
+        pushLog(`「${item.name}」は${liverDef(item.uniqueFor).name}専用の固有装備で、${liverDef(liverId).name}は装備できない。`, 'system');
+      } else {
+        pushLog(`${liverDef(liverId).name}は「${item.name}」(${WEAPON_TYPES[item.weaponType].name})を扱えない。`, 'system');
+      }
       render();
       return;
     }
@@ -5222,6 +5638,11 @@
   function discardItem(id){
     const item = state.inventory.find(i=>i.id===id);
     if(!item) return;
+    if(item.rarity === 'unique'){
+      pushLog(`「${item.name}」は固有装備のため破棄できない。`, 'system');
+      render();
+      return;
+    }
     // レア以上(マーケットに出品できる価値がある装備)を破棄する時だけ、
     // 誤操作防止の確認を挟む。
     const isHighRarity = (MARKET_EQUIP_RARITY_RANK[item.rarity]||0) >= MARKET_MIN_EQUIP_RARITY_RANK;
@@ -5254,6 +5675,7 @@
     const found = allOwnedItemsWithEquipInfo().find(x=>x.item.id===itemId);
     if(!found) return;
     const item = found.item;
+    if(item.rarity === 'unique') return;
     const level = item.enhanceLevel || 0;
     if(level >= ENHANCE_MAX_LEVEL) return;
     const orbCount = (state.orbs && state.orbs[item.rarity]) || 0;
@@ -5334,6 +5756,11 @@
     const idx = state.inventory.findIndex(i=>i.id===id);
     if(idx<0) return;
     const item = state.inventory[idx];
+    if(item.rarity === 'unique'){
+      pushLog(`「${item.name}」は固有装備のため売却できない。`, 'system');
+      render();
+      return;
+    }
     const price = itemSellPrice(item);
     state.gold += price;
     state.inventory.splice(idx,1);
@@ -5577,6 +6004,9 @@
     if(state.screen==='towerRun' && state.towerRun) return `${currentTowerDef().name} ${state.towerRun.floor}F`;
     if(state.screen==='towerResult') return '……';
     if(state.screen==='materialDungeons') return '素材ダンジョン';
+    if(state.screen==='liverQuestSelect') return 'ライバーダンジョン';
+    if(state.screen==='liverQuests' && state.ui.liverDungeonLiverId) return `${liverDef(state.ui.liverDungeonLiverId).name}のライバーダンジョン`;
+    if(state.screen==='liverQuestResult') return '……';
     if(state.screen==='prismResult') return '……';
     return '灯火の町';
   }
@@ -5630,6 +6060,13 @@
       '全100階で構成され、塔を出るたびに1階から挑む必要がある。',
       '果たして登頂することは出来るのか...。',
       '※強力な装備・素材を入手することのできるエンドコンテンツです。'
+    ],
+    liverQuests: [
+      'そのライバーだけが装備できる「固有装備」(レアリティ:ユニーク)が手に入る、ライバー専用のダンジョン。',
+      'ライバーを選ぶと、その中で武器・防具・アクセサリーのタブに分かれた1〜5段階のダンジョンに挑める。',
+      '対象のライバーをパーティに編成し、そのライバーの戦闘力が段階ごとの必要値(1000刻み、5段階目は5000)以上になると挑戦できる。段階の解放順は問わない。',
+      '1段階目は初回クリア時にのみ固有装備そのものが手に入る(再挑戦しても追加では貰えない)。2〜5段階目は周回可能で、挑むたびに強化用の素材が手に入る。',
+      '固有装備は売却・マーケットへの出品・破棄・合成での強化ができない、そのライバー専用の装備。'
     ],
     materialDungeons: [
       'アクセサリー・クリスタル、およびその錬金素材が狙えるダンジョン群。武器・防具は一切ドロップしない。',
@@ -5861,6 +6298,7 @@
         <button class="danger" id="gotoRiftBtn">次元断層ポモ・ドーロ</button>
         <button class="danger" id="gotoTowersBtn">七彩の塔</button>
         <button class="danger" id="gotoMaterialDungeonsBtn">素材ダンジョン</button>
+        <button class="danger" id="gotoLiverQuestsBtn">ライバーダンジョン</button>
       </div>
       <div class="section-block">
         <p class="section-label">ダンジョン</p>
@@ -6029,6 +6467,138 @@
       <div class="section-block">
         <p class="section-label">プリズムタワー</p>
         ${rows}
+      </div>
+    `;
+  }
+
+  /* ライバーダンジョン(固有装備クエスト)一覧画面。ライバーごとにグループ
+   * 分けし、各クエストの必要戦闘力・現在の戦闘力・クリア状況・挑戦ボタン
+   * を表示する。戦闘中は素材ダンジョンと同様、この画面のまま戦闘UIに
+   * 差し替える(renderDungeonInnerのif(inCombat)ブロックと同じ構造)。 */
+  /* ライバー選択画面(トップ)。ライバーダンジョンを持つライバーだけを
+   * 一覧表示し、現在の戦闘力とそのライバーの通算クリア数(◯/◯)を
+   * 添えて、ボタンで個別のダンジョン画面に入る。 */
+  function renderLiverQuestSelectInner(){
+    const rows = LIVER_DEFS.filter(def=>liverHasDungeonLines(def.id)).map(def=>{
+      const ls = liverState(def.id);
+      const unlocked = ls && ls.unlocked;
+      const statusHtml = unlocked
+        ? `<span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">戦闘力 ${combatPower(def.id)} ・ クリア ${liverDungeonClearedCount(def.id)}/${liverDungeonTotalCount(def.id)}</span>`
+        : `<span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${uiIcon('lock')} 未解放</span>`;
+      return `
+        <div class="inv-item" style="${unlocked?'':'opacity:.55;'}">
+          <span class="inv-item-name">${esc(def.name)}<br>${statusHtml}</span>
+          <span class="inv-item-actions"><button data-open-liver-dungeon="${def.id}" ${unlocked?'':'disabled'}>開く</button></span>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml('ライバーダンジョン', helpButtonHtml('liverQuests'))}
+      </div>
+      <div class="actions">
+        <button id="backTownBtn">町に戻る</button>
+      </div>
+      <div class="section-block">
+        ${rows || `<p class="inv-empty">挑戦できるライバーダンジョンが無い。</p>`}
+      </div>
+    `;
+  }
+
+  /* 個別ライバーのダンジョン画面。武器/防具/アクセサリーのタブで系統を
+   * 切り替え、その系統の1〜5段階を縦に並べる。1段階目は固有装備、
+   * 2〜5段階目は強化素材が報酬(周回可能)。 */
+  function renderLiverQuestsInner(){
+    if(inCombat && combatEnemy && combatEnemy.isLiverQuest){
+      const stage = liverDungeonStageById(combatEnemy.liverQuestId);
+      const hpPct = Math.max(0,Math.round(combatEnemyHp/combatEnemy._maxHp*100));
+      const weaknessLabel = combatEnemy.weakness ? (ELEMENT_LABELS[combatEnemy.weakness]||'?') : '不明';
+      const actionsHtml = combatPhase === 'choice'
+        ? `
+          <div class="actions">
+            <button class="primary" id="fightBtn">戦う</button>
+            <button class="danger" id="fleeBtn">逃げる</button>
+          </div>`
+        : `<div class="actions"><button disabled>戦闘中…</button></div>`;
+      return `
+        <div class="scene-text">
+          ${sceneHeadingHtml(stage.line.lineName, `<span style="float:right;color:var(--gold);font-family:var(--font-mono);font-size:12px;">${stage.depth}/${LIVER_DUNGEON_STAGE_COUNT}</span>`)}
+          ${actionsHtml}
+          <p class="log-entry" style="font-family:var(--font-mono);font-size:13px;color:var(--text-muted);margin-top:16px;">
+            Lv.${combatEnemy.level} ${esc(combatEnemy.name)} — HP ${Math.max(0,combatEnemyHp)}/${combatEnemy._maxHp} ・ 弱点属性: ${esc(weaknessLabel)}
+          </p>
+          <div class="bar-track" style="margin-bottom:6px;"><div class="bar-fill" style="width:${hpPct}%;background:linear-gradient(90deg,#c62f2f,var(--hp-red));height:100%;"></div></div>
+          <div style="margin-bottom:14px;">${renderStatusEffectChips(combatEnemy.statusEffects)}</div>
+          ${renderLog()}
+        </div>`;
+    }
+
+    const liverId = state.ui.liverDungeonLiverId;
+    const def = liverId && liverDef(liverId);
+    if(!def || !liverHasDungeonLines(liverId)) return renderLiverQuestSelectInner();
+
+    const slotTab = ['weapon','armor','accessory'].includes(state.ui.liverDungeonSlotTab) ? state.ui.liverDungeonSlotTab : 'weapon';
+    const inParty = state.party.includes(liverId);
+    const cp = combatPower(liverId);
+
+    const rows = liverDungeonStagesFor(liverId, slotTab).map(stage=>{
+      const ds = state.dungeons[stage.id];
+      const cleared = ds && ds.cleared;
+      const challengeable = isLiverDungeonStageChallengeable(stage);
+      const statusHtml = !inParty
+        ? `<span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(def.name)}をパーティに編成すると挑戦可能</span>`
+        : `<span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">必要戦闘力 ${stage.requiredCP}(現在 ${cp})${cleared?' ・ クリア済み':''}</span>`;
+      const rewardLabel = stage.depth === 1 ? '固有装備' : `強化素材 x${stage.materialQty}`;
+      const btnHtml = `<button data-challenge-liver-quest="${stage.id}" ${challengeable ? '' : 'disabled'}>${cleared ? '再挑戦' : '挑戦する'}</button>`;
+      return `
+        <div class="inv-item" style="${challengeable||cleared?'':'opacity:.65;'}">
+          <span class="inv-item-name">${stage.depth}段階目 <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">[${esc(rewardLabel)}]</span><br>${statusHtml}</span>
+          <span class="inv-item-actions">${btnHtml}</span>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="scene-text">
+        ${sceneHeadingHtml(`${def.name}のライバーダンジョン`, helpButtonHtml('liverQuests'))}
+      </div>
+      <div class="actions">
+        <button id="backLiverDungeonSelectBtn">ライバー一覧に戻る</button>
+      </div>
+      <div class="tab-strip">
+        <button data-liver-dungeon-slot-tab="weapon" class="${slotTab==='weapon'?'active':''}">武器</button>
+        <button data-liver-dungeon-slot-tab="armor" class="${slotTab==='armor'?'active':''}">防具</button>
+        <button data-liver-dungeon-slot-tab="accessory" class="${slotTab==='accessory'?'active':''}">アクセサリー</button>
+      </div>
+      <div class="section-block">
+        ${rows}
+      </div>
+    `;
+  }
+
+  function renderLiverQuestResultInner(){
+    const result = state.lastLiverDungeonResult;
+    if(!result) return renderLiverQuestsInner();
+    let rewardLine;
+    if(result.depth === 1){
+      rewardLine = result.equipReward
+        ? `<p class="log-entry reward">固有装備「${esc(result.equipReward.name)}」を手に入れた！</p>`
+        : `<p class="log-entry">クリア済みのため、追加の報酬は無い。</p>`;
+    } else {
+      rewardLine = result.materialQty > 0
+        ? `<p class="log-entry reward">「${esc(result.materialName)}」を${result.materialQty}個手に入れた。</p>`
+        : '';
+    }
+    return `
+      <div class="scene-text" style="text-align:center;padding:24px 0 8px;">
+        <p style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--gold);text-shadow:2px 2px 0 #2c5c2c;margin:0 0 16px;">
+          ${esc(result.lineName)}(${result.depth}段階目)を突破した！
+        </p>
+        <div style="text-align:left;display:inline-block;">
+          ${rewardLine}
+        </div>
+      </div>
+      <div class="actions" style="justify-content:center;">
+        <button class="primary" id="liverQuestResultCloseBtn">ダンジョンに戻る</button>
       </div>
     `;
   }
@@ -7019,7 +7589,7 @@
    * と同じ配色のチップに分け、名前(控えめな色)と数字(ゴールド)を
    * 分離することで、幅を抑えつつ一目で数量を追えるようにする。 */
   function renderOrbSummary(){
-    const chips = Object.keys(RARITY).map(key=>{
+    const chips = Object.keys(RARITY).filter(k=>k!=='unique').map(key=>{
       const count = (state.orbs && state.orbs[key]) || 0;
       const r = RARITY[key];
       return `
@@ -7034,16 +7604,17 @@
   function renderEnhanceItemRow({item, equippedBy}){
     const level = item.enhanceLevel || 0;
     const rarity = RARITY[item.rarity];
+    const isUnique = item.rarity === 'unique';
     const orbCount = (state.orbs && state.orbs[item.rarity]) || 0;
     const maxed = level >= ENHANCE_MAX_LEVEL;
     const canAfford = orbCount >= 1;
     const equipLabel = equippedBy ? ` <span style="color:var(--text-muted);font-size:11px;">(装備中: ${esc(liverDef(equippedBy).name)})</span>` : '';
-    const actionLabel = maxed ? '強化上限' : `${esc(rarity.label)}のオーブ1個で強化`;
+    const actionLabel = isUnique ? '強化対象外' : (maxed ? '強化上限' : `${esc(rarity.label)}のオーブ1個で強化`);
     return `
       <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
-        <span class="inv-item-name">${esc(item.name)}${equipLabel} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))} ・ 強化 ${level}/${ENHANCE_MAX_LEVEL}</span></span>
+        <span class="inv-item-name">${esc(item.name)}${equipLabel} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}${isUnique?'':` ・ 強化 ${level}/${ENHANCE_MAX_LEVEL}`}</span></span>
         <span class="inv-item-actions">
-          <button data-enhance-item="${item.id}" ${(maxed||!canAfford)?'disabled':''}>${actionLabel}</button>
+          <button data-enhance-item="${item.id}" ${(isUnique||maxed||!canAfford)?'disabled':''}>${actionLabel}</button>
         </span>
       </div>`;
   }
@@ -7445,6 +8016,8 @@
       </div>`;
 
     const headingHtml = `<p class="scene-heading"><span>${esc(def.name)}${inParty ? ' <span style="color:var(--gold);font-weight:400;">(編成中)</span>' : ''}</span>${helpButtonHtml('roster')}</p>`;
+    const liverDungeonBtnHtml = (unlocked && liverHasDungeonLines(id))
+      ? `<button data-open-liver-dungeon="${id}">ライバーダンジョンへ</button>` : '';
 
     const detailTab = state.ui.liverDetailTab === 'dialogue' ? 'dialogue' : 'detail';
     const tabSwitcherHtml = `
@@ -7461,6 +8034,7 @@
         </div>
         <div class="actions">
           <button id="backFromLiverDetailBtn">${state.ui.rosterDetailFrom === 'party' ? '編成画面に戻る' : 'ライバー一覧に戻る'}</button>
+          ${liverDungeonBtnHtml}
         </div>
         ${tabSwitcherHtml}
         ${renderLiverDialogueInner(id, unlocked)}
@@ -7474,6 +8048,7 @@
       </div>
       <div class="actions">
         <button id="backFromLiverDetailBtn">${state.ui.rosterDetailFrom === 'party' ? '編成画面に戻る' : 'ライバー一覧に戻る'}</button>
+        ${liverDungeonBtnHtml}
       </div>
       ${tabSwitcherHtml}
       <div class="section-block">
@@ -7796,7 +8371,7 @@
       bodyHtml = `${toolsHtml}<p class="section-label" style="margin:14px 0 8px;">アクセサリー</p>${accessoriesHtml}`;
     } else if(equipActive){
       const equipSort = (state.ui && state.ui.equipSort) || INVENTORY_SORT_DEFAULT;
-      const sellList = applyInventorySort(state.inventory, equipSort, i => RARITY_SORT_ORDER[i.rarity] || 0);
+      const sellList = applyInventorySort(state.inventory.filter(i=>i.rarity!=='unique'), equipSort, i => RARITY_SORT_ORDER[i.rarity] || 0);
       bodyHtml = sellList.length ? sellList.map(item=>`
         <div class="inv-item ${item.rarityLabel}" title="${esc(itemDetailText(item))}">
           <span class="inv-item-name">${esc(item.name)} <span style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${esc(itemValueLabel(item))}</span></span>
@@ -8395,6 +8970,9 @@
     else if(state.screen === 'towerRun') inner = renderTowerRunInner();
     else if(state.screen === 'towerResult') inner = renderTowerResultInner();
     else if(state.screen === 'materialDungeons') inner = renderMaterialDungeonsInner();
+    else if(state.screen === 'liverQuestSelect') inner = renderLiverQuestSelectInner();
+    else if(state.screen === 'liverQuests') inner = renderLiverQuestsInner();
+    else if(state.screen === 'liverQuestResult') inner = renderLiverQuestResultInner();
     else if(state.screen === 'prismResult') inner = renderPrismResultInner();
     else if(state.screen === 'home') inner = renderHomeInner();
     else if(state.screen === 'market') inner = renderMarketInner();
@@ -8547,7 +9125,7 @@
     render();
   }
 
-  const RARITY_SORT_ORDER = {common:0, uncommon:1, rare:2, epic:3};
+  const RARITY_SORT_ORDER = {common:0, uncommon:1, rare:2, epic:3, unique:4};
   const INVENTORY_SORT_DEFAULT = 'new_asc';
   const INVENTORY_SORT_OPTIONS = [
     { value:'new_asc',     label:'新着順(昇順)' },
@@ -8681,10 +9259,22 @@
     on('towerRetreatBtn', retreatFromTower);
     on('towerResultCloseBtn', closeTowerResult);
     on('gotoMaterialDungeonsBtn', ()=>gotoScreen('materialDungeons'));
+    on('gotoLiverQuestsBtn', ()=>gotoScreen('liverQuestSelect'));
+    on('backLiverDungeonSelectBtn', ()=>gotoScreen('liverQuestSelect'));
+    on('liverQuestResultCloseBtn', closeLiverQuestResult);
+    document.querySelectorAll('[data-open-liver-dungeon]').forEach(b=>{
+      b.addEventListener('click', ()=>openLiverDungeon(b.getAttribute('data-open-liver-dungeon')));
+    });
+    document.querySelectorAll('[data-liver-dungeon-slot-tab]').forEach(b=>{
+      b.addEventListener('click', ()=>switchLiverDungeonSlotTab(b.getAttribute('data-liver-dungeon-slot-tab')));
+    });
     on('prismResultCloseBtn', closePrismResult);
     on('leavePrismBtn', leavePrismFloor);
     document.querySelectorAll('[data-enter-prism]').forEach(b=>{
       b.addEventListener('click', ()=>enterPrismFloor(b.getAttribute('data-enter-prism')));
+    });
+    document.querySelectorAll('[data-challenge-liver-quest]').forEach(b=>{
+      b.addEventListener('click', ()=>challengeLiverDungeonStage(b.getAttribute('data-challenge-liver-quest')));
     });
     on('helpPopupCloseBtn', closeHelpPopup);
     document.querySelectorAll('[data-open-help]').forEach(b=>{
