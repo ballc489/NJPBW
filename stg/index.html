@@ -5964,6 +5964,7 @@
   let combatEnemyHp = 0;
   let pendingDefBuffs = {}; // { liverId: reduceMult } その本人の次の被弾にのみ適用
   let combatPassiveFlags = {}; // { liverId: {...} } 条件付きパッシブの発動状態・ログ済みフラグ。戦闘開始時にリセット
+  let combatOpeningDone = false; // 戦闘開始時の先制攻撃パッシブを実行済みか。戦闘開始時にリセット
   let playerStatusEffects = {}; // { liverId: { [effectType]: {amount, turnsLeft, freshlyGranted} } } 戦闘中のみ・保存しない
 
   /* 低確率で防御力を無視した大ダメージが発生する(プレイヤー側は「会心の
@@ -6161,10 +6162,11 @@
       if(casterIsEnemy){
         const atk = effectiveEnemyAtk();
         const isCrit = rollCrit(null);
+        if(tryDodgeAttack(target)) return;
         raw = (effect.ignoreDef || isCrit)
           ? Math.max(1, Math.round(atk * effect.amount * (isCrit?CRIT_MULT:1)) + rnd(-1,2))
           : Math.max(1, Math.round(atk * effect.amount) - liverDefStat(target) + rnd(-1,1));
-        const dmg = applyDamageToLiver(target, raw, effect.element);
+        const dmg = applyDamageToLiver(target, raw, effect.element, !(effect.ignoreDef || isCrit));
         if(isCrit) playLiverDialogue(target, 'critTaken', combatDialogueFired);
         pushLog(`${isCrit?'痛恨の一撃！ ':''}${combatEnemy.name}の攻撃！ ${targetName}が ${dmg} のダメージを受けた。`, 'danger', true);
         if(effect.drainRatio){
@@ -6604,81 +6606,92 @@
    *   kind:'allyDownRage'      味方が戦闘不能になった瞬間、以後の自分の攻撃力をmult倍(1戦闘に1度)。発動時にログを出す
    *   kind:'randomAllyBoon'    毎ラウンド低確率で、味方の誰か1人のHPを回復する。発動時にログを出す
    *   kind:'coverAlly'         味方のHPが割合threshold以下の時、その味方への攻撃を代わりに引き受ける。発動時にログを出す
+   *   --- 以下は先頭10名の専用パッシブ(戦闘中の状態はcombatPassiveFlags[liverId]に持つ) ---
+   *   kind:'roundStartPartyMpRegen' 毎ラウンド開始時、生存中の味方全員のMPを最大MPのratio分回復する(ログなし)
+   *   kind:'adjacentAllyStatMult'   編成順で前後に隣り合う生存中の味方1人につき、自身のstatsにperNeighbor加算(ログなし。passiveStatMultで計算)
+   *   kind:'aggroPoe'               攻撃集中率+aggro(HPがaggroOffHpRatio以下で0)。被弾のたびにぽえ+1(最大poeMax)、スキル使用時に全消費して威力+poePower×ぽえ数
+   *   kind:'damageShare'            自分以外の味方が受けるダメージのratio分を肩代わりする(防御力で軽減)
+   *   kind:'openingStrike'          戦闘開始時、敵に通常攻撃で先制攻撃を1回行う
+   *   kind:'reviveOnce'             戦闘中1度だけ、味方が戦闘不能になった瞬間にHP hpRatioで復活させる(自分自身には使えない)
+   *   kind:'dodgeCounter'           敵の単体攻撃をdodgeの確率で回避し、回避すると次の自分の攻撃がnextAtkMult倍になる
+   *   kind:'demonHuman'             悪魔/人間ゲージ(合計10、0:10で開始)。状態表はDEMON_HUMAN_TABLE。行動で悪魔+1、被ダメージで人間+1
+   *   kind:'frontPartyAtkBuff'      パーティの先頭(編成1番目)にいる間、味方全員の攻撃力にatk加算
+   *   kind:'protectLowestAlly'      HP割合が最も低い味方(自分以外)が受けるダメージをreduce分軽減する
    * --------------------------------------------------------------- */
   const COSTUME_DEFS = {
     liver_1: [
       {key:'default', name:'通常衣装(樋口楓専用)',
-        passive:{name:'こんでろーん', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
-          desc:'戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}},
+        passive:{name:'笑い上戸のムードメイカー', kind:'roundStartPartyMpRegen', ratio:0.05, always:true,
+          desc:'毎ラウンドの開始時、味方全員のMPが5%回復する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'statMult', stat:'atk', mult:1.2, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、攻撃力が20%上昇する。'}}
     ],
     liver_2: [
       {key:'default', name:'通常衣装(ジョー・力一専用)',
-        passive:{name:'NEOてぇてぇ', kind:'partySizeStatMult', stats:['atk','def'], perMember:0.06, always:true,
-          desc:'常時、編成人数が多いほど攻撃力・防御力が上昇する(1人につき+6%、4人編成で+18%)。'}},
+        passive:{name:'寂しがり屋の道化師', kind:'adjacentAllyStatMult', stats:['atk','def'], perNeighbor:0.05, always:true,
+          desc:'編成順で前後に隣り合う生存中の味方1人につき、自身の攻撃力・防御力が5%上昇する(最大10%)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lowHpAtkBoost', threshold:0.3, mult:1.3, always:false,
           desc:'(仮設定・後日差し替え予定) 自身のHPが30%以下のとき、攻撃力が30%上昇する。'}}
     ],
     liver_3: [
       {key:'default', name:'通常衣装(魔界ノりりむ専用)',
-        passive:{name:'ばあっ！', kind:'onHitMpDrain', ratio:0.2, always:true,
-          desc:'常時、攻撃を命中させるたびに与えたダメージの20%をMPとして吸収する。'}},
+        passive:{name:'りりむはいい女', kind:'aggroPoe', aggro:0.3, aggroOffHpRatio:0.4, poeMax:5, poePower:0.15, always:false,
+          desc:'敵に狙われやすくなる(攻撃集中率+30%、HP40%以下で解除)。攻撃を受けるたびに「ぽえ」が溜まり(最大5)、スキル使用時にすべて消費して、威力が1つにつき15%上昇する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lootBonus', dropRateMult:1.25, goldMult:1.25, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が25%上昇する。'}}
     ],
     liver_4: [
       {key:'default', name:'通常衣装(加賀美ハヤト専用)',
-        passive:{name:'私……社長ですけど', kind:'lootBonus', dropRateMult:1.3, goldMult:1.3, always:true,
-          desc:'常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が30%上昇する。'}},
+        passive:{name:'加賀美インダストリアル代表取締役', kind:'damageShare', ratio:0.2, always:false,
+          desc:'自分以外の味方が受けるダメージの20%を肩代わりする(自身の防御力で軽減)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'partyMpCostReduce', mult:0.9, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、パーティ全員のスキルMP消費が10%軽減される。'}}
     ],
     liver_5: [
       {key:'default', name:'通常衣装(三枝明那専用)',
-        passive:{name:'最高の人生送ってる。', kind:'statMult', stat:'mpCost', mult:0.85, always:true,
-          desc:'常時、スキルのMP消費が15%軽減される。'}},
+        passive:{name:'でたわね！', kind:'openingStrike', always:false,
+          desc:'戦闘開始時、敵に先制攻撃を1回行う。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}}
     ],
     liver_6: [
       {key:'default', name:'通常衣装(弦月藤士郎専用)',
-        passive:{name:'あなたはあなた', kind:'partyMpCostReduce', mult:0.9, always:true,
-          desc:'常時、パーティ全員のスキルMP消費が10%軽減される。'}}
+        passive:{name:'神との連絡役', kind:'reviveOnce', hpRatio:0.25, always:false,
+          desc:'戦闘中1度だけ、味方が戦闘不能になった時にHP25%で復活させる。'}}
     ],
     liver_7: [
       {key:'default', name:'通常衣装(先斗寧専用)',
-        passive:{name:'ルー・ベー・リー', kind:'randomAllyBoon', chance:0.18, healRatio:0.15, always:false,
-          desc:'戦闘中、毎ラウンド18%の確率で妖精が味方の誰かを見守り、HPが15%回復する。'}},
+        passive:{name:'国民的クールビューティ', kind:'dodgeCounter', dodge:0.2, nextAtkMult:1.3, always:false,
+          desc:'敵の攻撃を20%の確率で回避する。回避すると、次の自分の攻撃が30%上昇する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'coverAlly', threshold:0.3, always:false,
           desc:'(仮設定・後日差し替え予定) 味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}}
     ],
     liver_8: [
       {key:'default', name:'通常衣装(石神のぞみ専用)',
-        passive:{name:'だってさぁ！', kind:'lowHpAtkBoost', threshold:0.3, mult:1.25, always:false,
-          desc:'自身のHPが30%以下のとき、攻撃力が25%上昇する。'}},
+        passive:{name:'悪魔と人間のハーフ', kind:'demonHuman', always:false,
+          desc:'悪魔の力が増すほど火力が上がる。悪魔と人間の力が均等になった時、「覚醒」する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
           desc:'(仮設定・後日差し替え予定) 戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}}
     ],
     liver_9: [
       {key:'default', name:'通常衣装(風楽奏斗専用)',
-        passive:{name:'楽しんでこっぜ！', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
-          desc:'常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}},
+        passive:{name:'首領としての才覚', kind:'frontPartyAtkBuff', atk:0.1, always:false,
+          desc:'パーティの先頭にいる間、味方全員の攻撃力が10%上昇する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'onHitMpDrain', ratio:0.15, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、攻撃を命中させるたびに与えたダメージの15%をMPとして吸収する。'}}
     ],
     liver_10: [
       {key:'default', name:'通常衣装(栞葉るり専用)',
-        passive:{name:'取締ビーム', kind:'coverAlly', threshold:0.3, always:false,
-          desc:'味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}},
+        passive:{name:'犬のお巡りさん', kind:'protectLowestAlly', reduce:0.3, always:false,
+          desc:'HP割合が最も低い味方(自分以外)が受けるダメージを30%軽減する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lowEnemyHpBoost', threshold:0.3, mult:1.2, always:false,
           desc:'(仮設定・後日差し替え予定) 敵の残りHPが30%以下の間、自分の与ダメージが20%上昇する。'}}
@@ -7957,7 +7970,24 @@
       const extraMembers = Math.max(0, partySize - 1);
       return 1 + extraMembers * (p.perMember||0);
     }
+    if(p.kind==='adjacentAllyStatMult' && (p.stats||[]).includes(stat)){
+      return 1 + adjacentAliveAllyCount(liverId) * (p.perNeighbor||0);
+    }
+    if(p.kind==='demonHuman' && stat==='mpCost' && inCombat){
+      return DEMON_HUMAN_TABLE[demonCount(liverId)].mpCost || 1;
+    }
     return 1;
+  }
+
+  /* 編成順で前後に隣り合う、生存中の味方の人数(0〜2)。寂しがり屋の道化師(ジョー・力一)用。 */
+  function adjacentAliveAllyCount(liverId){
+    if(!state || !state.party) return 0;
+    const idx = state.party.indexOf(liverId);
+    if(idx < 0) return 0;
+    return [state.party[idx-1], state.party[idx+1]].filter(nid=>{
+      const ls = nid && liverState(nid);
+      return ls && ls.hp > 0;
+    }).length;
   }
 
   function unlockedSkillsFor(jobId, level){
@@ -8159,11 +8189,32 @@
       const stacks = flags.stacks || 0;
       return 1 + stacks * (p.perStack || 0);
     }
+    if(p.kind === 'aggroPoe'){
+      // りりむ: スキル使用時にぽえを消費した、そのスキル1回の間だけ上乗せされる
+      return 1 + (flags.poeBoost || 0) * (p.poePower || 0);
+    }
+    if(p.kind === 'dodgeCounter'){
+      // 先斗寧: 回避した後、次に敵へダメージを与える行動が終わるまで有効
+      return flags.dodgeBuff ? (p.nextAtkMult || 1) : 1;
+    }
+    if(p.kind === 'demonHuman'){
+      return 1 + (DEMON_HUMAN_TABLE[demonCount(id)].atk || 0);
+    }
     return 1;
   }
   function combatAtk(id){
     const statusMult = statusStatMult(playerStatusEffects[id], 'atkBuff', 'atkDebuff');
-    return Math.max(1, Math.round(liverAtk(id) * activeCombatAtkMult(id) * partyBuffAtkMult() * statusMult));
+    return Math.max(1, Math.round(liverAtk(id) * activeCombatAtkMult(id) * partyBuffAtkMult() * frontLeaderAtkMult() * statusMult));
+  }
+
+  /* パーティの先頭(編成1番目)が生存中の風楽奏斗なら、味方全員にかかる攻撃力倍率。 */
+  function frontLeaderAtkMult(){
+    if(!state.party.length) return 1;
+    const leaderId = state.party[0];
+    const ls = liverState(leaderId);
+    const p = equippedPassive(leaderId);
+    if(!ls || ls.hp <= 0 || !p || p.kind !== 'frontPartyAtkBuff') return 1;
+    return 1 + (p.atk || 0);
   }
 
   /* 戦闘開始直後のNターンだけパーティ全体にかかる攻撃力バフ倍率(樋口楓)。 */
@@ -8276,6 +8327,250 @@
     if((targetLs.hp/targetLs.maxHp) > (p.threshold||0)) return targetId;
     pushLog(`${liverDef(coverId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}をかばった！`, 'system', true);
     return coverId;
+  }
+
+  /* ---------------------------------------------------------------
+   * 先頭10名の専用衣装パッシブ(戦闘中の状態管理・各種フック)
+   * 戦闘中の状態はcombatPassiveFlags[liverId]に持ち、startCombat()でリセットされる。
+   * --------------------------------------------------------------- */
+  function passiveFlags(id){
+    if(!combatPassiveFlags[id]) combatPassiveFlags[id] = {};
+    return combatPassiveFlags[id];
+  }
+
+  /* 石神のぞみ「悪魔と人間のハーフ」。添字=悪魔の数(0〜10)、人間=10-悪魔。
+   * atk/taken: 与ダメージ・被ダメージの増減、aggro: 攻撃集中率、
+   * mpCost: スキルMP消費倍率、mpRegen: ラウンド開始時のMP回復(最大MP比)。 */
+  const DEMON_HUMAN_TABLE = [
+    {atk:-0.20, taken:-0.25, aggro:-0.15, mpRegen:0.10}, // 0:10
+    {atk:-0.15, taken:-0.20, aggro:-0.12, mpRegen:0.05}, // 1:9
+    {atk:-0.10, taken:-0.15, aggro:-0.09, mpRegen:0.03}, // 2:8
+    {atk:-0.05, taken:-0.10, aggro:-0.06, mpRegen:0.02}, // 3:7
+    {atk:0,     taken:-0.05, aggro:-0.03, mpRegen:0.01}, // 4:6
+    {atk:0.25,  taken:-0.20, aggro:0,     mpCost:0.8},   // 5:5 覚醒
+    {atk:0.05,  taken:0.05,  aggro:0.03},                // 6:4
+    {atk:0.10,  taken:0.10,  aggro:0.06},                // 7:3
+    {atk:0.15,  taken:0.15,  aggro:0.09},                // 8:2
+    {atk:0.20,  taken:0.20,  aggro:0.12},                // 9:1
+    {atk:0.25,  taken:0.25,  aggro:0.15}                 // 10:0
+  ];
+  function demonCount(id){
+    return Math.max(0, Math.min(10, passiveFlags(id).demon || 0));
+  }
+  function hasPassiveKind(id, kind){
+    const p = equippedPassive(id);
+    return !!p && p.kind === kind;
+  }
+  function shiftDemonHuman(id, delta){
+    const p = equippedPassive(id);
+    if(!p || p.kind !== 'demonHuman') return;
+    const before = demonCount(id);
+    const after = Math.max(0, Math.min(10, before + delta));
+    passiveFlags(id).demon = after;
+    if(before !== 5 && after === 5){
+      pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ 悪魔と人間の力が釣り合い、「覚醒」した！`, 'reward', true);
+    } else if(before === 5 && after !== 5){
+      pushLog(`${liverDef(id).name}の「覚醒」が解けた……。`, 'system', true);
+    }
+  }
+
+  /* 攻撃集中率(敵の攻撃対象に選ばれる確率の加減算値)。戦闘中のみ有効。 */
+  function liverAggroValue(id){
+    const p = equippedPassive(id);
+    if(!p) return 0;
+    if(p.kind === 'aggroPoe'){
+      const ls = liverState(id);
+      const ratio = ls.maxHp > 0 ? ls.hp / ls.maxHp : 1;
+      return ratio > (p.aggroOffHpRatio || 0) ? (p.aggro || 0) : 0;
+    }
+    if(p.kind === 'demonHuman'){
+      return DEMON_HUMAN_TABLE[demonCount(id)].aggro || 0;
+    }
+    return 0;
+  }
+
+  /* 敵の攻撃対象を、攻撃集中率を加味して抽選する。
+   * 確率_i = 1/N + a_i − (自分以外のaの合計)/(N−1)  (N=生存人数、a=攻撃集中率)。
+   * 持ち主が得た分は他の全員から等しく差し引かれ、合計は常に100%になる。
+   * 負になった人は0にして全体を再正規化する。戦闘外(罠など)では使わない。 */
+  function pickRandomAliveTarget(){
+    const alive = alivePartyIds();
+    if(!alive.length) return null;
+    if(alive.length === 1 || !inCombat){
+      return alive[Math.floor(Math.random()*alive.length)];
+    }
+    const n = alive.length;
+    const a = alive.map(liverAggroValue);
+    const sumA = a.reduce((s,v)=>s+v, 0);
+    if(sumA !== 0 || a.some(v=>v !== 0)){
+      const weights = a.map(v=> Math.max(0, 1/n + v - (sumA - v)/(n-1)));
+      const total = weights.reduce((s,w)=>s+w, 0);
+      if(total > 0){
+        let r = Math.random() * total;
+        for(let i=0; i<n; i++){
+          r -= weights[i];
+          if(r < 0) return alive[i];
+        }
+        return alive[n-1];
+      }
+    }
+    return alive[Math.floor(Math.random()*n)];
+  }
+
+  /* 先斗寧「国民的クールビューティ」: 敵の単体攻撃を確率で回避する。回避したらtrue。 */
+  function tryDodgeAttack(targetId){
+    if(!inCombat || !targetId) return false;
+    const p = equippedPassive(targetId);
+    if(!p || p.kind !== 'dodgeCounter') return false;
+    if(Math.random() >= (p.dodge || 0)) return false;
+    passiveFlags(targetId).dodgeBuff = true;
+    pushLog(`${liverDef(targetId).name}のパッシブ「${p.name}」が発動！ ﾌｧｻ…と涼しい顔で攻撃をかわした！`, 'reward', true);
+    return true;
+  }
+
+  /* 被弾時に受けるダメージの補正(石神のぞみの状態補正・栞葉るりの保護)。 */
+  function applyIncomingDamagePassives(liverId, dmg){
+    const own = equippedPassive(liverId);
+    if(own && own.kind === 'demonHuman'){
+      dmg = Math.max(1, Math.round(dmg * (1 + (DEMON_HUMAN_TABLE[demonCount(liverId)].taken || 0))));
+    }
+    const guardId = state.party.find(id=>{
+      if(id === liverId) return false;
+      const ls = liverState(id);
+      return ls && ls.hp > 0 && hasPassiveKind(id, 'protectLowestAlly');
+    });
+    if(guardId){
+      const candidates = state.party.filter(id=> id !== guardId && liverState(id) && liverState(id).hp > 0);
+      let lowestId = null, lowestRatio = Infinity;
+      candidates.forEach(id=>{
+        const ls = liverState(id);
+        const ratio = ls.maxHp > 0 ? ls.hp / ls.maxHp : 1;
+        if(ratio < lowestRatio){ lowestRatio = ratio; lowestId = id; }
+      });
+      if(lowestId === liverId){
+        const gp = equippedPassive(guardId);
+        dmg = Math.max(1, Math.round(dmg * (1 - (gp.reduce || 0))));
+        pushLog(`${liverDef(guardId).name}のパッシブ「${gp.name}」が発動！ ${liverDef(liverId).name}を保護し、ダメージを軽減した！`, 'system', true);
+      }
+    }
+    return dmg;
+  }
+
+  /* 加賀美ハヤト「加賀美インダストリアル代表取締役」: 味方が受けるダメージの一部を肩代わりする。
+   * 戻り値は対象本人から差し引くダメージ量。肩代わり分は、防御力を参照する通常攻撃の場合に限り、
+   * ハヤト本人が直接攻撃された場合と同じ割合(防御力の差)で軽減してから受ける。 */
+  function applyDamageShare(targetId, dmg, defBased){
+    if(dmg <= 1) return 0;
+    const holderId = state.party.find(id=>{
+      if(id === targetId) return false;
+      const ls = liverState(id);
+      return ls && ls.hp > 0 && hasPassiveKind(id, 'damageShare');
+    });
+    if(!holderId) return 0;
+    const p = equippedPassive(holderId);
+    const moved = Math.min(dmg - 1, Math.round(dmg * (p.ratio || 0)));
+    if(moved <= 0) return 0;
+    let taken = moved;
+    if(defBased && combatEnemy){
+      const atk = effectiveEnemyAtk();
+      const vsHolder = Math.max(1, atk - liverDefStat(holderId));
+      const vsTarget = Math.max(1, atk - liverDefStat(targetId));
+      taken = Math.max(1, Math.round(moved * Math.max(0.1, Math.min(2, vsHolder / vsTarget))));
+    }
+    const holderLs = liverState(holderId);
+    holderLs.hp = Math.max(0, holderLs.hp - taken);
+    pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}のダメージを肩代わりした！(-${taken})`, 'system', true);
+    checkLiverKO(holderId);
+    return moved;
+  }
+
+  /* 敵の攻撃でダメージを受けた時の後処理(石神のぞみの人間+1、魔界ノりりむのぽえ+1)。 */
+  function onLiverDamaged(liverId, dmg){
+    if(dmg <= 0) return;
+    const p = equippedPassive(liverId);
+    if(!p) return;
+    if(p.kind === 'demonHuman'){
+      shiftDemonHuman(liverId, -1);
+    } else if(p.kind === 'aggroPoe'){
+      const flags = passiveFlags(liverId);
+      flags.poe = Math.min(p.poeMax || 5, (flags.poe || 0) + 1);
+    }
+  }
+
+  function skillDealsDamage(skill){
+    if(skill.effects) return skill.effects.some(e=>e.type === 'damage');
+    return skill.kind !== 'heal';
+  }
+  /* 魔界ノりりむ: スキルを使う瞬間に、溜まったぽえをすべて消費してそのスキルの威力に上乗せする。 */
+  function consumePoeForSkill(liverId, skill){
+    const p = equippedPassive(liverId);
+    if(!p || p.kind !== 'aggroPoe') return;
+    const flags = passiveFlags(liverId);
+    const n = flags.poe || 0;
+    if(n <= 0 || !skillDealsDamage(skill)) return;
+    flags.poe = 0;
+    flags.poeBoost = n;
+    pushLog(`${liverDef(liverId).name}のパッシブ「${p.name}」が発動！ ぽえ×${n}が弾け、スキルの威力が上がった！`, 'system', true);
+  }
+  /* 行動1回ごとの後処理。enemyHpBeforeは行動前の敵HP(ダメージを与えたかの判定用)。 */
+  function afterPlayerAction(liverId, enemyHpBefore){
+    const p = equippedPassive(liverId);
+    if(!p) return;
+    const flags = passiveFlags(liverId);
+    if(p.kind === 'aggroPoe') flags.poeBoost = 0;
+    if(p.kind === 'dodgeCounter' && combatEnemyHp < enemyHpBefore) flags.dodgeBuff = false;
+    if(p.kind === 'demonHuman') shiftDemonHuman(liverId, 1);
+  }
+
+  /* ラウンド開始時の効果(樋口楓の味方全員MP回復、石神のぞみの人間寄りMP回復)。
+   * 常時発動系のためログは出さない。 */
+  function applyRoundStartPassives(){
+    const alive = alivePartyIds();
+    const restoreMp = (id, ratio)=>{
+      const ls = liverState(id);
+      ls.mp = Math.min(ls.maxMp, ls.mp + Math.max(1, Math.round(ls.maxMp * ratio)));
+    };
+    alive.forEach(holderId=>{
+      const p = equippedPassive(holderId);
+      if(!p) return;
+      if(p.kind === 'roundStartPartyMpRegen'){
+        alive.forEach(id=> restoreMp(id, p.ratio || 0));
+      } else if(p.kind === 'demonHuman'){
+        const regen = DEMON_HUMAN_TABLE[demonCount(holderId)].mpRegen || 0;
+        if(regen > 0) restoreMp(holderId, regen);
+      }
+    });
+  }
+
+  /* 味方が戦闘不能になった瞬間の復活(弦月藤士郎)。復活したらtrue。 */
+  function tryReviveOnce(deadId){
+    const holderId = state.party.find(id=>{
+      if(id === deadId) return false;
+      const ls = liverState(id);
+      return ls && ls.hp > 0 && hasPassiveKind(id, 'reviveOnce') && !passiveFlags(id).reviveUsed;
+    });
+    if(!holderId) return false;
+    const p = equippedPassive(holderId);
+    passiveFlags(holderId).reviveUsed = true;
+    const ls = liverState(deadId);
+    ls.hp = Math.max(1, Math.round(ls.maxHp * (p.hpRatio || 0.25)));
+    pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ 神に連絡し、${liverDef(deadId).name}がHP${ls.hp}で復活した！`, 'reward');
+    return true;
+  }
+
+  /* 戦闘開始時の先制攻撃(三枝明那)。戦闘ごとに1度だけ、パーティ順に実行する。 */
+  async function runOpeningPassives(){
+    for(const id of state.party){
+      if(!inCombat || combatPhase !== 'auto') return;
+      const ls = liverState(id);
+      if(!ls || ls.hp <= 0 || !hasPassiveKind(id, 'openingStrike')) continue;
+      const p = equippedPassive(id);
+      pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ ${combatEnemy.name}に先制攻撃！`, 'system', true);
+      performNormalAttack(id);
+      render();
+      if(combatEnemyHp <= 0) return;
+      await sleep(400);
+    }
   }
 
   /* ライバーの属性耐性。レベルアップでは伸びず、装備(・将来的にはスキル等の
@@ -9210,13 +9505,17 @@
     pendingDefBuffs = {};
     playerStatusEffects = {};
     combatPassiveFlags = {};
+    combatOpeningDone = false;
     combatDialogueFired = {};
     lastDamagerId = null;
     pushLog(`Lv.${enemy.level} ${enemy.name}${enemy.boss?'が行く手を阻んだ！':'が現れた。'}`, 'danger');
-    state.party.forEach(id=>{
+    state.party.forEach((id, idx)=>{
       const p = equippedPassive(id);
       if(p && p.kind==='battleStartPartyBuff'){
         pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ パーティ全体の士気が高まった！`, 'system', true);
+      }
+      if(p && p.kind==='frontPartyAtkBuff' && idx === 0 && liverState(id).hp > 0){
+        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ 先頭に立ち、パーティを率いる！`, 'system', true);
       }
     });
     render();
@@ -9227,11 +9526,6 @@
   }
   function isPartyWiped(){
     return alivePartyIds().length === 0;
-  }
-  function pickRandomAliveTarget(){
-    const alive = alivePartyIds();
-    if(!alive.length) return null;
-    return alive[Math.floor(Math.random()*alive.length)];
   }
 
   function chooseFight(){
@@ -9248,6 +9542,29 @@
    * kind: 'trueDamageSpell'(防御無視の攻撃) / 'bonusAttack'(追加攻撃)
    *       'defBuff'(次の被弾を軽減) / 'heal'(自己回復)
    */
+  /* 通常攻撃1回(会心判定・武器の属性付与・MP吸収込み)。通常のターン行動と、
+   * 戦闘開始時の先制攻撃(三枝明那)の両方から使う。 */
+  function performNormalAttack(liverId){
+    const name = liverDef(liverId).name;
+    const affixMult = weaponAffixDamageMult(liverId);
+    const drainSuffix = (dmg) => {
+      const drained = applyOnHitMpDrain(liverId, dmg);
+      return drained > 0 ? ` (MP+${drained})` : '';
+    };
+    if(rollCrit(liverId)){
+      const dmg = Math.max(1, Math.round(combatAtk(liverId) * CRIT_MULT * affixMult) + rnd(-1,3));
+      combatEnemyHp -= dmg;
+      lastDamagerId = liverId;
+      playLiverDialogue(liverId, 'critDeal', combatDialogueFired);
+      pushLog(`${name}の攻撃が会心の一撃となった！ ${combatEnemy.name}に防御を貫く ${dmg} の大ダメージ！${drainSuffix(dmg)}`, 'reward', true);
+      return;
+    }
+    const dmg = Math.max(1, Math.round((combatAtk(liverId) - effectiveEnemyDef()) * affixMult) + rnd(-1,2));
+    combatEnemyHp -= dmg;
+    lastDamagerId = liverId;
+    pushLog(`${name}の攻撃！ ${combatEnemy.name}に ${dmg} のダメージ。${drainSuffix(dmg)}`, 'combat', true);
+  }
+
   function playerTurnActionInner(liverId, silenced){
     const ls = liverState(liverId);
     const name = liverDef(liverId).name;
@@ -9269,23 +9586,13 @@
     const affixMult = weaponAffixDamageMult(liverId);
 
     if(!chosen){
-      if(rollCrit(liverId)){
-        const dmg = Math.max(1, Math.round(combatAtk(liverId) * CRIT_MULT * affixMult) + rnd(-1,3));
-        combatEnemyHp -= dmg;
-        lastDamagerId = liverId;
-        playLiverDialogue(liverId, 'critDeal', combatDialogueFired);
-        pushLog(`${name}の攻撃が会心の一撃となった！ ${combatEnemy.name}に防御を貫く ${dmg} の大ダメージ！${drainSuffix(dmg)}`, 'reward', true);
-        return;
-      }
-      const dmg = Math.max(1, Math.round((combatAtk(liverId) - effectiveEnemyDef()) * affixMult) + rnd(-1,2));
-      combatEnemyHp -= dmg;
-      lastDamagerId = liverId;
-      pushLog(`${name}の攻撃！ ${combatEnemy.name}に ${dmg} のダメージ。${drainSuffix(dmg)}`, 'combat', true);
+      performNormalAttack(liverId);
       return;
     }
 
     const mpCost = Math.max(0, Math.round(chosen.mpCost * passiveStatMult(liverId,'mpCost') * partyMpCostMult()));
     ls.mp -= mpCost;
+    consumePoeForSkill(liverId, chosen);
 
     if(chosen.effects){
       // 新方式: 複合効果スキル。効果を順に解決する(旧kind形式との判定は排他)。
@@ -9347,7 +9654,9 @@
     if(stunned){
       pushLog(`${name}はまだ動けない！`, 'system', true);
     } else {
+      const enemyHpBefore = combatEnemyHp;
       playerTurnActionInner(liverId, silenced);
+      afterPlayerAction(liverId, enemyHpBefore);
     }
     tickStatusEffects(effects,
       (type, eff)=>{
@@ -9364,7 +9673,9 @@
     );
   }
 
-  function applyDamageToLiver(liverId, rawDmg, element){
+  /* defBased: 防御力を参照した通常の被弾か(防御無視の攻撃ではfalse)。
+   * 加賀美ハヤトの肩代わり分を、防御力で軽減するかどうかの判定に使う。 */
+  function applyDamageToLiver(liverId, rawDmg, element, defBased){
     const ls = liverState(liverId);
     let dmg = rawDmg;
     if(element){
@@ -9383,7 +9694,10 @@
       dmg = Math.max(1, Math.round(dmg*pendingDefBuffs[liverId]));
       delete pendingDefBuffs[liverId];
     }
+    dmg = applyIncomingDamagePassives(liverId, dmg);
+    dmg -= applyDamageShare(liverId, dmg, !!defBased);
     ls.hp = Math.max(0, ls.hp - dmg);
+    onLiverDamaged(liverId, dmg);
     return dmg;
   }
 
@@ -9409,6 +9723,7 @@
     if(combatEnemy.charging){
       const skill = combatEnemy.charging;
       combatEnemy.charging = null;
+      if(tryDodgeAttack(target)) return;
       const raw = Math.max(1, Math.round(effectiveEnemyAtk() * skill.mult) + rnd(-1,2));
       const dmg = applyDamageToLiver(target, raw, skill.element);
       pushLog(`${(skill.executeText || (combatEnemy.name+'の渾身の一撃！')).replace('{name}', combatEnemy.name)} ${targetName}が ${dmg} のダメージを受けた。`, 'danger', true);
@@ -9430,6 +9745,7 @@
         pushLog((triggered.warnText || `${combatEnemy.name}が力を溜めている……`).replace('{name}', combatEnemy.name), 'system');
         return;
       }
+      if(tryDodgeAttack(target)) return;
       const raw = Math.max(1, Math.round(effectiveEnemyAtk() * triggered.mult) + rnd(-1,2));
       const dmg = applyDamageToLiver(target, raw, triggered.element);
       pushLog(`${combatEnemy.name}の「${triggered.name}」！ ${targetName}が防御を貫く ${dmg} の痛恨の一撃を受けた！`, 'danger', true);
@@ -9438,6 +9754,7 @@
     }
 
     if(rollCrit(null)){
+      if(tryDodgeAttack(target)) return;
       const raw = Math.max(1, Math.round(effectiveEnemyAtk() * CRIT_MULT) + rnd(-1,2));
       const dmg = applyDamageToLiver(target, raw);
       playLiverDialogue(target, 'critTaken', combatDialogueFired);
@@ -9446,8 +9763,9 @@
       return;
     }
 
+    if(tryDodgeAttack(target)) return;
     const raw = Math.max(1, effectiveEnemyAtk() - liverDefStat(target) + rnd(-1,1));
-    const dmg = applyDamageToLiver(target, raw);
+    const dmg = applyDamageToLiver(target, raw, undefined, true);
     pushLog(`${combatEnemy.name}の反撃、${targetName}が ${dmg} のダメージを受けた。`, 'danger', true);
     checkLiverKO(target);
   }
@@ -9471,6 +9789,7 @@
 
   function checkLiverKO(liverId){
     if(liverState(liverId).hp <= 0){
+      if(tryReviveOnce(liverId)) return;
       playLiverDialogue(liverId, 'death', combatDialogueFired);
       pushLog(`${liverDef(liverId).name}が倒れた……！`, 'danger');
       state.party.forEach(otherId=>{
@@ -9497,10 +9816,16 @@
   }
 
   async function runAutoBattle(){
+    if(!combatOpeningDone){
+      combatOpeningDone = true;
+      await runOpeningPassives();
+      if(!inCombat || combatPhase !== 'auto') return;
+    }
     while(inCombat && combatPhase === 'auto'){
       await sleep(550);
       if(!inCombat || combatPhase !== 'auto') return;
 
+      applyRoundStartPassives();
       maybeTriggerFairyBoon();
       render();
 
@@ -9508,6 +9833,7 @@
       // 少し間を置くことで、誰が何をしたのか追いやすくする。
       for(const id of state.party){
         if(!inCombat || combatPhase !== 'auto') return;
+        if(combatEnemyHp <= 0) break; // 開幕の先制攻撃などで既に倒していた場合
         if(liverState(id).hp <= 0) continue; // 戦闘不能者はスキップ
         playerTurnAction(id);
         notifyAllyActed(id);
@@ -13516,6 +13842,23 @@
       </span>`;
   }
 
+  /* 戦闘中のみ、固有リソースを持つパッシブの現在値をパーティ欄の名前横に表示する
+   * (石神のぞみの悪魔/人間ゲージ、魔界ノりりむのぽえ)。 */
+  function renderPassiveBadge(id){
+    if(!inCombat) return '';
+    const p = equippedPassive(id);
+    if(!p) return '';
+    let text = '';
+    if(p.kind === 'demonHuman'){
+      const d = demonCount(id);
+      text = (d === 5 ? '覚醒 ' : '') + `悪魔${d}:人間${10-d}`;
+    } else if(p.kind === 'aggroPoe'){
+      text = `ぽえ×${(combatPassiveFlags[id] && combatPassiveFlags[id].poe) || 0}`;
+    }
+    if(!text) return '';
+    return `<span class="party-compact-lv" style="color:var(--gold);margin-left:6px;">${esc(text)}</span>`;
+  }
+
   function renderPartyCompactRows(){
     return state.party.map(id=>{
       const ls = liverState(id);
@@ -13525,7 +13868,7 @@
       return `
         <div class="party-compact-row${ls.hp<=0?' ko':''}">
           <span class="party-compact-chip" style="background:${def.color};"></span>
-          <span class="party-compact-name">${esc(def.name)}<span class="party-compact-lv">Lv.${jobProgressFor(id).level}</span></span>
+          <span class="party-compact-name">${esc(def.name)}<span class="party-compact-lv">Lv.${jobProgressFor(id).level}</span>${renderPassiveBadge(id)}</span>
           <span class="party-compact-bars">
             <span class="mini-bar-track"><span class="mini-bar-fill hp" style="width:${hpPct}%;"></span></span>
             <span class="mini-bar-track"><span class="mini-bar-fill mp" style="width:${mpPct}%;"></span></span>
