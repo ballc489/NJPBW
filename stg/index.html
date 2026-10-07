@@ -360,6 +360,11 @@
   .icon-chip.buff .turns{background:var(--buff);}
   .icon-chip.debuff .turns{background:var(--debuff);}
   .icon-chip.ailment .turns{background:var(--ailment);}
+  /* 固有リソース(衣装パッシブ専用のゲージ・カウント)。金色で区別する */
+  .icon-chip.resource{color:var(--gold);background:rgba(255,216,99,0.2);}
+  .icon-chip.resource .turns{background:var(--gold);}
+  .icon-chip.resource.awaken{background:rgba(255,216,99,0.45);box-shadow:0 0 6px var(--gold);}
+  .icon-chip.resource.dim{opacity:0.4;}
   .icon-chip[title]:hover{outline:1px solid var(--gold);outline-offset:1px;}
 
   /* UI全体の小アイコン(絵文字は使わず自作のインラインSVG) */
@@ -6004,10 +6009,8 @@
 
   /* effectsMapからバフ/デバフ/状態異常アイコンの行HTMLを組み立てる。
    * 何も付与されていなければ空文字(既存レイアウトに一切影響しない)。 */
-  function renderStatusEffectChips(effectsMap){
-    if(!effectsMap) return '';
-    const keys = Object.keys(effectsMap);
-    if(!keys.length) return '';
+  function renderStatusEffectChips(effectsMap, extraChipsHtml){
+    const keys = effectsMap ? Object.keys(effectsMap) : [];
     const chips = keys.map(type=>{
       const meta = STATUS_EFFECT_ICONS[type];
       if(!meta) return '';
@@ -6017,8 +6020,28 @@
         <svg viewBox="0 0 24 24" fill="currentColor">${meta.svg}</svg>
         <span class="turns">${eff.turnsLeft}</span>
       </span>`;
-    }).join('');
+    }).join('') + (extraChipsHtml || '');
+    if(!chips) return '';
     return `<span class="icon-row">${chips}</span>`;
+  }
+
+  /* 衣装パッシブ固有のリソース/状態のアイコン(戦闘中のみ)。
+   * バフ/デバフと同じicon-chipの見た目で、金色(resource)で区別する。
+   * count を渡すと右下に数値バッジが付く。 */
+  const PASSIVE_RESOURCE_ICONS = {
+    demon:   '<path d="M12 3 A9 9 0 0 0 12 21 Z"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 6.5 L4.5 1.5 L9.5 4 Z"/>',
+    awaken:  '<path d="M12 2 L14.5 9.5 L22 12 L14.5 14.5 L12 22 L9.5 14.5 L2 12 L9.5 9.5 Z"/>',
+    poe:     '<path d="M12 21 C12 21 3 14.5 3 8.5 A4.5 4.5 0 0 1 12 6.5 A4.5 4.5 0 0 1 21 8.5 C21 14.5 12 21 12 21 Z"/>',
+    dodge:   '<path d="M2 5 L9.5 12 L2 19 H6.5 L14 12 L6.5 5 Z M10 5 L17.5 12 L10 19 H14.5 L22 12 L14.5 5 Z"/>',
+    revive:  '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M11 6.5 H13 V11 H17.5 V13 H13 V17.5 H11 V13 H6.5 V11 H11 Z"/>'
+  };
+  function resourceChip(iconKey, title, opts){
+    const o = opts || {};
+    const cls = 'icon-chip resource' + (o.awaken ? ' awaken' : '') + (o.dim ? ' dim' : '');
+    const count = (o.count !== undefined && o.count !== null) ? `<span class="turns">${o.count}</span>` : '';
+    return `<span class="${cls}" title="${esc(title)}">
+        <svg viewBox="0 0 24 24" fill="currentColor">${PASSIVE_RESOURCE_ICONS[iconKey]}</svg>${count}
+      </span>`;
   }
 
   /* UI全体で使う小アイコン(絵文字は一切使わず、状態異常アイコンと同じ
@@ -13842,21 +13865,31 @@
       </span>`;
   }
 
-  /* 戦闘中のみ、固有リソースを持つパッシブの現在値をパーティ欄の名前横に表示する
-   * (石神のぞみの悪魔/人間ゲージ、魔界ノりりむのぽえ)。 */
-  function renderPassiveBadge(id){
+  /* 戦闘中のみ、固有リソース/状態を持つパッシブの現在値を、バフ/デバフと
+   * 同じアイコン行に出す(石神のぞみの悪魔/人間ゲージ、魔界ノりりむのぽえ、
+   * 先斗寧の回避の構え、弦月藤士郎の復活の残り)。 */
+  function renderPassiveResourceChips(id){
     if(!inCombat) return '';
     const p = equippedPassive(id);
     if(!p) return '';
-    let text = '';
+    const flags = combatPassiveFlags[id] || {};
     if(p.kind === 'demonHuman'){
       const d = demonCount(id);
-      text = (d === 5 ? '覚醒 ' : '') + `悪魔${d}:人間${10-d}`;
-    } else if(p.kind === 'aggroPoe'){
-      text = `ぽえ×${(combatPassiveFlags[id] && combatPassiveFlags[id].poe) || 0}`;
+      if(d === 5) return resourceChip('awaken', '覚醒(悪魔5:人間5)', {awaken:true});
+      return resourceChip('demon', `悪魔${d}:人間${10-d}`, {count:d});
     }
-    if(!text) return '';
-    return `<span class="party-compact-lv" style="color:var(--gold);margin-left:6px;">${esc(text)}</span>`;
+    if(p.kind === 'aggroPoe'){
+      const n = flags.poe || 0;
+      return resourceChip('poe', `ぽえ×${n}(スキル使用で消費)`, {count:n, dim:n === 0});
+    }
+    if(p.kind === 'dodgeCounter' && flags.dodgeBuff){
+      return resourceChip('dodge', '回避成功:次の攻撃が強化される');
+    }
+    if(p.kind === 'reviveOnce'){
+      const used = !!flags.reviveUsed;
+      return resourceChip('revive', used ? '復活:使用済み' : '復活:待機中(戦闘中1回)', {dim:used});
+    }
+    return '';
   }
 
   function renderPartyCompactRows(){
@@ -13868,11 +13901,11 @@
       return `
         <div class="party-compact-row${ls.hp<=0?' ko':''}">
           <span class="party-compact-chip" style="background:${def.color};"></span>
-          <span class="party-compact-name">${esc(def.name)}<span class="party-compact-lv">Lv.${jobProgressFor(id).level}</span>${renderPassiveBadge(id)}</span>
+          <span class="party-compact-name">${esc(def.name)}<span class="party-compact-lv">Lv.${jobProgressFor(id).level}</span></span>
           <span class="party-compact-bars">
             <span class="mini-bar-track"><span class="mini-bar-fill hp" style="width:${hpPct}%;"></span></span>
             <span class="mini-bar-track"><span class="mini-bar-fill mp" style="width:${mpPct}%;"></span></span>
-            ${renderStatusEffectChips(playerStatusEffects[id])}
+            ${renderStatusEffectChips(playerStatusEffects[id], renderPassiveResourceChips(id))}
           </span>
           <span class="party-compact-hp">${ls.hp<=0?'戦闘不能':`${ls.hp}/${ls.maxHp}`}</span>
         </div>`;
