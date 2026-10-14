@@ -5970,6 +5970,8 @@
   let pendingDefBuffs = {}; // { liverId: reduceMult } その本人の次の被弾にのみ適用
   let combatPassiveFlags = {}; // { liverId: {...} } 条件付きパッシブの発動状態・ログ済みフラグ。戦闘開始時にリセット
   let combatOpeningDone = false; // 戦闘開始時の先制攻撃パッシブを実行済みか。戦闘開始時にリセット
+  let studyStreak = 0; // 家長むぎ「Study with me」の連続戦闘数。戦闘をまたいで持ち越し、ダンジョン帰還・敗北・むぎの戦闘不能でリセット(保存しない)
+  let pendingCounters = []; // 剣持刀也「媚びない」の反撃予約 [{id, dmg}]。敵の行動後にまとめて処理する。戦闘開始時にリセット
   let playerStatusEffects = {}; // { liverId: { [effectType]: {amount, turnsLeft, freshlyGranted} } } 戦闘中のみ・保存しない
 
   /* 低確率で防御力を無視した大ダメージが発生する(プレイヤー側は「会心の
@@ -6033,7 +6035,11 @@
     awaken:  '<path d="M12 2 L14.5 9.5 L22 12 L14.5 14.5 L12 22 L9.5 14.5 L2 12 L9.5 9.5 Z"/>',
     poe:     '<path d="M12 21 C12 21 3 14.5 3 8.5 A4.5 4.5 0 0 1 12 6.5 A4.5 4.5 0 0 1 21 8.5 C21 14.5 12 21 12 21 Z"/>',
     dodge:   '<path d="M2 5 L9.5 12 L2 19 H6.5 L14 12 L6.5 5 Z M10 5 L17.5 12 L10 19 H14.5 L22 12 L14.5 5 Z"/>',
-    revive:  '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M11 6.5 H13 V11 H17.5 V13 H13 V17.5 H11 V13 H6.5 V11 H11 Z"/>'
+    revive:  '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M11 6.5 H13 V11 H17.5 V13 H13 V17.5 H11 V13 H6.5 V11 H11 Z"/>',
+    hourglass: '<path d="M6 2 H18 V6 L13 12 L18 18 V22 H6 V18 L11 12 L6 6 Z"/>',
+    rising:  '<path d="M3 21 H8 V14 H3 Z M10 21 H15 V9 H10 Z M17 21 H22 V3 H17 Z"/>',
+    clock:   '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M11 6 H13 V11.4 L16.6 13.6 L15.6 15.2 L11 12.4 Z"/>',
+    book:    '<path d="M2 4 H11 C11.6 4 12 4.4 12 5 V21 C12 20.4 11.6 20 11 20 H2 Z M22 4 H13 C12.4 4 12 4.4 12 5 V21 C12 20.4 12.4 20 13 20 H22 Z"/>'
   };
   function resourceChip(iconKey, title, opts){
     const o = opts || {};
@@ -6640,6 +6646,17 @@
    *   kind:'demonHuman'             悪魔/人間ゲージ(合計10、0:10で開始)。状態表はDEMON_HUMAN_TABLE。行動で悪魔+1、被ダメージで人間+1
    *   kind:'frontPartyAtkBuff'      パーティの先頭(編成1番目)にいる間、味方全員の攻撃力にatk加算
    *   kind:'protectLowestAlly'      HP割合が最も低い味方(自分以外)が受けるダメージをreduce分軽減する
+   *   --- 以下は2バッチ目(liver_11〜20)の専用パッシブ ---
+   *   kind:'coverAllyChance'        味方への敵の単体攻撃を、chanceの確率で代わりに受ける(その攻撃のダメージはreduce分軽減)
+   *   kind:'aloneStatMult'          編成順で隣り合う生存中の味方が1人少ないごとに、statsにperMissing加算し、攻撃集中率をaggroPerMissing下げる
+   *   kind:'roundStack'             ラウンド開始ごとに攻撃力・防御力がperRound上昇(最大maxStacks回、戦闘終了でリセット)
+   *   kind:'hitStack'               被弾のたびに攻撃力・防御力がperHit上昇(最大maxStacks回、戦闘終了でリセット)
+   *   kind:'roundEndPartyHeal'      ラウンド終了時、生存中の味方全員のHPがbase(最大HP比)回復。HP割合が最も低い味方はlowestBonus追加
+   *   kind:'consecutiveBattleExp'   連続戦闘数(studyStreak)×perBattleだけパーティ全員の獲得経験値が増加(上限maxBonus)
+   *   kind:'selfReturn'             戦闘不能のdelayRoundsラウンド後にHP hpRatioで復帰(戦闘中1回)。復帰後の最初の攻撃がnextAtkMult倍
+   *   kind:'openingPartyMitigate'   戦闘開始からroundsラウンドの間、パーティ全員の被ダメージをreduce分軽減する
+   *   kind:'counterOnHit'           被弾のたびに、受けたダメージのratio分を防御無視で敵へ反撃する(敵の行動後にまとめて処理)
+   *   kind:'afterActionMpGive'      自分の行動後、MPが最も低い味方(自分以外)のMPを最大MPのratio分回復する
    * --------------------------------------------------------------- */
   const COSTUME_DEFS = {
     liver_1: [
@@ -6721,80 +6738,80 @@
     ],
     liver_11: [
       {key:'default', name:'通常衣装(月ノ美兎専用)',
-        passive:{name:'誰が何を言おうと清楚である', kind:'lowHpMitigate', threshold:0.3, mult:0.75, always:false,
-          desc:'自身のHPが30%以下のとき、被ダメージが25%軽減される。'}},
+        passive:{name:'わたくしで隠さなきゃ', kind:'coverAllyChance', chance:0.25, reduce:0.4, always:false,
+          desc:'味方が敵の単体攻撃の対象になったとき、25%の確率で代わりに受ける(受けるダメージは40%軽減される)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'statMult', stat:'def', mult:1.2, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、防御力が20%上昇する。'}}
     ],
     liver_12: [
       {key:'default', name:'通常衣装(える専用)',
-        passive:{name:'どんぐりマシンガントーク', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
-          desc:'常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}},
+        passive:{name:'孤高のエルフ美少女', kind:'aloneStatMult', stats:['atk'], perMissing:0.10, aggroPerMissing:0.08, always:true,
+          desc:'編成順で隣り合う生存中の味方が1人少ないごとに、攻撃力が10%上昇し、敵に狙われにくくなる(攻撃集中率-8%。最大で攻撃力+20%・攻撃集中率-16%)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'onHitMpDrain', ratio:0.15, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、攻撃を命中させるたびに与えたダメージの15%をMPとして吸収する。'}}
     ],
     liver_13: [
       {key:'default', name:'通常衣装(静凛専用)',
-        passive:{name:'押してダメでも押してみろ', kind:'lowHpAtkBoost', threshold:0.3, mult:1.3, always:false,
-          desc:'自身のHPが30%以下のとき、攻撃力が30%上昇する。'}},
+        passive:{name:'押してダメでも押してみろ', kind:'roundStack', perRound:0.03, maxStacks:10, always:true,
+          desc:'ラウンド開始ごとに攻撃力・防御力が3%ずつ上昇する(最大+30%、戦闘終了でリセット)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'partyMpCostReduce', mult:0.9, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、パーティ全員のスキルMP消費が10%軽減される。'}}
     ],
     liver_14: [
       {key:'default', name:'通常衣装(渋谷ハジメ専用)',
-        passive:{name:'何があっても配信をやめる気はない', kind:'coverAlly', threshold:0.3, always:false,
-          desc:'味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}},
+        passive:{name:'壺おじ', kind:'hitStack', perHit:0.05, maxStacks:8, always:true,
+          desc:'敵から攻撃を受けるたびに、攻撃力・防御力が5%ずつ上昇する(最大8回で+40%、戦闘終了でリセット)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lootBonus', dropRateMult:1.25, goldMult:1.25, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が25%上昇する。'}}
     ],
     liver_15: [
       {key:'default', name:'通常衣装(モイラ専用)',
-        passive:{name:'もいもいももいもいももいもい', kind:'randomAllyBoon', chance:0.18, healRatio:0.15, always:false,
-          desc:'戦闘中、毎ラウンド18%の確率で運命の女神が味方の誰かを見守り、HPが15%回復する。'}},
+        passive:{name:'もいもいももいもいももいもい', kind:'roundEndPartyHeal', base:0.02, lowestBonus:0.03, always:false,
+          desc:'ラウンド終了時、味方全員のHPが最大HPの2%回復する。最もHP割合の低い味方は、さらに3%回復する(計5%)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
           desc:'(仮設定・後日差し替え予定) 戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}}
     ],
     liver_16: [
       {key:'default', name:'通常衣装(家長むぎ専用)',
-        passive:{name:'将来の将来を見すぎなくていいと思うよ', kind:'partyMpCostReduce', mult:0.9, always:true,
-          desc:'常時、パーティ全員のスキルMP消費が10%軽減される。'}},
+        passive:{name:'Study with me', kind:'consecutiveBattleExp', perBattle:0.01, maxBonus:0.15, always:false,
+          desc:'連続戦闘回数に応じて、パーティ全員の獲得経験値が増加する(1戦ごとに+1%、最大+15%)。むぎが戦闘不能の間は効果なし。ダンジョンから帰還すると、カウントはリセットされる。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lowHpMitigate', threshold:0.3, mult:0.8, always:false,
           desc:'(仮設定・後日差し替え予定) 自身のHPが30%以下のとき、被ダメージが20%軽減される。'}}
     ],
     liver_17: [
       {key:'default', name:'通常衣装(夕陽リリ専用)',
-        passive:{name:'今を笑わせることを考えなよ', kind:'lootBonus', dropRateMult:1.25, goldMult:1.25, always:true,
-          desc:'常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が25%上昇する。'}},
+        passive:{name:'未来人', kind:'selfReturn', delayRounds:2, hpRatio:0.5, nextAtkMult:1.5, always:false,
+          desc:'戦闘不能になった2ラウンド後に、未来から戻ってきてHP50%で復帰する(戦闘中1回)。復帰後の最初の攻撃は威力が50%上昇する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'onHitMpDrain', ratio:0.15, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、攻撃を命中させるたびに与えたダメージの15%をMPとして吸収する。'}}
     ],
     liver_18: [
       {key:'default', name:'通常衣装(伏見ガク専用)',
-        passive:{name:'誰だってミスをする。だから鉛筆の後ろに消しゴムがついている', kind:'coverAlly', threshold:0.3, always:false,
-          desc:'味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}},
+        passive:{name:'ピーッス！', kind:'openingPartyMitigate', rounds:2, reduce:0.25, always:false,
+          desc:'戦闘開始から2ラウンドの間、パーティ全員の受けるダメージが25%軽減される。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lowEnemyHpBoost', threshold:0.3, mult:1.2, always:false,
           desc:'(仮設定・後日差し替え予定) 敵の残りHPが30%以下の間、自分の与ダメージが20%上昇する。'}}
     ],
     liver_19: [
       {key:'default', name:'通常衣装(剣持刀也専用)',
-        passive:{name:'自分次第', kind:'statMult', stat:'atk', mult:1.2, always:true,
-          desc:'常時、攻撃力が20%上昇する。'}},
+        passive:{name:'媚びない', kind:'counterOnHit', ratio:0.35, always:false,
+          desc:'敵の攻撃を受けるたびに、受けたダメージの35%を防御を無視して敵に反撃する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lowHpAtkBoost', threshold:0.3, mult:1.25, always:false,
           desc:'(仮設定・後日差し替え予定) 自身のHPが30%以下のとき、攻撃力が25%上昇する。'}}
     ],
     liver_20: [
       {key:'default', name:'通常衣装(物述有栖専用)',
-        passive:{name:'んーまっ', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
-          desc:'戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}},
+        passive:{name:'んーまっ', kind:'afterActionMpGive', ratio:0.08, always:false,
+          desc:'自分の行動後、投げキッスでMPが最も低い味方1人(自分以外)のMPが最大MPの8%回復する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}}
@@ -7996,6 +8013,9 @@
     if(p.kind==='adjacentAllyStatMult' && (p.stats||[]).includes(stat)){
       return 1 + adjacentAliveAllyCount(liverId) * (p.perNeighbor||0);
     }
+    if(p.kind==='aloneStatMult' && (p.stats||[]).includes(stat)){
+      return 1 + missingNeighborCount(liverId) * (p.perMissing||0);
+    }
     if(p.kind==='demonHuman' && stat==='mpCost' && inCombat){
       return DEMON_HUMAN_TABLE[demonCount(liverId)].mpCost || 1;
     }
@@ -8011,6 +8031,12 @@
       const ls = nid && liverState(nid);
       return ls && ls.hp > 0;
     }).length;
+  }
+
+  /* 編成順で前後2枠のうち、生存中の味方がいない枠の数(0〜2)。孤高のエルフ美少女(える)用。
+   * 編成の端(前後どちらかが枠外)は、最初から1つ欠けている扱いになる。 */
+  function missingNeighborCount(liverId){
+    return 2 - adjacentAliveAllyCount(liverId);
   }
 
   function unlockedSkillsFor(jobId, level){
@@ -8171,7 +8197,19 @@
     const def = jobBaseDef(ls.job, jobProgressFor(id).level) + (a ? itemEffectiveValue(a) : 0);
     const statusMult = statusStatMult(playerStatusEffects[id], 'defBuff', 'defDebuff');
     const defPct = liverAccessoryEffects(id).defPct || 0;
-    return Math.max(1, Math.round(def * passiveStatMult(id, 'def') * statusMult * (1 + defPct/100)));
+    return Math.max(1, Math.round(def * passiveStatMult(id, 'def') * combatStackStatMult(id, 'def') * statusMult * (1 + defPct/100)));
+  }
+
+  /* 静凛(ラウンドごと)・渋谷ハジメ(被弾ごと)の、戦闘中のみ積み上がる攻防の倍率。
+   * 戦闘外のステータス表示には織り込まない(inCombatの時だけ有効)。 */
+  function combatStackStatMult(id, stat){
+    if(!inCombat) return 1;
+    const p = equippedPassive(id);
+    if(!p) return 1;
+    const flags = combatPassiveFlags[id] || {};
+    if(p.kind === 'roundStack') return 1 + (flags.roundStacks || 0) * (p.perRound || 0);
+    if(p.kind === 'hitStack') return 1 + (flags.hitStacks || 0) * (p.perHit || 0);
+    return 1;
   }
 
   /* 条件付きパッシブによる「戦闘中のみ」の与ダメージ倍率。
@@ -8222,6 +8260,13 @@
     }
     if(p.kind === 'demonHuman'){
       return 1 + (DEMON_HUMAN_TABLE[demonCount(id)].atk || 0);
+    }
+    if(p.kind === 'roundStack' || p.kind === 'hitStack'){
+      return combatStackStatMult(id, 'atk');
+    }
+    if(p.kind === 'selfReturn'){
+      // 夕陽リリ: 復帰後の最初の攻撃(敵にダメージを与えるまで)だけ有効
+      return flags.returnBoost ? (p.nextAtkMult || 1) : 1;
     }
     return 1;
   }
@@ -8345,11 +8390,30 @@
       const p = equippedPassive(id);
       return p && p.kind === 'coverAlly';
     });
-    if(!coverId) return targetId;
-    const p = equippedPassive(coverId);
-    if((targetLs.hp/targetLs.maxHp) > (p.threshold||0)) return targetId;
-    pushLog(`${liverDef(coverId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}をかばった！`, 'system', true);
-    return coverId;
+    if(coverId){
+      const p = equippedPassive(coverId);
+      if((targetLs.hp/targetLs.maxHp) <= (p.threshold||0)){
+        pushLog(`${liverDef(coverId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}をかばった！`, 'system', true);
+        return coverId;
+      }
+    }
+    return applyCoverChanceRedirect(targetId);
+  }
+
+  /* 月ノ美兎「わたくしで隠さなきゃ」: 味方への単体攻撃を、確率で代わりに受ける。
+   * 身代わりで受ける攻撃のダメージ軽減は、applyIncomingDamagePassivesでshieldedHitを見て行う。 */
+  function applyCoverChanceRedirect(targetId){
+    const holderId = state.party.find(id=>{
+      if(id === targetId) return false;
+      const ls = liverState(id);
+      return ls && ls.hp > 0 && hasPassiveKind(id, 'coverAllyChance');
+    });
+    if(!holderId) return targetId;
+    const p = equippedPassive(holderId);
+    if(Math.random() >= (p.chance || 0)) return targetId;
+    passiveFlags(holderId).shieldedHit = true;
+    pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}を隠すように前に立ちはだかった！`, 'system', true);
+    return holderId;
   }
 
   /* ---------------------------------------------------------------
@@ -8409,6 +8473,9 @@
     if(p.kind === 'demonHuman'){
       return DEMON_HUMAN_TABLE[demonCount(id)].aggro || 0;
     }
+    if(p.kind === 'aloneStatMult'){
+      return -missingNeighborCount(id) * (p.aggroPerMissing || 0);
+    }
     return 0;
   }
 
@@ -8456,6 +8523,24 @@
     const own = equippedPassive(liverId);
     if(own && own.kind === 'demonHuman'){
       dmg = Math.max(1, Math.round(dmg * (1 + (DEMON_HUMAN_TABLE[demonCount(liverId)].taken || 0))));
+    }
+    if(own && own.kind === 'coverAllyChance'){
+      const ownFlags = passiveFlags(liverId);
+      if(ownFlags.shieldedHit){
+        ownFlags.shieldedHit = false;
+        dmg = Math.max(1, Math.round(dmg * (1 - (own.reduce || 0))));
+      }
+    }
+    // 伏見ガク「ピーッス！」: 戦闘開始から数ラウンドの間、パーティ全員の被ダメージを軽減する。
+    // 敵の行動時点ではturnCountが既に加算済み(1ラウンド目=1)なので、<= で判定する。
+    const peaceId = state.party.find(id=>{
+      const ls = liverState(id);
+      const pp = equippedPassive(id);
+      return ls && ls.hp > 0 && pp && pp.kind === 'openingPartyMitigate'
+        && combatEnemy && (combatEnemy.turnCount || 0) <= (pp.rounds || 0);
+    });
+    if(peaceId){
+      dmg = Math.max(1, Math.round(dmg * (1 - (equippedPassive(peaceId).reduce || 0))));
     }
     const guardId = state.party.find(id=>{
       if(id === liverId) return false;
@@ -8517,7 +8602,30 @@
     } else if(p.kind === 'aggroPoe'){
       const flags = passiveFlags(liverId);
       flags.poe = Math.min(p.poeMax || 5, (flags.poe || 0) + 1);
+    } else if(p.kind === 'hitStack'){
+      const flags = passiveFlags(liverId);
+      flags.hitStacks = Math.min(p.maxStacks || 99, (flags.hitStacks || 0) + 1);
+    } else if(p.kind === 'counterOnHit'){
+      // 反撃は敵の行動が終わってから、まとめて処理する(flushPendingCounters)
+      pendingCounters.push({ id: liverId, dmg });
     }
+  }
+
+  /* 剣持刀也「媚びない」: 敵の行動後に、生き残っていれば受けたダメージの一部を防御無視で反撃する。 */
+  function flushPendingCounters(){
+    const queue = pendingCounters;
+    pendingCounters = [];
+    if(!inCombat || combatPhase !== 'auto' || !combatEnemy) return;
+    queue.forEach(c=>{
+      if(combatEnemyHp <= 0) return;
+      const ls = liverState(c.id);
+      const p = equippedPassive(c.id);
+      if(!ls || ls.hp <= 0 || !p || p.kind !== 'counterOnHit') return;
+      const counter = Math.max(1, Math.round(c.dmg * (p.ratio || 0)));
+      combatEnemyHp -= counter;
+      lastDamagerId = c.id;
+      pushLog(`${liverDef(c.id).name}のパッシブ「${p.name}」が発動！ ${combatEnemy.name}に防御を貫く ${counter} の反撃！`, 'system', true);
+    });
   }
 
   function skillDealsDamage(skill){
@@ -8542,7 +8650,28 @@
     const flags = passiveFlags(liverId);
     if(p.kind === 'aggroPoe') flags.poeBoost = 0;
     if(p.kind === 'dodgeCounter' && combatEnemyHp < enemyHpBefore) flags.dodgeBuff = false;
+    if(p.kind === 'selfReturn' && combatEnemyHp < enemyHpBefore) flags.returnBoost = false;
     if(p.kind === 'demonHuman') shiftDemonHuman(liverId, 1);
+    if(p.kind === 'afterActionMpGive') giveMpToLowestAlly(liverId, p);
+  }
+
+  /* 物述有栖「んーまっ」: 行動後、MPの割合が最も低い味方(自分以外)のMPを回復する。 */
+  function giveMpToLowestAlly(holderId, p){
+    let targetId = null, lowest = Infinity;
+    alivePartyIds().forEach(id=>{
+      if(id === holderId) return;
+      const ls = liverState(id);
+      if(!ls || ls.maxMp <= 0 || ls.mp >= ls.maxMp) return;
+      const ratio = ls.mp / ls.maxMp;
+      if(ratio < lowest){ lowest = ratio; targetId = id; }
+    });
+    if(!targetId) return;
+    const ls = liverState(targetId);
+    const before = ls.mp;
+    ls.mp = Math.min(ls.maxMp, ls.mp + Math.max(1, Math.round(ls.maxMp * (p.ratio || 0))));
+    const gained = ls.mp - before;
+    if(gained <= 0) return;
+    pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ 投げキッスで${liverDef(targetId).name}のMPが${gained}回復した！`, 'system', true);
   }
 
   /* ラウンド開始時の効果(樋口楓の味方全員MP回復、石神のぞみの人間寄りMP回復)。
@@ -8561,8 +8690,50 @@
       } else if(p.kind === 'demonHuman'){
         const regen = DEMON_HUMAN_TABLE[demonCount(holderId)].mpRegen || 0;
         if(regen > 0) restoreMp(holderId, regen);
+      } else if(p.kind === 'roundStack'){
+        const flags = passiveFlags(holderId);
+        flags.roundStacks = Math.min(p.maxStacks || 99, (flags.roundStacks || 0) + 1);
       }
     });
+    // 夕陽リリ「未来人」: 戦闘不能中のラウンド開始ごとに復帰までのカウントを進め、0になったら復帰させる
+    state.party.forEach(id=>{
+      const ls = liverState(id);
+      const p = equippedPassive(id);
+      if(!ls || ls.hp > 0 || !p || p.kind !== 'selfReturn') return;
+      const flags = passiveFlags(id);
+      if(!(flags.returnPending > 0)) return;
+      flags.returnPending -= 1;
+      if(flags.returnPending > 0) return;
+      ls.hp = Math.max(1, Math.round(ls.maxHp * (p.hpRatio || 0.5)));
+      playerStatusEffects[id] = {};
+      flags.returnBoost = true;
+      pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ 未来から戻ってきた！ HP${ls.hp}で復帰した！`, 'reward', true);
+      if(hasPassiveKind(id, 'consecutiveBattleExp')) studyStreak = 1;
+    });
+  }
+
+  /* ラウンド終了時の効果(モイラ「もいもいももいもいももいもい」)。敵の行動のあとに呼ぶ。 */
+  function applyRoundEndPassives(){
+    const alive = alivePartyIds();
+    const holderId = alive.find(id=> hasPassiveKind(id, 'roundEndPartyHeal'));
+    if(!holderId) return;
+    const p = equippedPassive(holderId);
+    let lowestId = null, lowestRatio = Infinity;
+    alive.forEach(id=>{
+      const ls = liverState(id);
+      const ratio = ls.maxHp > 0 ? ls.hp / ls.maxHp : 1;
+      if(ratio < lowestRatio){ lowestRatio = ratio; lowestId = id; }
+    });
+    let totalHealed = 0;
+    alive.forEach(id=>{
+      const ls = liverState(id);
+      const rate = (p.base || 0) + (id === lowestId ? (p.lowestBonus || 0) : 0);
+      const before = ls.hp;
+      ls.hp = Math.min(ls.maxHp, ls.hp + Math.max(1, Math.round(ls.maxHp * rate)));
+      totalHealed += ls.hp - before;
+    });
+    if(totalHealed <= 0) return;
+    pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ 優しい声で、パーティのHPが回復した！`, 'system', true);
   }
 
   /* 味方が戦闘不能になった瞬間の復活(弦月藤士郎)。復活したらtrue。 */
@@ -8578,6 +8749,7 @@
     const ls = liverState(deadId);
     ls.hp = Math.max(1, Math.round(ls.maxHp * (p.hpRatio || 0.25)));
     pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ 神に連絡し、${liverDef(deadId).name}がHP${ls.hp}で復活した！`, 'reward');
+    if(hasPassiveKind(deadId, 'consecutiveBattleExp')) studyStreak = 1; // 戦闘中に復活したら、この戦闘を1戦目として再開する
     return true;
   }
 
@@ -9462,6 +9634,20 @@
   /* 経験値は「現在就いているジョブ」のレベルにのみ加算される
    * (ジョブごとに個別成長するため)。 */
   function grantExpToParty(amount){
+    // 家長むぎ「Study with me」: 生存中のむぎがいれば、連続戦闘数に応じて獲得経験値を増やす
+    const studyHolderId = state.party.find(id=>{
+      const ls = liverState(id);
+      return ls && ls.hp > 0 && hasPassiveKind(id, 'consecutiveBattleExp');
+    });
+    if(studyHolderId && studyStreak > 0){
+      const sp = equippedPassive(studyHolderId);
+      const bonus = Math.min(sp.maxBonus || 0, studyStreak * (sp.perBattle || 0));
+      const boosted = Math.round(amount * (1 + bonus));
+      if(boosted > amount){
+        pushLog(`${liverDef(studyHolderId).name}のパッシブ「${sp.name}」が発動！ ${studyStreak}連戦目、獲得経験値が${Math.round(bonus*100)}%増加した！`, 'system', true);
+      }
+      amount = boosted;
+    }
     state.party.forEach(id=>{
       const ls = liverState(id);
       if(ls.hp <= 0) return; // 戦闘不能中のメンバーは経験値を得ない
@@ -9528,12 +9714,27 @@
     pendingDefBuffs = {};
     playerStatusEffects = {};
     combatPassiveFlags = {};
+    pendingCounters = [];
     combatOpeningDone = false;
     combatDialogueFired = {};
     lastDamagerId = null;
     pushLog(`Lv.${enemy.level} ${enemy.name}${enemy.boss?'が行く手を阻んだ！':'が現れた。'}`, 'danger');
+    // 家長むぎ「Study with me」: 経験値を得る通常の戦闘では、むぎが生存していれば連続戦闘数を進める
+    if(!enemy.isColosseum && !enemy.isTowerFight){
+      const studyHolderId = state.party.find(id=>{
+        const ls = liverState(id);
+        return ls && ls.hp > 0 && hasPassiveKind(id, 'consecutiveBattleExp');
+      });
+      if(studyHolderId){
+        const sp = equippedPassive(studyHolderId);
+        studyStreak = Math.min(Math.round((sp.maxBonus || 0) / (sp.perBattle || 1)), studyStreak + 1);
+      }
+    }
     state.party.forEach((id, idx)=>{
       const p = equippedPassive(id);
+      if(p && p.kind==='openingPartyMitigate' && liverState(id).hp > 0){
+        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ ピースサインで場が和み、被ダメージが軽減される！`, 'system', true);
+      }
       if(p && p.kind==='battleStartPartyBuff'){
         pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ パーティ全体の士気が高まった！`, 'system', true);
       }
@@ -9738,6 +9939,7 @@
    * どの分岐を通っても最後に必ず自身の継続効果(自己バフ等)がtickされる。 */
   function enemyTurnDamageInner(){
     combatEnemy.turnCount = (combatEnemy.turnCount||0) + 1;
+    state.party.forEach(id=>{ if(combatPassiveFlags[id]) combatPassiveFlags[id].shieldedHit = false; }); // 前の行動の身代わり(月ノ美兎)を持ち越さない
     let target = pickRandomAliveTarget();
     if(!target) return; // 全滅済み(念のため)
     target = applyCoverRedirect(target);
@@ -9796,6 +9998,7 @@
   function enemyTurnDamage(){
     enemyTurnDamageInner();
     if(!combatEnemy) return; // 反撃等で戦闘が終了した場合は何もしない
+    flushPendingCounters();
     tickStatusEffects(combatEnemy.statusEffects,
       (type, eff)=>{
         if(type === 'regen'){
@@ -9815,6 +10018,14 @@
       if(tryReviveOnce(liverId)) return;
       playLiverDialogue(liverId, 'death', combatDialogueFired);
       pushLog(`${liverDef(liverId).name}が倒れた……！`, 'danger');
+      const downPassive = equippedPassive(liverId);
+      if(downPassive && downPassive.kind === 'consecutiveBattleExp') studyStreak = 0; // むぎが倒れると連続戦闘数は途切れる
+      if(downPassive && downPassive.kind === 'selfReturn' && !passiveFlags(liverId).returnUsed){
+        const flags = passiveFlags(liverId);
+        flags.returnUsed = true;
+        flags.returnPending = downPassive.delayRounds || 2;
+        pushLog(`${liverDef(liverId).name}のパッシブ「${downPassive.name}」が発動！ 未来へ帰っていった……${flags.returnPending}ラウンド後に戻ってくる。`, 'system', true);
+      }
       state.party.forEach(otherId=>{
         if(otherId === liverId) return;
         const otherLs = liverState(otherId);
@@ -9848,8 +10059,10 @@
       await sleep(550);
       if(!inCombat || combatPhase !== 'auto') return;
 
-      applyRoundStartPassives();
-      maybeTriggerFairyBoon();
+      if(combatEnemyHp > 0){ // 敵の行動中の反撃(剣持刀也)で既に倒していた場合は、ラウンド開始の効果を省く
+        applyRoundStartPassives();
+        maybeTriggerFairyBoon();
+      }
       render();
 
       // パーティ全員が(生存していれば)順番に行動する。1人ずつログを反映してから
@@ -9956,6 +10169,10 @@
       enemyTurnDamage();
       render();
       if(checkPartyDefeated()) return;
+      if(combatEnemyHp > 0){
+        applyRoundEndPassives();
+        render();
+      }
       // 注意: ここでは意図的にsaveGame()を呼ばない。ラウンドごとに保存すると
       // 通信回数が戦闘の長さに比例して膨らむため、保存は「戦闘の決着がついた
       // 瞬間(勝利/敗北/撤退)」にまとめて1回だけ行う設計にしている。
@@ -10125,6 +10342,7 @@
     } : null;
 
     inCombat = false; combatPhase = null; combatEnemy = null;
+    studyStreak = 0;
     state.party.forEach(id=>{
       const ls = liverState(id);
       ls.hp = ls.maxHp; // 全滅後、傷は癒えている
@@ -10352,6 +10570,7 @@
       return;
     }
     state.stamina -= cost;
+    studyStreak = 0;
     const ds = state.dungeons[id];
     ds.progress = 0; ds.depth = 0;
     state.activeDungeonId = id;
@@ -10365,6 +10584,7 @@
    * 踏破率0%に戻す(救済措置は行わない)。 */
   function leavePrismFloor(){
     if(inCombat || !state.activeDungeonId) return;
+    studyStreak = 0;
     const ds = currentDungeonState();
     if(ds){ ds.progress = 0; ds.depth = 0; }
     state.prismRun = null;
@@ -10552,11 +10772,13 @@
   /* ---------------- 街・移動 ---------------- */
   function gotoScreen(name){
     if(inCombat) return;
+    if(state.screen === 'dungeon') studyStreak = 0; // ダンジョンを離れたら連続戦闘数はリセット(家長むぎ)
     state.screen = name;
     saveGame(); render();
   }
   function backToTown(){
     if(inCombat) return;
+    studyStreak = 0;
     state.screen = 'town';
     saveGame(); render();
   }
@@ -10568,6 +10790,7 @@
       render();
       return;
     }
+    studyStreak = 0;
     state.activeDungeonId = id;
     state.screen = 'dungeon';
     state.log = [];
@@ -13894,6 +14117,22 @@
     if(p.kind === 'reviveOnce'){
       const used = !!flags.reviveUsed;
       return resourceChip('revive', used ? '復活:使用済み' : '復活:待機中(戦闘中1回)', {dim:used});
+    }
+    if(p.kind === 'roundStack'){
+      const n = flags.roundStacks || 0;
+      return resourceChip('hourglass', `ラウンド経過+${Math.round(n*(p.perRound||0)*100)}%(攻撃力・防御力)`, {count:n, dim:n === 0});
+    }
+    if(p.kind === 'hitStack'){
+      const n = flags.hitStacks || 0;
+      return resourceChip('rising', `被弾の積み上げ+${Math.round(n*(p.perHit||0)*100)}%(攻撃力・防御力)`, {count:n, dim:n === 0});
+    }
+    if(p.kind === 'selfReturn'){
+      if(flags.returnPending > 0) return resourceChip('clock', `未来から復帰まであと${flags.returnPending}ラウンド`, {count:flags.returnPending});
+      if(flags.returnBoost) return resourceChip('awaken', '復帰:次の攻撃が強化される', {awaken:true});
+      return resourceChip('clock', flags.returnUsed ? '復帰:使用済み' : '復帰:待機中(戦闘中1回)', {dim:true});
+    }
+    if(p.kind === 'consecutiveBattleExp'){
+      return resourceChip('book', `連続戦闘${studyStreak}回:獲得経験値+${Math.round(Math.min(p.maxBonus||0, studyStreak*(p.perBattle||0))*100)}%`, {count:studyStreak, dim:studyStreak === 0});
     }
     return '';
   }
