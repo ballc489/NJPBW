@@ -10386,10 +10386,16 @@
     }
   });
 
+  /* title="..."やdata-*="..."のような属性値の中でも使うため、<, >, & だけでなく
+   * クォート類もエスケープする(DOMのtextContent/innerHTML往復では " や ' が
+   * 残り、他プレイヤー由来の文字列で属性から抜け出されてしまう)。 */
   function esc(s){
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   /* 表示名の横に添える短縮ID。名前は自由に変更できてしまうため、
