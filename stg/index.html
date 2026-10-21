@@ -6041,7 +6041,11 @@
     clock:   '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M11 6 H13 V11.4 L16.6 13.6 L15.6 15.2 L11 12.4 Z"/>',
     book:    '<path d="M2 4 H11 C11.6 4 12 4.4 12 5 V21 C12 20.4 11.6 20 11 20 H2 Z M22 4 H13 C12.4 4 12 4.4 12 5 V21 C12 20.4 12.4 20 13 20 H22 Z"/>',
     can:     '<path d="M5 4 H19 V8 H5 Z M5 10 H19 V19 C19 20.1 18.1 21 17 21 H7 C5.9 21 5 20.1 5 19 Z"/>',
-    flower:  '<circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="5.4" r="3.2"/><circle cx="12" cy="18.6" r="3.2"/><circle cx="5.4" cy="12" r="3.2"/><circle cx="18.6" cy="12" r="3.2"/>'
+    flower:  '<circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="5.4" r="3.2"/><circle cx="12" cy="18.6" r="3.2"/><circle cx="5.4" cy="12" r="3.2"/><circle cx="18.6" cy="12" r="3.2"/>',
+    panda:   '<circle cx="12" cy="13.5" r="7"/><circle cx="6.3" cy="6.8" r="3"/><circle cx="17.7" cy="6.8" r="3"/>',
+    baseball:'<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 5 C9 9 9 15 7 19 M17 5 C15 9 15 15 17 19" fill="none" stroke="currentColor" stroke-width="1.8"/>',
+    card:    '<rect x="6" y="2.5" width="12" height="19" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7 L15 12 L12 17 L9 12 Z"/>',
+    lock:    '<rect x="5" y="11" width="14" height="10" rx="1.5"/><path d="M8 11 V7.5 a4 4 0 0 1 8 0 V11" fill="none" stroke="currentColor" stroke-width="2"/>'
   };
   function resourceChip(iconKey, title, opts){
     const o = opts || {};
@@ -6670,6 +6674,17 @@
    *   kind:'partyEquipBoost'        パーティ全員の武器・防具の効果値をmult分上昇させる
    *   kind:'openingFirstActionBoost' パーティ全員の、戦闘中の最初のダメージ行動の威力をmult分上昇させる(1人1回)
    *   kind:'favorReturn'            味方からプラスの効果を受け取った時、その味方にturnsターンの攻撃力atk・防御力def・HP自動回復regenを付与する
+   *   --- 以下は4バッチ目(liver_31〜40)の専用パッシブ ---
+   *   kind:'firstHitNullify'        戦闘中、自身が最初に受けるダメージを1回だけ無効化する
+   *   kind:'periodicBreath'         ラウンドeveryRoundsの倍数の開始時に、通常攻撃のratio倍の威力で敵を自動攻撃する(防御は引く)
+   *   kind:'killReward'             自身がとどめを刺した時、そのダメージのhealRatio分だけ自身のHPを回復し、勝利時のパーティ全員の獲得経験値をexpBonus分増やす
+   *   kind:'attackDefenseCycle'     roundsPerPhaseラウンドごとに攻撃/守備のバフを交互に重ね(各perStage、最大maxStages回)、切り替わるたびにパーティ全員のHPをhealRatio回復する
+   *   kind:'tarotCard'              戦闘開始時にタロット6枚から1枚をランダムに自分へ付与する(効果はTAROT_CARDS)
+   *   kind:'kichaStack'             パーティがその戦闘で初めて使った攻撃の種類ごとに、自身の攻撃力がperStack上昇する(最大maxStacks)
+   *   kind:'produceBuff'            ラウンド開始時に、攻撃力が最も低い味方(自分以外)1人の攻撃力をそのラウンドの間atk分上昇させる
+   *   kind:'sealEnemyTurn'          自身の行動終了時にchanceの確率で敵の次の行動を1ターン封じる(各戦闘maxPerBattle回まで)
+   *   kind:'pocketPet'              自身の行動後、chanceの確率でペットが敵を攻撃する(攻撃力のratio、防御無視。HPがrageHpRatio以下ならrageRatio)
+   *   kind:'sakuraBarrier'          戦闘開始時にパーティ全員へバリアを付与する(被ダメージ-reduce、hits回被弾すると壊れる)
    * --------------------------------------------------------------- */
   const COSTUME_DEFS = {
     liver_1: [
@@ -6911,80 +6926,80 @@
     ],
     liver_31: [
       {key:'default', name:'通常衣装(緑仙専用)',
-        passive:{name:'こう見えて日本人', kind:'onHitMpDrain', ratio:0.2, always:true,
-          desc:'常時、攻撃を命中させるたびに与えたダメージの20%をMPとして吸収する。'}},
+        passive:{name:'パンダのぬいぐるみ', kind:'firstHitNullify', always:false,
+          desc:'戦闘中、最初に受けるダメージを1回だけ無効化する(抱えているぬいぐるみが身代わりになる)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lowEnemyHpBoost', threshold:0.3, mult:1.2, always:false,
           desc:'(仮設定・後日差し替え予定) 敵の残りHPが30%以下の間、自分の与ダメージが20%上昇する。'}}
     ],
     liver_32: [
       {key:'default', name:'通常衣装(ドーラ専用)',
-        passive:{name:'よう人間ども！', kind:'statMult', stat:'def', mult:1.2, always:true,
-          desc:'常時、防御力が20%上昇する。'}},
+        passive:{name:'よう人間ども！', kind:'periodicBreath', everyRounds:3, ratio:1.5, always:false,
+          desc:'ラウンド3・6・9…の開始時に、自動でファイアブレスを放つ(通常攻撃の150%の威力。防御力は通常どおり引かれる)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'coverAlly', threshold:0.3, always:false,
           desc:'(仮設定・後日差し替え予定) 味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}}
     ],
     liver_33: [
       {key:'default', name:'通常衣装(鈴木勝専用)',
-        passive:{name:'諸君、良い夜お過ごしだろうか？', kind:'coverAlly', threshold:0.3, always:false,
-          desc:'味方のHPが30%以下の時、その味方への攻撃を代わりに引き受ける。'}},
+        passive:{name:'漆黒の捕食者 Darkness Eater', kind:'killReward', healRatio:1.0, expBonus:1.0, always:false,
+          desc:'鈴木勝がとどめを刺したとき、そのダメージの100%分だけ自身のHPが回復し、パーティ全員の獲得経験値が+100%(2倍)になる。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'statMult', stat:'atk', mult:1.2, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、攻撃力が20%上昇する。'}}
     ],
     liver_34: [
       {key:'default', name:'通常衣装(舞元啓介専用)',
-        passive:{name:'クソォッ！ブッ飛ばすぞ', kind:'lowEnemyHpBoost', threshold:0.3, mult:1.2, always:false,
-          desc:'敵の残りHPが30%以下の間、自分の与ダメージが20%上昇する。'}},
+        passive:{name:'やきうの時間だあああ', kind:'attackDefenseCycle', roundsPerPhase:3, perStage:0.10, maxStages:3, healRatio:0.05, always:false,
+          desc:'戦闘開始時は「攻撃」で、パーティ全員の攻撃力が10%上昇する。3ラウンドごとに「守備」(防御力+10%)と「攻撃」(攻撃力+10%)が交互に切り替わって重なり、それぞれ最大+30%まで上昇する。切り替わるたびに、パーティ全員のHPが5%回復する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}}
     ],
     liver_35: [
       {key:'default', name:'通常衣装(神田笑一専用)',
-        passive:{name:'こんかんだ', kind:'statMult', stat:'atk', mult:1.2, always:true,
-          desc:'常時、攻撃力が20%上昇する。'}},
+        passive:{name:'にじ占いの館', kind:'tarotCard', always:false,
+          desc:'戦闘開始時に、6枚のタロットカードから1枚をランダムに引き、その効果を自分に得る。太陽(攻防+20%)・力(攻撃+35%、被ダメージ+15%)・女教皇(被ダメージ-30%、攻撃-15%)・魔術師(スキルMP消費-50%、通常攻撃の威力-20%)・死神(与ダメージ+50%、毎ラウンド最大HPの10%のダメージ)・塔(攻防-20%)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lowHpAtkBoost', threshold:0.3, mult:1.25, always:false,
           desc:'(仮設定・後日差し替え予定) 自身のHPが30%以下のとき、攻撃力が25%上昇する。'}}
     ],
     liver_36: [
       {key:'default', name:'通常衣装(鷹宮リオン専用)',
-        passive:{name:'きちゃーっ！', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
-          desc:'戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}},
+        passive:{name:'きちゃーっ！', kind:'kichaStack', perStack:0.05, maxStacks:10, always:false,
+          desc:'その戦闘で、パーティの誰かが初めて使った攻撃(通常攻撃も1種類として数える)ごとに「きちゃ」が1つ溜まり、リオンの攻撃力が5%上昇する(最大+50%)。同じ攻撃は、別のライバーが使っても1回しか数えない。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'onHitMpDrain', ratio:0.15, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、攻撃を命中させるたびに与えたダメージの15%をMPとして吸収する。'}}
     ],
     liver_37: [
       {key:'default', name:'通常衣装(飛鳥ひな専用)',
-        passive:{name:'はりたおすぞ', kind:'lowHpAtkBoost', threshold:0.3, mult:1.25, always:false,
-          desc:'自身のHPが30%以下のとき、攻撃力が25%上昇する。'}},
+        passive:{name:'ひなP', kind:'produceBuff', atk:0.25, always:false,
+          desc:'ラウンド開始時に、攻撃力が最も低い味方(自分以外)1人をプロデュースして、そのラウンド中の攻撃力を25%上昇させる。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lootBonus', dropRateMult:1.25, goldMult:1.25, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が25%上昇する。'}}
     ],
     liver_38: [
       {key:'default', name:'通常衣装(雨森小夜専用)',
-        passive:{name:'あーセンシティブ', kind:'onHitMpDrain', ratio:0.15, always:true,
-          desc:'常時、攻撃を命中させるたびに与えたダメージの15%をMPとして吸収する。'}},
+        passive:{name:'網走刑務所', kind:'sealEnemyTurn', chance:0.10, maxPerBattle:3, always:false,
+          desc:'自身の行動終了時に、10%の確率で敵の次の行動を1ターン封じる(各戦闘で最大3回まで)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'partyMpCostReduce', mult:0.9, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、パーティ全員のスキルMP消費が10%軽減される。'}}
     ],
     liver_39: [
       {key:'default', name:'通常衣装(町田ちま専用)',
-        passive:{name:'ずっと側にいるよ！', kind:'partyMpCostReduce', mult:0.9, always:true,
-          desc:'常時、パーティ全員のスキルMP消費が10%軽減される。'}},
+        passive:{name:'ゴンザレス', kind:'pocketPet', chance:0.20, ratio:0.15, rageHpRatio:0.5, rageRatio:0.35, always:false,
+          desc:'ちまの行動後、20%の確率で相棒のハムスター「ゴンザレス」が敵に噛みつく(攻撃力の15%、防御無視)。ちまのHPが50%以下のときは「狂犬モード」になり、攻撃力の35%になる。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'statMult', stat:'def', mult:1.2, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、防御力が20%上昇する。'}}
     ],
     liver_40: [
       {key:'default', name:'通常衣装(桜凛月専用)',
-        passive:{name:'こんりつきーん', kind:'randomAllyBoon', chance:0.18, healRatio:0.15, always:false,
-          desc:'戦闘中、毎ラウンド18%の確率で宇宙のセンスが味方の誰かに舞い降り、HPが15%回復する。'}},
+        passive:{name:'桜の妖精のプリンセス', kind:'sakuraBarrier', reduce:0.40, hits:3, always:false,
+          desc:'戦闘開始時に、パーティ全員に桜のバリアが付く(受けるダメージ-40%)。その人が3回ダメージを受けると、バリアは壊れる。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}}
@@ -8032,6 +8047,10 @@
     if(p.kind==='demonHuman' && stat==='mpCost' && inCombat){
       return DEMON_HUMAN_TABLE[demonCount(liverId)].mpCost || 1;
     }
+    if(p.kind==='tarotCard' && stat==='mpCost'){
+      const m = tarotMods(liverId);
+      return m ? 1 + (m.mpCost || 0) : 1;
+    }
     return 1;
   }
 
@@ -8210,7 +8229,7 @@
     const def = jobBaseDef(ls.job, jobProgressFor(id).level) + (a ? itemEffectiveValue(a) * partyEquipMult(id) : 0);
     const statusMult = statusStatMult(playerStatusEffects[id], 'defBuff', 'defDebuff');
     const defPct = liverAccessoryEffects(id).defPct || 0;
-    return Math.max(1, Math.round(def * passiveStatMult(id, 'def') * combatStackStatMult(id, 'def') * statusMult * (1 + defPct/100)));
+    return Math.max(1, Math.round(def * passiveStatMult(id, 'def') * combatStackStatMult(id, 'def') * cycleStatMult(id, 'def') * statusMult * (1 + defPct/100)));
   }
 
   /* 静凛(ラウンドごと)・渋谷ハジメ(被弾ごと)の、戦闘中のみ積み上がる攻防の倍率。
@@ -8222,6 +8241,10 @@
     const flags = combatPassiveFlags[id] || {};
     if(p.kind === 'roundStack') return 1 + (flags.roundStacks || 0) * (p.perRound || 0);
     if(p.kind === 'hitStack') return 1 + (flags.hitStacks || 0) * (p.perHit || 0);
+    if(p.kind === 'tarotCard'){
+      const m = tarotMods(id);
+      return (m && stat === 'def') ? 1 + (m.def || 0) : 1;
+    }
     return 1;
   }
 
@@ -8285,11 +8308,18 @@
       // 森中花咲: こども(オトナになるまで)の間だけ攻撃力が上がる
       return flags.adult ? 1 : 1 + (p.childAtk || 0);
     }
+    if(p.kind === 'kichaStack'){
+      return 1 + (flags.kicha || 0) * (p.perStack || 0);
+    }
+    if(p.kind === 'tarotCard'){
+      const m = tarotMods(id);
+      return m ? (1 + (m.atk || 0)) * (1 + (m.dealt || 0)) : 1;
+    }
     return 1;
   }
   function combatAtk(id){
     const statusMult = statusStatMult(playerStatusEffects[id], 'atkBuff', 'atkDebuff');
-    return Math.max(1, Math.round(liverAtk(id) * activeCombatAtkMult(id) * openingFirstActionMult(id) * partyBuffAtkMult() * frontLeaderAtkMult() * statusMult));
+    return Math.max(1, Math.round(liverAtk(id) * activeCombatAtkMult(id) * openingFirstActionMult(id) * cycleStatMult(id, 'atk') * produceAtkMult(id) * partyBuffAtkMult() * frontLeaderAtkMult() * statusMult));
   }
 
   /* パーティの先頭(編成1番目)が生存中の風楽奏斗なら、味方全員にかかる攻撃力倍率。 */
@@ -8362,6 +8392,7 @@
   function applyOnHitMpDrain(liverId, dmg){
     const ls = liverState(liverId);
     const p = equippedPassive(liverId);
+    if(dmg > 0) lastHit = { id: liverId, dmg };
     if(p && p.kind === 'lifestealHp' && dmg > 0) applyLifestealHp(liverId, dmg, p);
     if(!p || p.kind !== 'onHitMpDrain' || dmg <= 0) return 0;
     const before = ls.mp;
@@ -8599,6 +8630,27 @@
         notifyPositiveEffect(liverId, guardId, false);
       }
     }
+    // 神田笑一のタロット(力: 被ダメージ増、女教皇: 被ダメージ軽減)
+    const tm = tarotMods(liverId);
+    if(tm && tm.taken) dmg = Math.max(1, Math.round(dmg * (1 + tm.taken)));
+    // 緑仙「パンダのぬいぐるみ」: 戦闘中、最初に受けるダメージを1回無効化する
+    if(own && own.kind === 'firstHitNullify'){
+      const pf = passiveFlags(liverId);
+      if(!pf.pandaUsed){
+        pf.pandaUsed = true;
+        queuePassiveLog(`${liverDef(liverId).name}のパッシブ「${own.name}」が発動！ ぬいぐるみが身代わりになり、ダメージを無効化した！`, 'reward');
+        return 0;
+      }
+    }
+    // 桜凛月「桜の妖精のプリンセス」: 桜のバリアが、被弾するたびにダメージを軽減し、規定回数で壊れる
+    const bf = combatPassiveFlags[liverId];
+    if(bf && bf.barrierHits > 0){
+      dmg = Math.max(1, Math.round(dmg * (1 - (bf.barrierReduce || 0))));
+      bf.barrierHits -= 1;
+      if(bf.barrierHits === 0){
+        queuePassiveLog(`${liverDef(liverId).name}の桜のバリアが壊れた……。`, 'system');
+      }
+    }
     return dmg;
   }
 
@@ -8663,6 +8715,7 @@
       const counter = Math.max(1, Math.round(c.dmg * (p.ratio || 0)));
       combatEnemyHp -= counter;
       lastDamagerId = c.id;
+      lastHit = { id: c.id, dmg: counter };
       pushLog(`${liverDef(c.id).name}のパッシブ「${p.name}」が発動！ ${combatEnemy.name}に防御を貫く ${counter} の反撃！`, 'system', true);
     });
   }
@@ -8696,6 +8749,8 @@
     if(p.kind === 'selfReturn' && combatEnemyHp < enemyHpBefore) flags.returnBoost = false;
     if(p.kind === 'demonHuman') shiftDemonHuman(liverId, 1);
     if(p.kind === 'afterActionMpGive') giveMpToLowestAlly(liverId, p);
+    if(p.kind === 'pocketPet') tryPocketPet(liverId, p);
+    if(p.kind === 'sealEnemyTurn') trySealEnemyTurn(liverId, p);
     triggerAllyFollowUps(liverId, enemyHpBefore);
   }
 
@@ -8823,6 +8878,154 @@
     }
   }
 
+  /* ---------------------------------------------------------------
+   * 4バッチ目(liver_31〜40)の専用パッシブ。戦闘中の状態はcombatPassiveFlagsに持つ。
+   * --------------------------------------------------------------- */
+  let usedAttackTypes = {};  // 鷹宮リオン: その戦闘でパーティが使った攻撃の種類(通常攻撃は'normal'、スキルは'skill:キー')
+  let lastHit = null;        // 鈴木勝: 直近にプレイヤー側が敵に与えたダメージ {id, dmg}
+  let pendingExpBonus = 0;   // 鈴木勝: 勝利時の獲得経験値ボーナス(次のgrantExpToPartyで消費する)
+
+  /* 神田笑一「にじ占いの館」のタロット6枚。atk/def/dealt/taken/mpCost/normalは増減率(0.2=+20%)。
+   * selfHitは毎ラウンド開始時に受ける最大HP割合のダメージ。 */
+  const TAROT_CARDS = {
+    sun:       {name:'太陽',   atk:0.20, def:0.20,  text:'攻撃力・防御力が20%上昇する'},
+    strength:  {name:'力',     atk:0.35, taken:0.15, text:'攻撃力が35%上昇するが、被ダメージが15%増える'},
+    priestess: {name:'女教皇', atk:-0.15, taken:-0.30, text:'被ダメージが30%軽減されるが、攻撃力が15%下がる'},
+    magician:  {name:'魔術師', mpCost:-0.50, normal:-0.20, text:'スキルのMP消費が半減するが、通常攻撃の威力が20%下がる'},
+    death:     {name:'死神',   dealt:0.50, selfHit:0.10, text:'与ダメージが50%上昇するが、毎ラウンド最大HPの10%のダメージを受ける'},
+    tower:     {name:'塔',     atk:-0.20, def:-0.20, text:'攻撃力・防御力が20%下がる'}
+  };
+  function tarotMods(id){
+    if(!inCombat) return null;
+    const p = equippedPassive(id);
+    if(!p || p.kind !== 'tarotCard') return null;
+    const key = (combatPassiveFlags[id] || {}).tarot;
+    return key ? TAROT_CARDS[key] : null;
+  }
+
+  /* 戦闘開始時の処理(神田笑一のカード、桜凛月のバリア)。startCombatから呼ぶ。 */
+  function applyBattleStartPassives4(){
+    state.party.forEach(id=>{
+      const ls = liverState(id);
+      const p = equippedPassive(id);
+      if(!ls || ls.hp <= 0 || !p) return;
+      if(p.kind === 'tarotCard'){
+        const keys = Object.keys(TAROT_CARDS);
+        const key = keys[Math.floor(Math.random() * keys.length)];
+        passiveFlags(id).tarot = key;
+        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ 引いたカードは「${TAROT_CARDS[key].name}」！ ${TAROT_CARDS[key].text}。`, 'system', true);
+      } else if(p.kind === 'sakuraBarrier'){
+        state.party.forEach(mid=>{
+          const mls = liverState(mid);
+          if(!mls || mls.hp <= 0) return;
+          const f = passiveFlags(mid);
+          f.barrierHits = p.hits || 3;
+          f.barrierReduce = p.reduce || 0;
+        });
+        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ 桜の花びらがパーティを包み込んだ！`, 'system', true);
+      }
+    });
+  }
+
+  /* 舞元啓介「やきうの時間だあああ」: パーティ全員にかかる攻撃/守備の倍率。
+   * 攻撃・守備のバフは、舞元が生存している間だけ有効。 */
+  function cycleStatMult(id, stat){
+    if(!inCombat) return 1;
+    const holderId = state.party.find(hid=>{
+      const ls = liverState(hid);
+      return ls && ls.hp > 0 && hasPassiveKind(hid, 'attackDefenseCycle');
+    });
+    if(!holderId) return 1;
+    const p = equippedPassive(holderId);
+    const f = combatPassiveFlags[holderId] || {};
+    const n = stat === 'atk' ? (f.cycleAtk || 0) : (f.cycleDef || 0);
+    return 1 + n * (p.perStage || 0);
+  }
+  /* ラウンド開始時: 3ラウンドごとに「攻撃」「守備」が交互に切り替わり、バフが重なってHPが少し回復する。 */
+  function applyCycleRoundStart(holderId, p, alive){
+    const per = p.roundsPerPhase || 3;
+    const round = currentRoundNo();
+    if((round - 1) % per !== 0) return;
+    const isAttack = Math.floor((round - 1) / per) % 2 === 0;
+    const flags = passiveFlags(holderId);
+    const max = p.maxStages || 3;
+    if(isAttack) flags.cycleAtk = Math.min(max, (flags.cycleAtk || 0) + 1);
+    else flags.cycleDef = Math.min(max, (flags.cycleDef || 0) + 1);
+    const healedIds = [];
+    alive.forEach(id=>{
+      const ls = liverState(id);
+      const before = ls.hp;
+      ls.hp = Math.min(ls.maxHp, ls.hp + Math.max(1, Math.round(ls.maxHp * (p.healRatio || 0))));
+      if(ls.hp > before) healedIds.push(id);
+    });
+    const pct = n => Math.round((n || 0) * (p.perStage || 0) * 100);
+    pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ ${isAttack ? '攻撃' : '守備'}に切り替わった！(攻撃力+${pct(flags.cycleAtk)}%・防御力+${pct(flags.cycleDef)}%、パーティのHPが回復)`, 'system', true);
+    healedIds.forEach(id=> notifyPositiveEffect(id, holderId, false));
+  }
+
+  /* 鷹宮リオン「きちゃーっ！」: パーティがその戦闘で初めて使う種類の攻撃ごとに、リオンに「きちゃ」が溜まる。 */
+  function registerAttackType(actorId, key){
+    if(!inCombat || usedAttackTypes[key]) return;
+    usedAttackTypes[key] = true;
+    const holderId = alivePartyIds().find(id=> hasPassiveKind(id, 'kichaStack'));
+    if(!holderId) return;
+    const p = equippedPassive(holderId);
+    const f = passiveFlags(holderId);
+    const before = f.kicha || 0;
+    f.kicha = Math.min(p.maxStacks || 10, before + 1);
+    if(f.kicha > before){
+      pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ きちゃ×${f.kicha}！(攻撃力+${Math.round(f.kicha * (p.perStack || 0) * 100)}%)`, 'system', true);
+    }
+  }
+
+  /* 飛鳥ひな「ひなP」: プロデュース中の味方の攻撃力倍率。 */
+  function produceAtkMult(id){
+    if(!inCombat) return 1;
+    const holderId = state.party.find(hid=>{
+      const ls = liverState(hid);
+      return ls && ls.hp > 0 && hid !== id && hasPassiveKind(hid, 'produceBuff') && (combatPassiveFlags[hid] || {}).produceId === id;
+    });
+    return holderId ? 1 + (equippedPassive(holderId).atk || 0) : 1;
+  }
+
+  /* 鈴木勝「漆黒の捕食者 Darkness Eater」: とどめを刺した時の報酬(HP回復と経験値ボーナス)。勝利処理の直前に呼ぶ。 */
+  function applyKillReward(){
+    pendingExpBonus = 0;
+    const holderId = state.party.find(id=>{
+      const ls = liverState(id);
+      return ls && ls.hp > 0 && hasPassiveKind(id, 'killReward');
+    });
+    if(!holderId || !lastHit || lastHit.id !== holderId) return;
+    const p = equippedPassive(holderId);
+    const ls = liverState(holderId);
+    const before = ls.hp;
+    ls.hp = Math.min(ls.maxHp, ls.hp + Math.round(lastHit.dmg * (p.healRatio || 0)));
+    pendingExpBonus = p.expBonus || 0;
+    pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ とどめを刺して敵を捕食した！ HPが${ls.hp - before}回復し、獲得経験値が増える！`, 'reward');
+  }
+
+  /* 町田ちま「ゴンザレス」: 行動後に確率で、相棒のハムスターが敵に噛みつく(防御無視)。 */
+  function tryPocketPet(liverId, p){
+    if(!combatEnemy || combatEnemyHp <= 0 || Math.random() >= (p.chance || 0)) return;
+    const ls = liverState(liverId);
+    const rage = ls.maxHp > 0 && ls.hp / ls.maxHp <= (p.rageHpRatio || 0);
+    const dmg = Math.max(1, Math.round(combatAtk(liverId) * (rage ? (p.rageRatio || 0) : (p.ratio || 0))));
+    combatEnemyHp -= dmg;
+    lastDamagerId = liverId;
+    applyOnHitMpDrain(liverId, dmg);
+    pushLog(`${liverDef(liverId).name}のパッシブ「${p.name}」が発動！ ${rage ? '狂犬モードのゴンザレスが' : 'ゴンザレスが'}${combatEnemy.name}に噛みついた！ ${dmg} のダメージ。`, 'system', true);
+  }
+
+  /* 雨森小夜「網走刑務所」: 行動終了時に確率で、敵の次の行動を1ターン封じる(各戦闘で上限あり)。 */
+  function trySealEnemyTurn(liverId, p){
+    if(!combatEnemy || combatEnemy.sealPending) return;
+    const flags = passiveFlags(liverId);
+    if((flags.sealCount || 0) >= (p.maxPerBattle || 3) || Math.random() >= (p.chance || 0)) return;
+    flags.sealCount = (flags.sealCount || 0) + 1;
+    combatEnemy.sealPending = true;
+    pushLog(`${liverDef(liverId).name}のパッシブ「${p.name}」が発動！ ${combatEnemy.name}を独房に押し込めた！ 次の行動を封じる。(${flags.sealCount}/${p.maxPerBattle || 3})`, 'system', true);
+  }
+
   /* 物述有栖「んーまっ」: 行動後、MPの割合が最も低い味方(自分以外)のMPを回復する。 */
   function giveMpToLowestAlly(holderId, p){
     let targetId = null, lowest = Infinity;
@@ -8865,6 +9068,41 @@
       } else if(p.kind === 'roundStack'){
         const flags = passiveFlags(holderId);
         flags.roundStacks = Math.min(p.maxStacks || 99, (flags.roundStacks || 0) + 1);
+      } else if(p.kind === 'periodicBreath'){
+        // ドーラ: 一定ラウンドごとに、自分の行動とは別にブレスを自動で放つ
+        if(combatEnemy && combatEnemyHp > 0 && currentRoundNo() % (p.everyRounds || 3) === 0){
+          const dmg = Math.max(1, Math.round((combatAtk(holderId) - effectiveEnemyDef()) * (p.ratio || 1.5)));
+          combatEnemyHp -= dmg;
+          lastDamagerId = holderId;
+          applyOnHitMpDrain(holderId, dmg);
+          pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ ファイアブレスを吐いた！ ${combatEnemy.name}に ${dmg} のダメージ。`, 'system', true);
+        }
+      } else if(p.kind === 'attackDefenseCycle'){
+        applyCycleRoundStart(holderId, p, alive);
+      } else if(p.kind === 'produceBuff'){
+        // 飛鳥ひな: 攻撃力が最も低い味方をプロデュースして、そのラウンドの攻撃力を上げる
+        let targetId = null, lowest = Infinity;
+        alive.forEach(id=>{
+          if(id === holderId) return;
+          const a = liverAtk(id);
+          if(a < lowest){ lowest = a; targetId = id; }
+        });
+        passiveFlags(holderId).produceId = targetId;
+        if(targetId){
+          pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}をプロデュースして、攻撃力が上がった！`, 'system', true);
+          notifyPositiveEffect(targetId, holderId, false);
+        }
+      } else if(p.kind === 'tarotCard'){
+        // 神田笑一: 死神のカードは、毎ラウンド最大HPの割合のダメージを受ける(HPは1未満にならない)
+        const m = tarotMods(holderId);
+        if(m && m.selfHit){
+          const ls = liverState(holderId);
+          const loss = Math.min(Math.max(0, ls.hp - 1), Math.max(1, Math.round(ls.maxHp * m.selfHit)));
+          if(loss > 0){
+            ls.hp -= loss;
+            pushLog(`${liverDef(holderId).name}は死神のカードの代償で、${loss} のダメージを受けた。`, 'danger', true);
+          }
+        }
       } else if(p.kind === 'childAdult'){
         // 森中花咲: 指定ラウンドに達したらオトナの姿になる(戻らない)
         const flags = passiveFlags(holderId);
@@ -9857,15 +10095,17 @@
       const ls = liverState(id);
       return ls && ls.hp > 0 && hasPassiveKind(id, 'consecutiveBattleExp');
     });
+    let expBonus = pendingExpBonus; // 鈴木勝のとどめ報酬。他の経験値ボーナスと足し合わせる
+    pendingExpBonus = 0;
     if(studyHolderId && studyStreak > 0){
       const sp = equippedPassive(studyHolderId);
       const bonus = Math.min(sp.maxBonus || 0, studyStreak * (sp.perBattle || 0));
-      const boosted = Math.round(amount * (1 + bonus));
-      if(boosted > amount){
+      if(Math.round(amount * (1 + bonus)) > amount){
         pushLog(`${liverDef(studyHolderId).name}のパッシブ「${sp.name}」が発動！ ${studyStreak}連戦目、獲得経験値が${Math.round(bonus*100)}%増加した！`, 'system', true);
       }
-      amount = boosted;
+      expBonus += bonus;
     }
+    if(expBonus > 0) amount = Math.round(amount * (1 + expBonus));
     state.party.forEach(id=>{
       const ls = liverState(id);
       if(ls.hp <= 0) return; // 戦闘不能中のメンバーは経験値を得ない
@@ -9934,6 +10174,10 @@
     combatPassiveFlags = {};
     pendingCounters = [];
     pendingPassiveLogs = [];
+    usedAttackTypes = {};
+    lastHit = null;
+    pendingExpBonus = 0;
+    combatEnemy.sealPending = false;
     combatOpeningDone = false;
     combatDialogueFired = {};
     lastDamagerId = null;
@@ -9949,6 +10193,7 @@
         studyStreak = Math.min(Math.round((sp.maxBonus || 0) / (sp.perBattle || 1)), studyStreak + 1);
       }
     }
+    applyBattleStartPassives4(); // 神田笑一のタロット・桜凛月のバリア
     state.party.forEach((id, idx)=>{
       const p = equippedPassive(id);
       if(p && p.kind==='openingFirstActionBoost' && liverState(id).hp > 0){
@@ -9992,7 +10237,9 @@
    * 戦闘開始時の先制攻撃(三枝明那)の両方から使う。 */
   function performNormalAttack(liverId, powerMult){
     const name = liverDef(liverId).name;
-    const affixMult = weaponAffixDamageMult(liverId) * (powerMult || 1); // powerMult: 追加行動(社築)などで威力を下げる時だけ指定
+    registerAttackType(liverId, 'normal');
+    const tarot = tarotMods(liverId);
+    const affixMult = weaponAffixDamageMult(liverId) * (powerMult || 1) * (tarot && tarot.normal ? 1 + tarot.normal : 1); // powerMult: 追加行動(社築)などで威力を下げる時だけ指定
     const drainSuffix = (dmg) => {
       const drained = applyOnHitMpDrain(liverId, dmg);
       return drained > 0 ? ` (MP+${drained})` : '';
@@ -10038,6 +10285,7 @@
 
     const mpCost = Math.max(0, Math.round(chosen.mpCost * passiveStatMult(liverId,'mpCost') * partyMpCostMult()));
     ls.mp -= mpCost;
+    if(skillDealsDamage(chosen)) registerAttackType(liverId, 'skill:' + chosen.key);
     consumePoeForSkill(liverId, chosen);
 
     if(chosen.effects){
@@ -10230,7 +10478,14 @@
   }
 
   function enemyTurnDamage(){
-    enemyTurnDamageInner();
+    if(combatEnemy && combatEnemy.sealPending){
+      // 雨森小夜「網走刑務所」: 封じられた行動はスキップする(ターン数は進むので、敵の技の周期はそのまま進む)
+      combatEnemy.sealPending = false;
+      combatEnemy.turnCount = (combatEnemy.turnCount || 0) + 1;
+      pushLog(`${combatEnemy.name}は独房に閉じ込められていて、動けない！`, 'system', true);
+    } else {
+      enemyTurnDamageInner();
+    }
     if(!combatEnemy) return; // 反撃等で戦闘が終了した場合は何もしない
     flushPendingCounters();
     flushPassiveLogs();
@@ -10334,6 +10589,7 @@
           return;
         }
         pushLog(`${combatEnemy.name}を倒した。`, 'reward');
+        applyKillReward(); // 鈴木勝: とどめを刺した時の回復と経験値ボーナス
         grantExpToParty(combatEnemy.exp);
 
         if(combatEnemy.isLiverQuest){
@@ -14334,9 +14590,37 @@
    * 先斗寧の回避の構え、弦月藤士郎の復活の残り)。 */
   function renderPassiveResourceChips(id){
     if(!inCombat) return '';
+    // 桜凛月のバリアは、持ち主ではなく、バリアを受けているメンバー全員のアイコン行に出す
+    const bf = combatPassiveFlags[id] || {};
+    const barrierChip = bf.barrierHits > 0
+      ? resourceChip('flower', `桜のバリア(残り${bf.barrierHits}回被弾で壊れる・被ダメージ-${Math.round((bf.barrierReduce || 0) * 100)}%)`, {count:bf.barrierHits})
+      : '';
+    return barrierChip + renderOwnPassiveChips(id);
+  }
+  function renderOwnPassiveChips(id){
     const p = equippedPassive(id);
     if(!p) return '';
     const flags = combatPassiveFlags[id] || {};
+    if(p.kind === 'firstHitNullify'){
+      const used = !!flags.pandaUsed;
+      return resourceChip('panda', used ? 'パンダのぬいぐるみ:使用済み' : 'パンダのぬいぐるみ:待機中(最初のダメージを無効化)', {dim:used});
+    }
+    if(p.kind === 'attackDefenseCycle'){
+      const a = flags.cycleAtk || 0, d = flags.cycleDef || 0;
+      return resourceChip('baseball', `攻撃+${Math.round(a*(p.perStage||0)*100)}%・防御+${Math.round(d*(p.perStage||0)*100)}%(3ラウンドごとに攻撃/守備が切り替わる)`, {count:a + d, dim:(a + d) === 0});
+    }
+    if(p.kind === 'tarotCard'){
+      const m = tarotMods(id);
+      return m ? resourceChip('card', `タロット「${m.name}」: ${m.text}`, {}) : '';
+    }
+    if(p.kind === 'kichaStack'){
+      const n = flags.kicha || 0;
+      return resourceChip('awaken', `きちゃ×${n}(攻撃力+${Math.round(n*(p.perStack||0)*100)}%)`, {count:n, dim:n === 0});
+    }
+    if(p.kind === 'sealEnemyTurn'){
+      const left = (p.maxPerBattle || 3) - (flags.sealCount || 0);
+      return resourceChip('lock', `網走刑務所:あと${left}回まで敵の行動を封じられる`, {count:left, dim:left <= 0});
+    }
     if(p.kind === 'demonHuman'){
       const d = demonCount(id);
       if(d === 5) return resourceChip('awaken', '覚醒(悪魔5:人間5)', {awaken:true});
