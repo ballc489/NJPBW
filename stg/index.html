@@ -5984,7 +5984,7 @@
   const CRIT_MULT = 2.0;
   function rollCrit(casterId){
     const bonus = casterId
-      ? (liverAccessoryEffects(casterId).critChance||0)/100
+      ? (liverAccessoryEffects(casterId).critChance||0)/100 + passiveCritBonus(casterId)
       : (combatEnemy && combatEnemy.critBonus) || 0; // ミミック等、敵側の特殊なクリティカル率上昇に使う
     return Math.random() < (CRIT_CHANCE + bonus);
   }
@@ -6039,7 +6039,9 @@
     hourglass: '<path d="M6 2 H18 V6 L13 12 L18 18 V22 H6 V18 L11 12 L6 6 Z"/>',
     rising:  '<path d="M3 21 H8 V14 H3 Z M10 21 H15 V9 H10 Z M17 21 H22 V3 H17 Z"/>',
     clock:   '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M11 6 H13 V11.4 L16.6 13.6 L15.6 15.2 L11 12.4 Z"/>',
-    book:    '<path d="M2 4 H11 C11.6 4 12 4.4 12 5 V21 C12 20.4 11.6 20 11 20 H2 Z M22 4 H13 C12.4 4 12 4.4 12 5 V21 C12 20.4 12.4 20 13 20 H22 Z"/>'
+    book:    '<path d="M2 4 H11 C11.6 4 12 4.4 12 5 V21 C12 20.4 11.6 20 11 20 H2 Z M22 4 H13 C12.4 4 12 4.4 12 5 V21 C12 20.4 12.4 20 13 20 H22 Z"/>',
+    can:     '<path d="M5 4 H19 V8 H5 Z M5 10 H19 V19 C19 20.1 18.1 21 17 21 H7 C5.9 21 5 20.1 5 19 Z"/>',
+    flower:  '<circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="5.4" r="3.2"/><circle cx="12" cy="18.6" r="3.2"/><circle cx="5.4" cy="12" r="3.2"/><circle cx="18.6" cy="12" r="3.2"/>'
   };
   function resourceChip(iconKey, title, opts){
     const o = opts || {};
@@ -6657,6 +6659,17 @@
    *   kind:'openingPartyMitigate'   戦闘開始からroundsラウンドの間、パーティ全員の被ダメージをreduce分軽減する
    *   kind:'counterOnHit'           被弾のたびに、受けたダメージのratio分を防御無視で敵へ反撃する(敵の行動後にまとめて処理)
    *   kind:'afterActionMpGive'      自分の行動後、MPが最も低い味方(自分以外)のMPを最大MPのratio分回復する
+   *   --- 以下は3バッチ目(liver_21〜30)の専用パッシブ ---
+   *   kind:'critBonus'              会心の一撃の発生率がchance上昇する
+   *   kind:'lifestealHp'            敵に与えたダメージのratio分を自身のHPとして吸収する
+   *   kind:'onceHealAtHalf'         戦闘中1度だけ、HPがthreshold超からthreshold以下に下がった瞬間にHPをhealRatio分回復する(致死では発動しない)
+   *   kind:'childAdult'             ラウンドadultFromRound未満は自身の攻撃力+childAtk(こども)。以降はオトナ: パーティ全員の被ダメージをadultMitigate軽減し、ラウンド終了時に自身以外の全員のHPをadultHeal回復
+   *   kind:'roundStartHealLowest'   ラウンド開始時、HP割合が最も低い味方(自分を含む)のHPを最大HPのratio分回復する
+   *   kind:'followUp'               味方が敵にダメージを与える行動をした後、通常攻撃のratio分の威力で追撃する(1ラウンドに1回)
+   *   kind:'extraActionIfMp'        自分の行動後、MPがmpRatioMin以上残っていれば通常攻撃(威力power)を追加で1回行う(1ラウンドに1回)
+   *   kind:'partyEquipBoost'        パーティ全員の武器・防具の効果値をmult分上昇させる
+   *   kind:'openingFirstActionBoost' パーティ全員の、戦闘中の最初のダメージ行動の威力をmult分上昇させる(1人1回)
+   *   kind:'favorReturn'            味方からプラスの効果を受け取った時、その味方にturnsターンの攻撃力atk・防御力def・HP自動回復regenを付与する
    * --------------------------------------------------------------- */
   const COSTUME_DEFS = {
     liver_1: [
@@ -6818,80 +6831,80 @@
     ],
     liver_21: [
       {key:'default', name:'通常衣装(宇志海いちご専用)',
-        passive:{name:'かわいいじゃなくて、かっこいいだよ！', kind:'lowHpAtkBoost', threshold:0.3, mult:1.3, always:false,
-          desc:'自身のHPが30%以下のとき、攻撃力が30%上昇する。'}},
+        passive:{name:'かわいいじゃなくてかっこいいだよ！', kind:'critBonus', chance:0.05, always:true,
+          desc:'会心の一撃の発生率が5%上昇する(基礎3%→8%)。会心は防御を貫く2倍ダメージ。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lootBonus', dropRateMult:1.25, goldMult:1.25, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が25%上昇する。'}}
     ],
     liver_22: [
       {key:'default', name:'通常衣装(ギルザレンⅢ世専用)',
-        passive:{name:'あー今宵は、満月なり', kind:'statMult', stat:'def', mult:1.2, always:true,
-          desc:'常時、防御力が20%上昇する。'}},
+        passive:{name:'悠久高貴ヴァンパイア', kind:'lifestealHp', ratio:0.05, always:true,
+          desc:'与えたダメージの5%を、自身のHPとして吸収する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'partyMpCostReduce', mult:0.9, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、パーティ全員のスキルMP消費が10%軽減される。'}}
     ],
     liver_23: [
       {key:'default', name:'通常衣装(文野環専用)',
-        passive:{name:'もうします', kind:'lowHpMitigate', threshold:0.3, mult:0.75, always:false,
-          desc:'自身のHPが30%以下のとき、被ダメージが25%軽減される。'}},
+        passive:{name:'ねこかんください。', kind:'onceHealAtHalf', threshold:0.5, healRatio:0.30, always:false,
+          desc:'戦闘中1度だけ、HPが最大HPの50%以下になったとき、猫缶を食べてHPが30%回復する(戦闘ごとに1回)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'statMult', stat:'def', mult:1.2, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、防御力が20%上昇する。'}}
     ],
     liver_24: [
       {key:'default', name:'通常衣装(森中花咲専用)',
-        passive:{name:'辛いよね　でもそれでこそ人生', kind:'randomAllyBoon', chance:0.18, healRatio:0.15, always:false,
-          desc:'戦闘中、毎ラウンド18%の確率でクマの人形が味方の誰かを見守り、HPが15%回復する。'}},
+        passive:{name:'る～るるる～', kind:'childAdult', childAtk:0.20, adultFromRound:3, adultMitigate:0.05, adultHeal:0.03, always:false,
+          desc:'ラウンド1〜2は「こども」で、自身の攻撃力が20%上昇する。ラウンド3からは「オトナ」になり、攻撃力の上昇は消えるが、パーティ全員の被ダメージが5%軽減され、ラウンド終了時に自身以外の味方全員のHPが3%回復する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
           desc:'(仮設定・後日差し替え予定) 戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}}
     ],
     liver_25: [
       {key:'default', name:'通常衣装(シスター・クレア専用)',
-        passive:{name:'懺悔パンチ！懺悔懺悔！', kind:'randomAllyBoon', chance:0.18, healRatio:0.15, always:false,
-          desc:'戦闘中、毎ラウンド18%の確率で神の御加護が味方の誰かに降り注ぎ、HPが15%回復する。'}},
+        passive:{name:'教会のシスター', kind:'roundStartHealLowest', ratio:0.20, always:false,
+          desc:'ラウンド開始時に、HP割合が最も低い味方1人(自分を含む)のHPが最大HPの20%回復する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'statMult', stat:'def', mult:1.2, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、防御力が20%上昇する。'}}
     ],
     liver_26: [
       {key:'default', name:'通常衣装(花畑チャイカ専用)',
-        passive:{name:'待てぬ～～', kind:'lowHpAtkBoost', threshold:0.3, mult:1.3, always:false,
-          desc:'自身のHPが30%以下のとき、攻撃力が30%上昇する。'}},
+        passive:{name:'私も入れてよ。', kind:'followUp', ratio:0.35, always:false,
+          desc:'味方が敵にダメージを与えたとき、チャイカが追撃する(通常攻撃の35%の威力)。1ラウンドに最大1回まで。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lootBonus', dropRateMult:1.25, goldMult:1.25, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、ダンジョンでのアイテムドロップ率とゴールド獲得量が25%上昇する。'}}
     ],
     liver_27: [
       {key:'default', name:'通常衣装(社築専用)',
-        passive:{name:'飲み友の皆さん、お疲れ様です。', kind:'partyMpCostReduce', mult:0.9, always:true,
-          desc:'常時、パーティ全員のスキルMP消費が10%軽減される。'}},
+        passive:{name:'仕事は山ほどあるぞ！', kind:'extraActionIfMp', mpRatioMin:0.5, power:0.5, always:false,
+          desc:'自分の行動後、MPが最大MPの50%以上残っていれば、追加で通常攻撃を1回行う(威力50%、1ラウンドに1回まで)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'lowHpMitigate', threshold:0.3, mult:0.8, always:false,
           desc:'(仮設定・後日差し替え予定) 自身のHPが30%以下のとき、被ダメージが20%軽減される。'}}
     ],
     liver_28: [
       {key:'default', name:'通常衣装(轟京子専用)',
-        passive:{name:'アウトローだよね！', kind:'allyActionStack', perStack:0.05, maxStacks:6, always:true,
-          desc:'常時、仲間が行動するたびに攻撃力が少しずつ上昇していく(戦闘終了でリセット、最大+30%)。'}},
+        passive:{name:"ROKI'S COORDINATE", kind:'partyEquipBoost', mult:0.10, always:true,
+          desc:'パーティ全員(自分を含む)の武器・防具の効果値が10%上昇する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'onHitMpDrain', ratio:0.15, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、攻撃を命中させるたびに与えたダメージの15%をMPとして吸収する。'}}
     ],
     liver_29: [
       {key:'default', name:'通常衣装(卯月コウ専用)',
-        passive:{name:'エモは感傷だから', kind:'statMult', stat:'atk', mult:1.2, always:true,
-          desc:'常時、攻撃力が20%上昇する。'}},
+        passive:{name:'お前ら、いっぞ！', kind:'openingFirstActionBoost', mult:0.25, always:false,
+          desc:'戦闘開始後、パーティ全員の最初の攻撃行動の威力が25%上昇する(1人1回ずつ)。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
           desc:'(仮設定・後日差し替え予定) 戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}}
     ],
     liver_30: [
       {key:'default', name:'通常衣装(春崎エアル専用)',
-        passive:{name:'僕のこと、好き?', kind:'battleStartPartyBuff', mult:1.15, turns:2, always:false,
-          desc:'戦闘開始直後の2ターンの間、パーティ全体の攻撃力が15%上昇する。'}},
+        passive:{name:'僕のこと好き？', kind:'favorReturn', turns:2, atk:0.30, def:0.30, regen:0.10, always:false,
+          desc:'味方からプラスの効果(HP・MPの回復、復活、かばう・肩代わりなど)を受け取ったとき、その味方に2ターンの間、攻撃力+30%・防御力+30%・HP自動回復(毎ターン最大HPの10%)を付与する。'}},
       {key:'common', name:'共通衣装',
         passive:{name:'共通衣装スキル(仮)', kind:'partyMpCostReduce', mult:0.9, always:true,
           desc:'(仮設定・後日差し替え予定) 常時、パーティ全員のスキルMP消費が10%軽減される。'}}
@@ -8187,14 +8200,14 @@
   function liverAtk(id){
     const ls = liverState(id);
     const w = ls.equipped.weapon;
-    const atk = jobBaseAtk(ls.job, jobProgressFor(id).level) + (w ? itemEffectiveValue(w) : 0);
+    const atk = jobBaseAtk(ls.job, jobProgressFor(id).level) + (w ? itemEffectiveValue(w) * partyEquipMult(id) : 0);
     const atkPct = liverAccessoryEffects(id).atkPct || 0;
     return Math.round(atk * passiveStatMult(id, 'atk') * (1 + atkPct/100));
   }
   function liverDefStat(id){
     const ls = liverState(id);
     const a = ls.equipped.armor;
-    const def = jobBaseDef(ls.job, jobProgressFor(id).level) + (a ? itemEffectiveValue(a) : 0);
+    const def = jobBaseDef(ls.job, jobProgressFor(id).level) + (a ? itemEffectiveValue(a) * partyEquipMult(id) : 0);
     const statusMult = statusStatMult(playerStatusEffects[id], 'defBuff', 'defDebuff');
     const defPct = liverAccessoryEffects(id).defPct || 0;
     return Math.max(1, Math.round(def * passiveStatMult(id, 'def') * combatStackStatMult(id, 'def') * statusMult * (1 + defPct/100)));
@@ -8268,11 +8281,15 @@
       // 夕陽リリ: 復帰後の最初の攻撃(敵にダメージを与えるまで)だけ有効
       return flags.returnBoost ? (p.nextAtkMult || 1) : 1;
     }
+    if(p.kind === 'childAdult'){
+      // 森中花咲: こども(オトナになるまで)の間だけ攻撃力が上がる
+      return flags.adult ? 1 : 1 + (p.childAtk || 0);
+    }
     return 1;
   }
   function combatAtk(id){
     const statusMult = statusStatMult(playerStatusEffects[id], 'atkBuff', 'atkDebuff');
-    return Math.max(1, Math.round(liverAtk(id) * activeCombatAtkMult(id) * partyBuffAtkMult() * frontLeaderAtkMult() * statusMult));
+    return Math.max(1, Math.round(liverAtk(id) * activeCombatAtkMult(id) * openingFirstActionMult(id) * partyBuffAtkMult() * frontLeaderAtkMult() * statusMult));
   }
 
   /* パーティの先頭(編成1番目)が生存中の風楽奏斗なら、味方全員にかかる攻撃力倍率。 */
@@ -8332,11 +8349,20 @@
     return mult;
   }
 
+  /* 宇志海いちご「かわいいじゃなくてかっこいいだよ！」: 会心率の加算(0〜1の確率)。 */
+  function passiveCritBonus(liverId){
+    const p = equippedPassive(liverId);
+    return (p && p.kind === 'critBonus') ? (p.chance || 0) : 0;
+  }
+
   /* 攻撃命中時、与ダメージの一部をMPとして吸収する(魔界ノりりむ)。
-   * 戻り値は実際に回復したMP量(戦闘ログへの追記に使う)。 */
+   * 戻り値は実際に回復したMP量(戦闘ログへの追記に使う)。
+   * プレイヤーが敵にダメージを与える全経路から呼ばれるため、ギルザレンⅢ世の
+   * HP吸収もここでまとめて処理する。 */
   function applyOnHitMpDrain(liverId, dmg){
     const ls = liverState(liverId);
     const p = equippedPassive(liverId);
+    if(p && p.kind === 'lifestealHp' && dmg > 0) applyLifestealHp(liverId, dmg, p);
     if(!p || p.kind !== 'onHitMpDrain' || dmg <= 0) return 0;
     const before = ls.mp;
     ls.mp = Math.min(ls.maxMp, ls.mp + Math.max(1, Math.round(dmg * p.ratio)));
@@ -8361,6 +8387,7 @@
     const healed = ls.hp - before;
     if(healed <= 0) return;
     pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}のHPが${healed}回復した！`, 'system', true);
+    notifyPositiveEffect(targetId, holderId, false);
   }
 
   /* 仲間が行動するたびに攻撃力が蓄積していくパッシブの通知用(風楽奏斗)。
@@ -8394,6 +8421,7 @@
       const p = equippedPassive(coverId);
       if((targetLs.hp/targetLs.maxHp) <= (p.threshold||0)){
         pushLog(`${liverDef(coverId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}をかばった！`, 'system', true);
+        notifyPositiveEffect(targetId, coverId, false);
         return coverId;
       }
     }
@@ -8413,6 +8441,7 @@
     if(Math.random() >= (p.chance || 0)) return targetId;
     passiveFlags(holderId).shieldedHit = true;
     pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}を隠すように前に立ちはだかった！`, 'system', true);
+    notifyPositiveEffect(targetId, holderId, false);
     return holderId;
   }
 
@@ -8542,6 +8571,14 @@
     if(peaceId){
       dmg = Math.max(1, Math.round(dmg * (1 - (equippedPassive(peaceId).reduce || 0))));
     }
+    // 森中花咲「る～るるる～」: オトナの間、パーティ全員の被ダメージを軽減する
+    const adultId = state.party.find(id=>{
+      const ls = liverState(id);
+      return ls && ls.hp > 0 && hasPassiveKind(id, 'childAdult') && passiveFlags(id).adult;
+    });
+    if(adultId){
+      dmg = Math.max(1, Math.round(dmg * (1 - (equippedPassive(adultId).adultMitigate || 0))));
+    }
     const guardId = state.party.find(id=>{
       if(id === liverId) return false;
       const ls = liverState(id);
@@ -8559,6 +8596,7 @@
         const gp = equippedPassive(guardId);
         dmg = Math.max(1, Math.round(dmg * (1 - (gp.reduce || 0))));
         pushLog(`${liverDef(guardId).name}のパッシブ「${gp.name}」が発動！ ${liverDef(liverId).name}を保護し、ダメージを軽減した！`, 'system', true);
+        notifyPositiveEffect(liverId, guardId, false);
       }
     }
     return dmg;
@@ -8588,6 +8626,7 @@
     const holderLs = liverState(holderId);
     holderLs.hp = Math.max(0, holderLs.hp - taken);
     pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ ${liverDef(targetId).name}のダメージを肩代わりした！(-${taken})`, 'system', true);
+    notifyPositiveEffect(targetId, holderId, false);
     checkLiverKO(holderId);
     return moved;
   }
@@ -8645,6 +8684,10 @@
   }
   /* 行動1回ごとの後処理。enemyHpBeforeは行動前の敵HP(ダメージを与えたかの判定用)。 */
   function afterPlayerAction(liverId, enemyHpBefore){
+    // 卯月コウ「お前ら、いっぞ！」: ダメージを与えた最初の行動で、その人の強化を使い切る
+    if(combatEnemyHp < enemyHpBefore && state.party.some(hid=> hasPassiveKind(hid, 'openingFirstActionBoost'))){
+      passiveFlags(liverId).firstBoostUsed = true;
+    }
     const p = equippedPassive(liverId);
     if(!p) return;
     const flags = passiveFlags(liverId);
@@ -8653,6 +8696,131 @@
     if(p.kind === 'selfReturn' && combatEnemyHp < enemyHpBefore) flags.returnBoost = false;
     if(p.kind === 'demonHuman') shiftDemonHuman(liverId, 1);
     if(p.kind === 'afterActionMpGive') giveMpToLowestAlly(liverId, p);
+    triggerAllyFollowUps(liverId, enemyHpBefore);
+  }
+
+  /* ---------------------------------------------------------------
+   * 3バッチ目(liver_21〜30)の専用パッシブ。戦闘中の状態はcombatPassiveFlagsに持つ。
+   * --------------------------------------------------------------- */
+  /* 戦闘中の現在のラウンド番号(1始まり)。ラウンド開始〜味方の行動中は、敵の行動回数+1になる。 */
+  function currentRoundNo(){
+    return ((combatEnemy && combatEnemy.turnCount) || 0) + 1;
+  }
+
+  /* 敵の行動中に積んだ、戦闘ログの後出し用キュー。ダメージの計算中に起きた回復などを、
+   * 「〇〇がダメージを受けた」のログより後に表示するために使う。 */
+  let pendingPassiveLogs = [];
+  function queuePassiveLog(text, cls){
+    pendingPassiveLogs.push({text, cls});
+  }
+  function flushPassiveLogs(){
+    const q = pendingPassiveLogs;
+    pendingPassiveLogs = [];
+    q.forEach(l=> pushLog(l.text, l.cls || 'system', true));
+  }
+
+  /* ギルザレンⅢ世「悠久高貴ヴァンパイア」: 与ダメージの一部を自身のHPとして吸収する。 */
+  function applyLifestealHp(liverId, dmg, p){
+    const ls = liverState(liverId);
+    if(!ls || ls.hp <= 0 || ls.hp >= ls.maxHp) return;
+    ls.hp = Math.min(ls.maxHp, ls.hp + Math.max(1, Math.round(dmg * (p.ratio || 0))));
+  }
+
+  /* 文野環「ねこかんください。」: HPが閾値超から閾値以下へ下がった瞬間に、戦闘中1度だけ回復する。
+   * hpBeforeは被ダメージを受ける前のHP。致死ダメージや、すでに閾値以下で戦闘に入った場合は発動しない。 */
+  function afterHpLoss(liverId, hpBefore){
+    if(!inCombat) return;
+    const p = equippedPassive(liverId);
+    if(!p || p.kind !== 'onceHealAtHalf') return;
+    const ls = liverState(liverId);
+    const flags = passiveFlags(liverId);
+    if(flags.catCanUsed || !ls || ls.hp <= 0 || ls.maxHp <= 0) return;
+    const th = p.threshold || 0.5;
+    if(hpBefore / ls.maxHp <= th || ls.hp / ls.maxHp > th) return;
+    flags.catCanUsed = true;
+    const before = ls.hp;
+    ls.hp = Math.min(ls.maxHp, ls.hp + Math.max(1, Math.round(ls.maxHp * (p.healRatio || 0))));
+    queuePassiveLog(`${liverDef(liverId).name}のパッシブ「${p.name}」が発動！ 猫缶を食べて、HPが${ls.hp - before}回復した！`, 'reward');
+  }
+
+  /* 花畑チャイカ「私も入れてよ。」: 味方がダメージを与える行動をした後に追撃する(1ラウンドに1回)。 */
+  function triggerAllyFollowUps(actorId, enemyHpBefore){
+    if(!combatEnemy || !(combatEnemyHp < enemyHpBefore) || combatEnemyHp <= 0) return;
+    const turn = combatEnemy.turnCount || 0;
+    state.party.forEach(id=>{
+      if(id === actorId || combatEnemyHp <= 0) return;
+      const ls = liverState(id);
+      const p = equippedPassive(id);
+      if(!ls || ls.hp <= 0 || !p || p.kind !== 'followUp') return;
+      const flags = passiveFlags(id);
+      if(flags.followUpTurn === turn) return;
+      flags.followUpTurn = turn;
+      const dmg = Math.max(1, Math.round((combatAtk(id) - effectiveEnemyDef()) * (p.ratio || 0)));
+      combatEnemyHp -= dmg;
+      lastDamagerId = id;
+      const drained = applyOnHitMpDrain(id, dmg);
+      pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ ${liverDef(actorId).name}に続いて追撃！ ${combatEnemy.name}に ${dmg} のダメージ。${drained > 0 ? ` (MP+${drained})` : ''}`, 'system', true);
+    });
+  }
+
+  /* 社築「仕事は山ほどあるぞ！」: 行動後にMPが残っていれば、追加で通常攻撃を1回行う(1ラウンドに1回)。 */
+  function maybeExtraAction(liverId){
+    const p = equippedPassive(liverId);
+    if(!p || p.kind !== 'extraActionIfMp' || !combatEnemy || combatEnemyHp <= 0) return;
+    const ls = liverState(liverId);
+    if(!ls || ls.hp <= 0 || ls.maxMp <= 0 || ls.mp / ls.maxMp < (p.mpRatioMin || 0.5)) return;
+    const flags = passiveFlags(liverId);
+    const turn = combatEnemy.turnCount || 0;
+    if(flags.extraTurn === turn) return;
+    flags.extraTurn = turn;
+    pushLog(`${liverDef(liverId).name}のパッシブ「${p.name}」が発動！ 休む間もなく、もう一度動いた！`, 'system', true);
+    const hpBefore = combatEnemyHp;
+    performNormalAttack(liverId, p.power || 0.5);
+    triggerAllyFollowUps(liverId, hpBefore);
+  }
+
+  /* 轟京子「ROKI'S COORDINATE」: パーティ全員の武器・防具の効果値にかかる倍率。
+   * 戦闘外でもステータス表示に反映する(戦闘中は、京子が戦闘不能の間は無効)。 */
+  function partyEquipMult(liverId){
+    if(!state || !state.party || !state.party.includes(liverId)) return 1;
+    let mult = 1;
+    state.party.forEach(id=>{
+      const p = equippedPassive(id);
+      if(!p || p.kind !== 'partyEquipBoost') return;
+      const ls = liverState(id);
+      if(!inCombat || (ls && ls.hp > 0)) mult += (p.mult || 0);
+    });
+    return mult;
+  }
+
+  /* 卯月コウ「お前ら、いっぞ！」: 戦闘中の最初のダメージ行動に乗る威力倍率(1人1回)。 */
+  function openingFirstActionMult(liverId){
+    if(!inCombat) return 1;
+    const holderId = state.party.find(hid=>{
+      const ls = liverState(hid);
+      return ls && ls.hp > 0 && hasPassiveKind(hid, 'openingFirstActionBoost');
+    });
+    if(!holderId) return 1;
+    if(passiveFlags(liverId).firstBoostUsed) return 1;
+    return 1 + (equippedPassive(holderId).mult || 0);
+  }
+
+  /* 春崎エアル「僕のこと好き？」: 味方からプラスの効果を受け取った時に、その味方へお返しをする。
+   * giverIsActing: 与えた側が自分の行動中の場合はtrue(付与直後の最初のtickを飛ばして、2ターン分を確保する)。 */
+  function notifyPositiveEffect(receiverId, giverId, giverIsActing){
+    if(!inCombat || !receiverId || !giverId || receiverId === giverId) return;
+    const rp = equippedPassive(receiverId);
+    if(!rp || rp.kind !== 'favorReturn') return;
+    const rls = liverState(receiverId), gls = liverState(giverId);
+    if(!rls || rls.hp <= 0 || !gls || gls.hp <= 0) return;
+    const map = statusEffectsMapFor(giverId);
+    const fresh = !!giverIsActing;
+    const a = applyStatusEffect(map, 'atkBuff', rp.atk || 0, rp.turns || 2, fresh);
+    const d = applyStatusEffect(map, 'defBuff', rp.def || 0, rp.turns || 2, fresh);
+    const r = applyStatusEffect(map, 'regen', rp.regen || 0, rp.turns || 2, fresh);
+    if(a || d || r){
+      pushLog(`${liverDef(receiverId).name}のパッシブ「${rp.name}」が発動！ ${liverDef(giverId).name}に気持ちが届き、${rp.turns || 2}ターンの間、力が湧いてきた！`, 'system', true);
+    }
   }
 
   /* 物述有栖「んーまっ」: 行動後、MPの割合が最も低い味方(自分以外)のMPを回復する。 */
@@ -8672,6 +8840,7 @@
     const gained = ls.mp - before;
     if(gained <= 0) return;
     pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ 投げキッスで${liverDef(targetId).name}のMPが${gained}回復した！`, 'system', true);
+    notifyPositiveEffect(targetId, holderId, true);
   }
 
   /* ラウンド開始時の効果(樋口楓の味方全員MP回復、石神のぞみの人間寄りMP回復)。
@@ -8686,13 +8855,38 @@
       const p = equippedPassive(holderId);
       if(!p) return;
       if(p.kind === 'roundStartPartyMpRegen'){
-        alive.forEach(id=> restoreMp(id, p.ratio || 0));
+        alive.forEach(id=>{
+          restoreMp(id, p.ratio || 0);
+          notifyPositiveEffect(id, holderId, false);
+        });
       } else if(p.kind === 'demonHuman'){
         const regen = DEMON_HUMAN_TABLE[demonCount(holderId)].mpRegen || 0;
         if(regen > 0) restoreMp(holderId, regen);
       } else if(p.kind === 'roundStack'){
         const flags = passiveFlags(holderId);
         flags.roundStacks = Math.min(p.maxStacks || 99, (flags.roundStacks || 0) + 1);
+      } else if(p.kind === 'childAdult'){
+        // 森中花咲: 指定ラウンドに達したらオトナの姿になる(戻らない)
+        const flags = passiveFlags(holderId);
+        if(!flags.adult && currentRoundNo() >= (p.adultFromRound || 3)){
+          flags.adult = true;
+          pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ オトナの姿になった！ 頼れる包容力でパーティを包み込む！`, 'reward', true);
+        }
+      } else if(p.kind === 'roundStartHealLowest'){
+        // シスター・クレア: HP割合が最も低い味方(自分を含む)を回復する
+        let lowestId = null, lowestRatio = Infinity;
+        alive.forEach(id=>{
+          const ls = liverState(id);
+          const ratio = ls.maxHp > 0 ? ls.hp / ls.maxHp : 1;
+          if(ratio < lowestRatio){ lowestRatio = ratio; lowestId = id; }
+        });
+        if(lowestId && lowestRatio < 1){
+          const ls = liverState(lowestId);
+          const before = ls.hp;
+          ls.hp = Math.min(ls.maxHp, ls.hp + Math.max(1, Math.round(ls.maxHp * (p.ratio || 0))));
+          pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ ${liverDef(lowestId).name}のHPが${ls.hp - before}回復した！`, 'system', true);
+          notifyPositiveEffect(lowestId, holderId, false);
+        }
       }
     });
     // 夕陽リリ「未来人」: 戦闘不能中のラウンド開始ごとに復帰までのカウントを進め、0になったら復帰させる
@@ -8714,6 +8908,7 @@
 
   /* ラウンド終了時の効果(モイラ「もいもいももいもいももいもい」)。敵の行動のあとに呼ぶ。 */
   function applyRoundEndPassives(){
+    applyAdultRoundEndHeal();
     const alive = alivePartyIds();
     const holderId = alive.find(id=> hasPassiveKind(id, 'roundEndPartyHeal'));
     if(!holderId) return;
@@ -8725,15 +8920,37 @@
       if(ratio < lowestRatio){ lowestRatio = ratio; lowestId = id; }
     });
     let totalHealed = 0;
+    const healedIds = [];
     alive.forEach(id=>{
       const ls = liverState(id);
       const rate = (p.base || 0) + (id === lowestId ? (p.lowestBonus || 0) : 0);
       const before = ls.hp;
       ls.hp = Math.min(ls.maxHp, ls.hp + Math.max(1, Math.round(ls.maxHp * rate)));
       totalHealed += ls.hp - before;
+      if(ls.hp > before) healedIds.push(id);
     });
     if(totalHealed <= 0) return;
     pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ 優しい声で、パーティのHPが回復した！`, 'system', true);
+    healedIds.forEach(id=> notifyPositiveEffect(id, holderId, false));
+  }
+
+  /* 森中花咲「る～るるる～」: オトナの間、ラウンド終了時に自身以外の味方全員のHPが回復する。 */
+  function applyAdultRoundEndHeal(){
+    const alive = alivePartyIds();
+    const holderId = alive.find(id=> hasPassiveKind(id, 'childAdult') && passiveFlags(id).adult);
+    if(!holderId) return;
+    const p = equippedPassive(holderId);
+    const healedIds = [];
+    alive.forEach(id=>{
+      if(id === holderId) return;
+      const ls = liverState(id);
+      const before = ls.hp;
+      ls.hp = Math.min(ls.maxHp, ls.hp + Math.max(1, Math.round(ls.maxHp * (p.adultHeal || 0))));
+      if(ls.hp > before) healedIds.push(id);
+    });
+    if(!healedIds.length) return;
+    pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ オトナの包容力で、みんなのHPが回復した！`, 'system', true);
+    healedIds.forEach(id=> notifyPositiveEffect(id, holderId, false));
   }
 
   /* 味方が戦闘不能になった瞬間の復活(弦月藤士郎)。復活したらtrue。 */
@@ -8750,6 +8967,7 @@
     ls.hp = Math.max(1, Math.round(ls.maxHp * (p.hpRatio || 0.25)));
     pushLog(`${liverDef(holderId).name}のパッシブ「${p.name}」が発動！ 神に連絡し、${liverDef(deadId).name}がHP${ls.hp}で復活した！`, 'reward');
     if(hasPassiveKind(deadId, 'consecutiveBattleExp')) studyStreak = 1; // 戦闘中に復活したら、この戦闘を1戦目として再開する
+    notifyPositiveEffect(deadId, holderId, false);
     return true;
   }
 
@@ -9715,6 +9933,7 @@
     playerStatusEffects = {};
     combatPassiveFlags = {};
     pendingCounters = [];
+    pendingPassiveLogs = [];
     combatOpeningDone = false;
     combatDialogueFired = {};
     lastDamagerId = null;
@@ -9732,6 +9951,9 @@
     }
     state.party.forEach((id, idx)=>{
       const p = equippedPassive(id);
+      if(p && p.kind==='openingFirstActionBoost' && liverState(id).hp > 0){
+        pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ 軍団が一斉に突撃する！`, 'system', true);
+      }
       if(p && p.kind==='openingPartyMitigate' && liverState(id).hp > 0){
         pushLog(`${liverDef(id).name}のパッシブ「${p.name}」が発動！ ピースサインで場が和み、被ダメージが軽減される！`, 'system', true);
       }
@@ -9768,9 +9990,9 @@
    */
   /* 通常攻撃1回(会心判定・武器の属性付与・MP吸収込み)。通常のターン行動と、
    * 戦闘開始時の先制攻撃(三枝明那)の両方から使う。 */
-  function performNormalAttack(liverId){
+  function performNormalAttack(liverId, powerMult){
     const name = liverDef(liverId).name;
-    const affixMult = weaponAffixDamageMult(liverId);
+    const affixMult = weaponAffixDamageMult(liverId) * (powerMult || 1); // powerMult: 追加行動(社築)などで威力を下げる時だけ指定
     const drainSuffix = (dmg) => {
       const drained = applyOnHitMpDrain(liverId, dmg);
       return drained > 0 ? ` (MP+${drained})` : '';
@@ -9881,14 +10103,24 @@
       const enemyHpBefore = combatEnemyHp;
       playerTurnActionInner(liverId, silenced);
       afterPlayerAction(liverId, enemyHpBefore);
+      maybeExtraAction(liverId);
     }
     tickStatusEffects(effects,
       (type, eff)=>{
         if(type === 'poison'){
           const dmg = Math.max(1, Math.round(ls.maxHp * eff.amount));
+          const hpBeforePoison = ls.hp;
           ls.hp = Math.max(0, ls.hp - dmg);
           pushLog(`${name}は毒のダメージを受けた。(-${dmg})`, 'danger', true);
+          afterHpLoss(liverId, hpBeforePoison);
+          flushPassiveLogs();
           checkLiverKO(liverId);
+        } else if(type === 'regen' && ls.hp > 0){
+          // 継続回復(春崎エアルの「お返し」など)。行動後に毎ターン最大HPの割合で回復する
+          const heal = Math.max(1, Math.round(ls.maxHp * eff.amount));
+          const before = ls.hp;
+          ls.hp = Math.min(ls.maxHp, ls.hp + heal);
+          if(ls.hp > before) pushLog(`${name}のHPが自然に回復した。(+${ls.hp - before})`, 'reward', true);
         }
       },
       (type)=>{
@@ -9920,8 +10152,10 @@
     }
     dmg = applyIncomingDamagePassives(liverId, dmg);
     dmg -= applyDamageShare(liverId, dmg, !!defBased);
+    const hpBefore = ls.hp;
     ls.hp = Math.max(0, ls.hp - dmg);
     onLiverDamaged(liverId, dmg);
+    afterHpLoss(liverId, hpBefore);
     return dmg;
   }
 
@@ -9999,6 +10233,7 @@
     enemyTurnDamageInner();
     if(!combatEnemy) return; // 反撃等で戦闘が終了した場合は何もしない
     flushPendingCounters();
+    flushPassiveLogs();
     tickStatusEffects(combatEnemy.statusEffects,
       (type, eff)=>{
         if(type === 'regen'){
@@ -14130,6 +14365,13 @@
       if(flags.returnPending > 0) return resourceChip('clock', `未来から復帰まであと${flags.returnPending}ラウンド`, {count:flags.returnPending});
       if(flags.returnBoost) return resourceChip('awaken', '復帰:次の攻撃が強化される', {awaken:true});
       return resourceChip('clock', flags.returnUsed ? '復帰:使用済み' : '復帰:待機中(戦闘中1回)', {dim:true});
+    }
+    if(p.kind === 'onceHealAtHalf'){
+      const used = !!flags.catCanUsed;
+      return resourceChip('can', used ? '猫缶:使用済み' : '猫缶:待機中(HP50%以下で1度だけ回復)', {dim:used});
+    }
+    if(p.kind === 'childAdult'){
+      return resourceChip('flower', flags.adult ? 'オトナ(被ダメージ軽減・ラウンド終了時に味方を回復)' : 'こども(攻撃力+20%・ラウンド3でオトナに)', {awaken:!!flags.adult});
     }
     if(p.kind === 'consecutiveBattleExp'){
       return resourceChip('book', `連続戦闘${studyStreak}回:獲得経験値+${Math.round(Math.min(p.maxBonus||0, studyStreak*(p.perBattle||0))*100)}%`, {count:studyStreak, dim:studyStreak === 0});
